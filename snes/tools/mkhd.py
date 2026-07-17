@@ -223,6 +223,9 @@ subdirs = [
                 ("HELLO.PAS", hello),
                 ("HELLO.COM", hello_com)]),
     ("BENCH", [("SI.EXE", rd("bench_NortonSI", "si45", "SI.EXE")),
+               ("CPUBENCH.COM", open(os.path.join(
+                   os.path.dirname(os.path.abspath(__file__)),
+                   "..", "build", "cpubench.com"), "rb").read()),
                ("SIEVE.PAS", sieve),
                ("SIEVE.COM", sieve_com),
                ("BENCH.PAS", bench)]),
