@@ -1249,24 +1249,6 @@ kb_push:                     ; A = (scan<<8)|ascii
     sta cKbT
     rts
 
-kb_inject_str:               ; X = asciiz string (bank 0)
-_ki_l:
-    lda.w $0000,x
-    and #$00FF
-    beq _ki_d
-    ora #$1000               ; nonzero scan code (DOS only reads ASCII)
-    phx
-    jsr kb_push
-    plx
-    inx
-    bra _ki_l
-_ki_d:
-    rts
-
-kbstr_dir:  .db "dir b:", $0D, 0
-kbstr_copy: .db "copy command.com b:", $0D, 0
-kbstr_chk:  .db "chkdsk b:", $0D, 0
-
 ;----------------------------------------------------------------------
 ; NMI: ack, drain VRAM queue, ticks, joypad (DBR must be 0 for MMIO)
 ;----------------------------------------------------------------------
@@ -2142,28 +2124,34 @@ _kf_pd:
     beq _kf_hid
     jmp _kf_vis
 _kf_hid:
-    lda kT0                  ; hidden: SELECT=show, START/Y/X = macros
-    and #$2000
+    lda kT0                  ; hidden: SELECT=show; START/B/X/Y = Enter/
+    and #$2000               ; Backspace/Space/Escape (d-pad = arrows)
     beq _kf_h1
     jmp kbd_toggle
 _kf_h1:
     lda kT0
-    and #$1000
+    and #$1000               ; START: Enter
     beq _kf_h2
-    ldx #kbstr_dir
-    jmp kb_inject_str
+    lda #$1C0D
+    jsr kb_push
 _kf_h2:
     lda kT0
-    and #$4000
+    and #$8000               ; B: Backspace
     beq _kf_h3
-    ldx #kbstr_chk
-    jmp kb_inject_str
+    lda #$0E08
+    jsr kb_push
 _kf_h3:
     lda kT0
-    and #$0040
+    and #$0040               ; X: Space
+    beq _kf_h3b
+    lda #$3920
+    jsr kb_push
+_kf_h3b:
+    lda kT0
+    and #$4000               ; Y: Escape
     beq _kf_h4
-    ldx #kbstr_copy
-    jmp kb_inject_str
+    lda #$011B
+    jsr kb_push
 _kf_h4:
     ; d-pad -> arrow keys (extended scancodes, AL=0) with autorepeat
     lda kT0
