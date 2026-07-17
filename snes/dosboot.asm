@@ -1779,7 +1779,13 @@ dsnap:
     rts
 .ELSE
 _rst_run:
-    jsr x86step
+    ldy gIP
+    lda #64
+    sta tSKIP                ; slow-path gas (tSKIP is trace-only state,
+_rst_inner:                  ; free in this build). IRQ/HALT are polled
+    jsr step_lean            ; every 64 instructions instead of every one
+    dec tSKIP
+    bne _rst_inner
     lda cTickP
     beq _rst_nirq
     lda fSTATIC              ; IF lives in the static flag bits

@@ -111,12 +111,13 @@ dINT     dw
 ;----------------------------------------------------------------------
 ; one guest instruction. entry: A/X/Y 16-bit.
 ;----------------------------------------------------------------------
-x86step:
+x86step:                     ; single-step entry (trace/parity harness)
     lda gHALT
     bne _step_halted
-    stz ovSEG
-    stz pREP
     ldy gIP
+step_lean:                   ; hot entry: Y = IP, maintained by handlers
+    stz ovSEG                ; (every handler ends sty gIP with Y intact,
+    stz pREP                 ; so the run loop skips the reload+halt check)
 step_fetch:
     lda [bCS],y
     iny
