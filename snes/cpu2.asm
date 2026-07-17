@@ -619,12 +619,212 @@ _rd\@:
     jmp step_next
 .ENDM
 
-op_A4: REPWRAP movs8_once
-op_A5: REPWRAP movs16_once
-op_AA: REPWRAP stos8_once
-op_AB: REPWRAP stos16_once
+; ---- chunked forward REP MOVS: per-run pointer setup, per-element
+; cost drops from ~85 to ~32 cycles. DF=1 and 64K-edge cases fall back
+; to the per-element helper (identical semantics: ascending copy).
+.MACRO REPMOVF ARGS ONCE, WIDE
+    lda pREP
+    bne _mf\@
+    jsr ONCE
+    jmp step_next
+_mf\@:
+    lda gCX
+    beq _md\@
+    lda fSTATIC
+    and #F_DF
+    bne _mb\@                ; backward: rare, keep per-element
+_mc\@:
+    lda gSI                  ; 64K-boundary starts: one element the
+    beq _m1\@                ; slow way sidesteps the 0x10000 encoding
+    lda gDI
+    beq _m1\@
+    lda gSI
+    eor #$FFFF
+    inc a                    ; bytes until SI wraps
+.IF WIDE == 1
+    lsr a                    ; elements until SI wraps
+.ENDIF
+    sta tmp0
+    lda gDI
+    eor #$FFFF
+    inc a
+.IF WIDE == 1
+    lsr a
+.ENDIF
+    sta tmp1
+    lda gCX                  ; N = min(CX, wrapSI, wrapDI), cap $2000
+    cmp tmp0
+    bcc _mA\@
+    lda tmp0
+_mA\@:
+    cmp tmp1
+    bcc _mB\@
+    lda tmp1
+_mB\@:
+    cmp #$2000
+    bcc _mC\@
+    lda #$2000
+_mC\@:
+    bne _mD\@
+    bra _m1\@                ; N=0 (odd start near wrap): slow element
+_mD\@:
+    sta tmp2                 ; N elements
+.IF WIDE == 1
+    asl a
+.ENDIF
+    sta tmp0                 ; N bytes
+    phy
+    jsr seg_src_x
+    lda gSI
+    jsr mk_ptr
+    ldx #24
+    lda gDI
+    jsr mk_ptr2
+    ldy #0
+.IF WIDE == 1
+_ml\@:
+    lda [mPTR],y
+    sta [mPTR2],y
+    iny
+    iny
+    cpy tmp0
+    bcc _ml\@
+.ELSE
+    sep #$20
+_ml\@:
+    lda [mPTR],y
+    sta [mPTR2],y
+    iny
+    cpy tmp0
+    bcc _ml\@
+    rep #$20
+.ENDIF
+    ply
+    lda gSI
+    clc
+    adc tmp0
+    sta gSI
+    lda gDI
+    clc
+    adc tmp0
+    sta gDI
+    lda gCX
+    sec
+    sbc tmp2
+    sta gCX
+    bne _mc\@
+_md\@:
+    jmp step_next
+_m1\@:
+    jsr ONCE
+    dec gCX
+    lda gCX
+    bne _mc\@
+    bra _md\@
+_mb\@:
+    jsr ONCE
+    dec gCX
+    lda gCX
+    bne _mb\@
+    bra _md\@
+.ENDM
+
+; ---- chunked forward REP STOS: the guest memset
+.MACRO REPSTOF ARGS ONCE, WIDE
+    lda pREP
+    bne _sf\@
+    jsr ONCE
+    jmp step_next
+_sf\@:
+    lda gCX
+    beq _sd\@
+    lda fSTATIC
+    and #F_DF
+    bne _sb\@
+_sc\@:
+    lda gDI
+    beq _s1\@
+    lda gDI
+    eor #$FFFF
+    inc a
+.IF WIDE == 1
+    lsr a
+.ENDIF
+    sta tmp1
+    lda gCX
+    cmp tmp1
+    bcc _sA\@
+    lda tmp1
+_sA\@:
+    cmp #$2000
+    bcc _sB\@
+    lda #$2000
+_sB\@:
+    bne _sC\@
+    bra _s1\@
+_sC\@:
+    sta tmp2
+.IF WIDE == 1
+    asl a
+.ENDIF
+    sta tmp0
+    phy
+    ldx #24
+    lda gDI
+    jsr mk_ptr
+    ldy #0
+.IF WIDE == 1
+    lda gAX
+_sl\@:
+    sta [mPTR],y
+    iny
+    iny
+    cpy tmp0
+    bcc _sl\@
+.ELSE
+    sep #$20
+    lda gAX
+_sl\@:
+    sta [mPTR],y
+    iny
+    cpy tmp0
+    bcc _sl\@
+    rep #$20
+.ENDIF
+    ply
+    lda gDI
+    clc
+    adc tmp0
+    sta gDI
+    lda gCX
+    sec
+    sbc tmp2
+    sta gCX
+    bne _sc\@
+_sd\@:
+    jmp step_next
+_s1\@:
+    jsr ONCE
+    dec gCX
+    lda gCX
+    bne _sc\@
+    bra _sd\@
+_sb\@:
+    jsr ONCE
+    dec gCX
+    lda gCX
+    bne _sb\@
+    bra _sd\@
+.ENDM
+
+op_A4: REPMOVF movs8_once, 0
+op_A5: REPMOVF movs16_once, 1
+op_AA: REPSTOF stos8_once, 0
+op_AB: REPSTOF stos16_once, 1
 op_AC: REPWRAP lods8_once
 op_AD: REPWRAP lods16_once
+
+
 
 .MACRO REPZWRAP ARGS ONCE
     lda pREP
