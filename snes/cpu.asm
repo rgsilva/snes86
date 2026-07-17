@@ -1619,12 +1619,95 @@ op5F:
 
 op70: JCCSTUB 0, 0
 op71: JCCSTUB 0, 1
-op72: JCCSTUB 2, 0
-op73: JCCSTUB 2, 1
-op74: JCCSTUB 4, 0
-op75: JCCSTUB 4, 1
-op76: JCCSTUB 6, 0
-op77: JCCSTUB 6, 1
+
+; hot Jcc fast paths: JB/JAE/JZ/JNZ/JBE/JA read the lazy flag state
+; directly. The generic path (jcc_common) calls flags_norm, which
+; materializes ALL of SZP/CF/OF/AF — including the parity table walk —
+; only to test one bit. These six are the branches that dominate real
+; code (every loop ends in one). Lazy state stays lazy afterwards.
+op72:                        ; JB: taken iff CF set
+    jsr cf_now
+    bne _jcc_take
+_jcc_skip:
+    iny
+    sty gIP
+    rts
+op73:                        ; JAE: taken iff CF clear
+    jsr cf_now
+    beq _jcc_take
+    bra _jcc_skip
+op74:                        ; JZ: taken iff ZF set
+    jsr zf_now
+    bne _jcc_take
+    bra _jcc_skip
+op75:                        ; JNZ: taken iff ZF clear
+    jsr zf_now
+    beq _jcc_take
+    bra _jcc_skip
+op76:                        ; JBE: taken iff CF or ZF
+    jsr cf_now
+    bne _jcc_take
+    jsr zf_now
+    bne _jcc_take
+    bra _jcc_skip
+op77:                        ; JA: taken iff neither CF nor ZF
+    jsr cf_now
+    bne _jcc_skip
+    jsr zf_now
+    bne _jcc_skip
+_jcc_take:                   ; shared: sign-extend disp, relative jump
+    lda [bCS],y
+    iny
+    and #$00FF
+    cmp #$0080
+    bcc _jt_pos
+    ora #$FF00
+_jt_pos:
+    sta tmp0
+    tya
+    clc
+    adc tmp0
+    tay
+    sty gIP
+    rts
+
+zf_now:                      ; A = nonzero iff ZF set, from lazy state
+    lda lfKIND
+    beq _zn_static
+    and #$0002               ; 8-bit kinds have bit 1 set
+    bne _zn_8
+    lda lfR
+    beq _zn_set
+_zn_clear:
+    lda #0
+    rts
+_zn_8:
+    lda lfR
+    and #$00FF
+    bne _zn_clear
+_zn_set:
+    lda #1
+    rts
+_zn_static:
+    lda fSTATIC
+    and #F_ZF
+    rts
+
+cf_now:                      ; A = nonzero iff CF set, from lazy state
+    lda lfKIND               ; (mirrors save_cf: LOG kinds mean CF=0)
+    beq _cn_static
+    cmp #LF_LOG8
+    bcs _cn_zero
+    lda lfCF
+    and #$0001
+    rts
+_cn_zero:
+    lda #0
+    rts
+_cn_static:
+    lda fSTATIC
+    and #F_CF
+    rts
 op78: JCCSTUB 8, 0
 op79: JCCSTUB 8, 1
 op7A: JCCSTUB 10, 0
