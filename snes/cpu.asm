@@ -23,7 +23,12 @@
 ; ADC/SBB/INC/DEC need it constantly. Formulas match core-c/src/x86.c
 ; bit for bit — that C core is the oracle this port is diffed against.
 
-.DEFINE GUEST_BASE $2000     ; SNES addr of guest linear 0 in bank $7E
+.IFNDEF GUEST_BASE           ; harness ROMs may predefine a different base
+.DEFINE GUEST_BASE $5000     ; SNES addr of guest linear 0 in bank $7E
+.ENDIF                       ; (108 KB: $7E:5000-$7F:FFFF fills WRAM top)
+.DEFINE VBOFS $1000          ; CGA adapter RAM, 16 KB at $7E:1000-$7E:4FFF
+.DEFINE VBUF  $7E1000        ; B000-BFFF segs map here (text page = offset 0;
+                             ; text+graphics share it, like real CGA card RAM)
 
 ; lazy-flag kinds (word values, double as norm_tab jump index)
 .MACRO STEP_END
@@ -66,7 +71,7 @@ gES      dw                  ; seg field *2 + 16 = DP offset
 gCS      dw
 gSS      dw
 gDS      dw
-bES      ds 3                ; cached 24-bit bases: $7E2000 + seg*16
+bES      ds 3                ; cached 24-bit bases: GUEST_BASE + seg*16
 bCS      ds 3                ; (base DP off = 24 + (segoff-16)/2*3)
 bSS      ds 3
 bDS      ds 3

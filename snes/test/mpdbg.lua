@@ -18,7 +18,7 @@ emu.addEventCallback(function()
       dp16(0x16), emu.read(0x7E0023, emu.memType.snesMemory), dp16(0x21)))
     -- shadow buffer first 16 bytes at $7F:E000
     local s = {}
-    for i = 0, 15 do s[#s+1] = string.format("%02X", emu.read(0x7FE000+i, emu.memType.snesMemory)) end
+    for i = 0, 15 do s[#s+1] = string.format("%02X", emu.read(0x7E1000+i, emu.memType.snesMemory)) end
     print("shadow@E000: " .. table.concat(s, " "))
     -- PPU: is screen on? read $2100 shadow not possible; check BG map cell
     print(string.format("kVIS=%04X kPAN=%04X scanROW=%04X cROW=%04X",

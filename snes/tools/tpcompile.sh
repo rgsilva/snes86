@@ -15,5 +15,5 @@ NAME=$1
 
 python3 tools/mk_tpc_img.py "$NAME"
 printf '\r\rturbo\rYW%s\rOCQC' "$NAME" | \
-    ../core-c/build/runpc -m 112 -l 500000000 -w build/tpc.img >/dev/null 2>&1
+    ../core-c/build/runpc -m 108 -l 500000000 -w build/tpc.img >/dev/null 2>&1
 python3 tools/mk_tpc_img.py --extract "$NAME"

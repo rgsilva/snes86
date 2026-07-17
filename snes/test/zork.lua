@@ -20,7 +20,7 @@ emu.addEventCallback(function()
   if frame == 15900 then
     local r0 = ""
     for i = 0, 39 do
-      local c = emu.read(0x7FE000 + i*2, emu.memType.snesMemory)
+      local c = emu.read(0x7E1000 + i*2, emu.memType.snesMemory)
       if c < 32 or c > 126 then c = 46 end
       r0 = r0 .. string.char(c)
     end

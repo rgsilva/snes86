@@ -43,7 +43,7 @@ _ssx_done:
     rts
 
 ; recompute a 24-bit cached base. X = seg DP offset (16/18/20/22).
-; base = $7E2000 + seg*16; clobbers X.
+; base = $7E:GUEST_BASE + seg*16; clobbers X.
 upd_base_x:
     txa
     sec
@@ -59,7 +59,7 @@ upd_base_x:
     lda.b 0,x                ; seg value
     sta tmp0
 .IFDEF DOSBIOS
-    ; CGA/MDA text segments (B000-BFFF) redirect to the shadow buffer
+    ; CGA/MDA segments (B000-BFFF) redirect to the 16 KB adapter RAM
     and #$F000
     cmp #$B000
     bne _ub_norm
@@ -68,13 +68,13 @@ upd_base_x:
     asl a
     asl a
     asl a
-    and #$0FFF
+    and #$3FFF               ; wrap inside the 16 KB window
     clc
-    adc #$E000
+    adc #VBOFS
     ldx tmp1
     sta.b 0,x
     sep #$20
-    lda #$7F
+    lda #$7E
     sta.b 2,x
     rep #$20
     rts

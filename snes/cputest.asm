@@ -15,6 +15,12 @@
 .INCLUDE "hdr.asm"
 .INCLUDE "build/stream_meta.asm"    ; .DEFINE STREAM_COUNT / STREAM_BYTES
 
+; Keep the proven M4 window: guest linear 0 at $7E:2000 (56 KB max fits
+; bank $7E). The DOS build's base ($5000, 108 KB) would run the guest
+; window into the $7F:0000+ trace-record area. GUEST_BASE is a constant
+; either way — parity validates the core logic, not the absolute base.
+.DEFINE GUEST_BASE $2000
+
 .INCLUDE "cpu.asm"
 .INCLUDE "cpu2.asm"
 

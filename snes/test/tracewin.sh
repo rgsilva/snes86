@@ -4,7 +4,7 @@ SKIP=$1
 printf '.DEFINE TRACE\n.DEFINE TRACE_SKIP %s\n.DEFINE TRACE_COUNT 800\n' "$SKIP" > build/trace_meta.asm
 rm -f build/dosboot.o
 make -s dos 2>&1 | grep -i error
-printf '\r\r' | ../core-c/build/runpc -m 96 -T $((SKIP+800)) -l $((SKIP+900)) ../disks/pcdos200-disk1.img 2>&1 >/dev/null | grep '^T ' | sed 's/^T //' | tail -800 > build/dosexp.txt
+printf '\r\r' | ../core-c/build/runpc -m 108 -T $((SKIP+800)) -l $((SKIP+900)) ../disks/pcdos200-disk1.img 2>&1 >/dev/null | grep '^T ' | sed 's/^T //' | tail -800 > build/dosexp.txt
 echo "ref lines: $(wc -l < build/dosexp.txt)"
 /Applications/Mesen.app/Contents/MacOS/Mesen --testrunner "$(pwd)/build/dosboot.sfc" "$(pwd)/test/dostrace.lua" 2>/dev/null | grep -E '^[0-9A-F]{4} ' > build/dosgot.txt
 python3 -c "

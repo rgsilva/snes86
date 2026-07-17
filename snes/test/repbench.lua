@@ -11,7 +11,7 @@ end
 local function findchar(ch)  -- scan console buffer for a char code
   for r = 0, 24 do
     for c = 0, 79 do
-      if emu.read(0x7FE000 + r*160 + c*2, emu.memType.snesMemory) == ch then return true end
+      if emu.read(0x7E1000 + r*160 + c*2, emu.memType.snesMemory) == ch then return true end
     end
   end
   return false

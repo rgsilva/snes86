@@ -5,7 +5,9 @@
 ; INT 13h (ROM floppy in banks 2-7, write-protected), INT 16h (keyboard
 ; ring; START injects "dir\r"), INT 1Ah (NMI-derived ticks).
 ;
-; Guest memory: linear 0x00000-0x17FFF (96 KB) at $7E:2000-$7F:9FFF.
+; Guest memory: linear 0x00000-0x1AFFF (108 KB) at $7E:5000-$7F:FFFF.
+; CGA adapter RAM: 16 KB at $7E:1000-$7E:4FFF (B000-BFFF segments map
+; here; the 80x25 text page is offset 0, graphics bitmaps will share it).
 ; Boot: sector 0 -> 0000:7C00, all IVT vectors -> IRET stub at 0000:0600.
 ; The keyboard ring is pre-loaded with two CRs to auto-answer the DOS
 ; date/time prompts.
@@ -50,8 +52,9 @@ kPAN     dw                  ; horizontal pan (0-16), L/R buttons
 scanROW  dw                  ; scanner round-robin row
 .ENDE
 
-.DEFINE CQBASE $0800         ; 4 KB VRAM write queue (native WRAM)
-.DEFINE CQMASK $0FFF
+.DEFINE CQBASE $0800         ; 1 KB VRAM write queue (native WRAM; kbd-only
+.DEFINE CQMASK $03FF         ; traffic since M8 — $0C00-$0FFF spare, and
+                             ; $1000-$4FFF is the CGA adapter RAM)
 .DEFINE BLANKE $2040         ; space glyph pair | priority
 
 ; ANSI/CSI parser + INT 10h scroll scratch ($0700-$073F kb ring,
@@ -141,7 +144,7 @@ con_off:                     ; A = buffer offset of (cROW, cCOL)
     adc cT1
     rts
 
-con_putc:                    ; A = char -> 80x25 buffer at $7F:E000
+con_putc:                    ; A = char -> 80x25 text page at VBUF
     and #$00FF
     ldx aST                  ; ANSI escape in progress?
     bne _cp_esc
@@ -178,7 +181,7 @@ _cp_nbel:
     xba
     and #$FF00
     ora cT0
-    sta.l $7FE000,x          ; char + current attribute
+    sta.l VBUF,x          ; char + current attribute
     lda cCOL
     inc a
     sta cCOL
@@ -276,7 +279,7 @@ _cp_eol:
     and #$FF00
     ora #$0020
 _cp_ek:
-    sta.l $7FE000,x
+    sta.l VBUF,x
     inx
     inx
     dec cT0
@@ -376,14 +379,14 @@ _nl_scroll:                  ; scroll the buffer, not the tilemap
     phx
     phb
     lda #3839
-    ldx #$E0A0
-    ldy #$E000
-    .db $54, $7F, $7F        ; mvn $7F,$7F
+    ldx #VBOFS+160
+    ldy #VBOFS
+    .db $54, $7E, $7E        ; mvn $7E,$7E
     plb
     ldx #$0000
     lda #$0720
 _nl_c:
-    sta.l $7FEF00,x
+    sta.l VBUF+3840,x
     inx
     inx
     cpx #160
@@ -396,7 +399,7 @@ con_clear:
     ldx #$0000
     lda #$0720
 _cc_f:
-    sta.l $7FE000,x
+    sta.l VBUF,x
     inx
     inx
     cpx #4000
@@ -641,7 +644,7 @@ _h10_n3:
     bne _h10_n4
     jsr con_off
     tax
-    lda.l $7FE000,x          ; AL = char, AH = its real attribute
+    lda.l VBUF,x          ; AL = char, AH = its real attribute
     sta gAX
     rts
 _h10_n4:
@@ -669,18 +672,18 @@ _h10_wc:                     ; AH=9: char AL with attribute BL
     lda gAX
     and #$00FF
     ora cT0
-    sta.l $7FE000,x
+    sta.l VBUF,x
     rts
 _h10_wca:                    ; AH=0A: char only, cell attribute kept
     jsr con_off
     tax
-    lda.l $7FE000,x
+    lda.l VBUF,x
     and #$FF00
     sta cT0
     lda gAX
     and #$00FF
     ora cT0
-    sta.l $7FE000,x
+    sta.l VBUF,x
     rts
 _h10_scrj:
     jmp _h10_scr
@@ -767,7 +770,7 @@ _h10_sb:
     tay
     ldx aT1
     lda aT0
-    .db $54, $7F, $7F        ; mvn $7F,$7F
+    .db $54, $7E, $7E        ; mvn $7E,$7E
     plb
     plx
     ply
@@ -811,7 +814,7 @@ _h10_dn:
     tay
     ldx aT1
     lda aT0
-    .db $44, $7F, $7F        ; mvp $7F,$7F
+    .db $44, $7E, $7E        ; mvp $7E,$7E
     plb
     plx
     ply
@@ -827,7 +830,7 @@ _h10_blank:                  ; X = buffer addr, A = row count
     and #$FF00               ; BH = fill attribute (already the high byte)
     ora #$0020
 _h10_bl:
-    sta.l $7F0000,x
+    sta.l $7E0000,x
     inx
     inx
     dec aT0
@@ -847,10 +850,10 @@ mul160:                      ; A = rows -> A = rows*160
     adc aT2
     rts
 
-row_addr:                    ; A = row -> in-bank addr $E000 + row*160
+row_addr:                    ; A = row -> in-bank ($7E) addr VBOFS + row*160
     jsr mul160
     clc
-    adc #$E000
+    adc #VBOFS
     rts
 
 hle_int11:
@@ -859,7 +862,7 @@ hle_int11:
     rts
 
 hle_int12:
-    lda #112                 ; KB of guest RAM
+    lda #108                 ; KB of guest RAM
     sta gAX
     rts
 
@@ -1540,9 +1543,10 @@ _rst_clr:
     dex
     bne _rst_clr
 
-    ; -- guest memory: zero $7E:2000-$7E:FFFF and $7F:0000-$7F:9FFF
+    ; -- adapter RAM + guest memory: zero $7E:1000-$7E:FFFF (16 KB CGA
+    ; adapter then guest low) and all of $7F (guest 108 KB to $7F:FFFF)
     lda #$0000
-    ldx #$2000
+    ldx #VBOFS
 _rst_z1:
     sta.l $7E0000,x
     inx
@@ -1553,39 +1557,38 @@ _rst_z2:
     sta.l $7F0000,x
     inx
     inx
-    cpx #$E000               ; guest now 112 KB ($7E2000-$7FDFFF)
-    bcc _rst_z2
+    bne _rst_z2
 
     ; -- IVT: all 256 vectors -> 0000:04F0 (IRET stub in BDA scratch,
     ; safe from the boot sector's directory read at 0x500-0x6FF)
     ldx #$0000
 _rst_ivt:
     lda #$04F0
-    sta.l $7E2000,x
+    sta.l $7E5000,x
     inx
     inx
     lda #$0000
-    sta.l $7E2000,x
+    sta.l $7E5000,x
     inx
     inx
     cpx #$0400
     bcc _rst_ivt
     sep #$20
     lda.b #$CF               ; IRET
-    sta.l $7E24F0
+    sta.l $7E54F0
     rep #$20
 
     ; -- BIOS data area: equipment + memory size
     lda #$0061
-    sta.l $7E2410
-    lda #112
-    sta.l $7E2413
+    sta.l $7E5410
+    lda #108
+    sta.l $7E5413
 
     ; -- boot sector: image offset 0 (bank 2) -> linear 0x7C00
     ldx #$0000
 _rst_bs:
     lda.l $828000,x
-    sta.l $7E9C00,x
+    sta.l $7ECC00,x
     inx
     inx
     cpx #$0200
@@ -1904,7 +1907,7 @@ _sr_go:
     beq _sr_b2
     jmp _sr_w40
 _sr_b2:
-    lda.l $7FE000,x
+    lda.l VBUF,x
     tay
     and #$FF00
     cmp #$0700               ; the default attr: no LUT, palette 0
@@ -1955,7 +1958,7 @@ _sr_b2w:
     lda #32
     sta nCNT
 _sr_b1:
-    lda.l $7FE000,x
+    lda.l VBUF,x
     tay
     and #$FF00
     cmp #$0700
@@ -1994,7 +1997,7 @@ _sr_b1w:
     ; 40-column mode: one char per 16px cell, double-width glyphs
     ; (fat font at tiles 512+2c) on BG2; BG1 fully transparent.
 _sr_w40:
-    lda.l $7FE000,x
+    lda.l VBUF,x
     tay
     and #$00FF
     cmp #$0080

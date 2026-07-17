@@ -12,7 +12,7 @@ local function bufhas(str)
   for r = 0, 24 do
     local s = ""
     for c = 0, 79 do
-      local ch = emu.read(0x7FE000 + r*160 + c*2, emu.memType.snesMemory)
+      local ch = emu.read(0x7E1000 + r*160 + c*2, emu.memType.snesMemory)
       if ch < 32 or ch > 126 then ch = 32 end
       s = s .. string.char(ch)
     end
@@ -23,8 +23,8 @@ end
 local function bufbyte2(b1, b2)
   for r = 0, 24 do
     for c = 0, 78 do
-      if emu.read(0x7FE000 + r*160 + c*2, emu.memType.snesMemory) == b1 and
-         emu.read(0x7FE000 + r*160 + (c+1)*2, emu.memType.snesMemory) == b2 then
+      if emu.read(0x7E1000 + r*160 + c*2, emu.memType.snesMemory) == b1 and
+         emu.read(0x7E1000 + r*160 + (c+1)*2, emu.memType.snesMemory) == b2 then
         return true
       end
     end

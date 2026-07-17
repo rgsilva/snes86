@@ -23,7 +23,7 @@ fi
 
 echo "== host smoke (runpc boots DOS, reads C:) =="
 if printf 'type c:\\autoexec.bat\r' \
-     | ../core-c/build/runpc -m 112 -l 1500000000 -d build/hd.img build/adisk.img 2>/dev/null \
+     | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img build/adisk.img 2>/dev/null \
      | grep -q "PATH A:"; then
   echo "PASS host-smoke"
 else
