@@ -1,0 +1,11 @@
+core-c/build/
+snes/build/
+core-c/tests/vectors/*.json.gz
+core-c/tests/vectors/metadata.json
+disks/*.img
+disks/*.7z
+*.o
+*.dylib
+*.sfc
+*.sym
+.DS_Store

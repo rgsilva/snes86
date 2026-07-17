@@ -1,0 +1,3324 @@
+; snes86 — DOS boot ROM (M6): boots PC DOS 2.00 on the 65816 core.
+;
+; The full HLE-BIOS machine: the parity-proven CPU core plus native
+; handlers for INT 10h (mode-5 console), INT 11h/12h (equipment/memory),
+; INT 13h (ROM floppy in banks 2-7, write-protected), INT 16h (keyboard
+; ring; START injects "dir\r"), INT 1Ah (NMI-derived ticks).
+;
+; Guest memory: linear 0x00000-0x17FFF (96 KB) at $7E:2000-$7F:9FFF.
+; Boot: sector 0 -> 0000:7C00, all IVT vectors -> IRET stub at 0000:0600.
+; The keyboard ring is pre-loaded with two CRs to auto-answer the DOS
+; date/time prompts.
+
+.DEFINE DOSBIOS
+.INCLUDE "build/trace_meta.asm"
+
+.INCLUDE "hdr_dos.asm"
+.INCLUDE "cpu.asm"
+.INCLUDE "cpu2.asm"
+
+; console / harness state (above the core's DP usage)
+.ENUM $00C0
+cNMI     dw                  ; frame counter
+cQH      dw                  ; VRAM queue head (producer, byte offset)
+cQT      dw                  ; VRAM queue tail (NMI)
+cROW     dw                  ; cursor row 0-27
+cCOL     dw                  ; cursor col 0-63
+cTOP     dw                  ; ring top tilemap row
+cJoyP    dw
+cJoyN    dw
+cTickA   dw                  ; 16.16 tick accumulator (18.2 Hz from NMI)
+cTickL   dw
+cTickH   dw
+cKbH     dw                  ; keyboard ring: byte offsets into kbRING
+cKbT     dw
+cT0      dw
+cT1      dw
+tSKIP    dw                  ; trace-mode skip counter (nothing else touches)
+kSEL     dw                  ; on-screen keyboard: selected key index
+kMOD     dw                  ; bit0 shift, bit1 ctrl (sticky)
+kVIS     dw                  ; keyboard visible
+kRPT     dw                  ; d-pad autorepeat timer
+kROWS    dw                  ; terminal scroll threshold (22 vis / 27 hid)
+kT0      dw                  ; keyboard temps (NMI-only: never share the
+kT1      dw                  ; core/INT13 temps, which may be live when
+kT2      dw                  ; the NMI fires mid-instruction)
+kT3      dw
+cTickP   dw                  ; timer tick pending (INT 8 delivery)
+cT2n     dw                  ; INT13 scratch
+kPAN     dw                  ; horizontal pan (0-16), L/R buttons
+scanROW  dw                  ; scanner round-robin row
+.ENDE
+
+.DEFINE CQBASE $0800         ; 4 KB VRAM write queue (native WRAM)
+.DEFINE CQMASK $0FFF
+.DEFINE BLANKE $2040         ; space glyph pair | priority
+
+; ANSI/CSI parser + INT 10h scroll scratch ($0700-$073F kb ring,
+; $0740-$077F HDMA tables, $0800 queue — this slice is free)
+.ENUM $0780
+aST      dw                  ; 0 normal, 1 saw ESC, 2 in CSI params
+aP1      dw                  ; first CSI parameter (before ';')
+aAC      dw                  ; accumulating/last CSI parameter
+aT0      dw                  ; scroll scratch
+aT1      dw
+aT2      dw
+cWID     dw                  ; console width: 80 (modes 2/3) or 40 (0/1)
+cMODE    dw                  ; current INT 10h video mode byte
+sFLIP    dw                  ; PIT ch2 divisor byte flip-flop
+sDIV     dw                  ; PIT ch2 divisor (1193182 Hz / div = tone)
+sGATE    dw                  ; speaker gate (port 61h bits 0-1 both set)
+sD0      dw                  ; pitch divide scratch
+sD1      dw
+sREM     dw
+cBEEP    dw                  ; BEL beep frames remaining (NMI countdown)
+nCNT     dw                  ; scanner loop counter (Y is the LUT index)
+nTIL     dw                  ; scanner tile word scratch
+nNEXT    dw                  ; next dynamic pair slot (index into sr_pairs)
+nP       dw                  ; sr_alloc scratch: pair number
+nFG      dw                  ; sr_alloc scratch: fg color
+nBG      dw                  ; sr_alloc scratch: bg color
+cATTR    dw                  ; current teletype attribute (ANSI SGR)
+aNP      dw                  ; CSI parameter count
+.ENDE
+
+.BANK 0 SLOT 0
+.ORG 0
+.SECTION "DosBoot" SEMIFREE
+
+.ACCU 16
+.INDEX 16
+
+EmptyHandler:
+    rti
+
+;----------------------------------------------------------------------
+; console (mode-5 64x28, same scheme the M1 demo proved out)
+; CR = col 0, LF = next line. All code here must preserve Y (guest IP).
+;----------------------------------------------------------------------
+con_enq:                     ; A = vram addr / $8000 vofs-cmd, X free
+    pha
+_ce_wait:
+    lda cQT
+    sec
+    sbc cQH
+    sec
+    sbc #4
+    and #CQMASK
+    cmp #$0130
+    bcs _ce_room             ; keep >= room for a scroll burst
+    wai
+    bra _ce_wait
+_ce_room:
+    pla
+    ldx cQH
+    sta.w CQBASE,x
+    lda cT0
+    sta.w CQBASE+2,x
+    txa
+    clc
+    adc #4
+    and #CQMASK
+    sta cQH
+    rts
+
+con_off:                     ; A = buffer offset of (cROW, cCOL)
+    lda cROW
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta cT1
+    asl a
+    asl a
+    clc
+    adc cT1                  ; row*160
+    sta cT1
+    lda cCOL
+    asl a
+    clc
+    adc cT1
+    rts
+
+con_putc:                    ; A = char -> 80x25 buffer at $7F:E000
+    and #$00FF
+    ldx aST                  ; ANSI escape in progress?
+    bne _cp_esc
+    cmp #$001B
+    bne _cp_norm
+    inc aST                  ; ESC: start sequence
+    rts
+_cp_norm:
+    cmp #$000D
+    bne _cp_ncr
+    stz cCOL
+    rts
+_cp_ncr:
+    cmp #$000A
+    bne _cp_nnl
+    jmp con_nl
+_cp_nnl:
+    cmp #$0008
+    bne _cp_nbs
+    lda cCOL
+    beq _cp_done
+    dec cCOL
+_cp_done:
+    rts
+_cp_nbs:
+    cmp #$0007
+    bne _cp_nbel
+    jmp beep_bel             ; BEL rings the S-SMP
+_cp_nbel:
+    sta cT0
+    jsr con_off
+    tax
+    lda cATTR
+    xba
+    and #$FF00
+    ora cT0
+    sta.l $7FE000,x          ; char + current attribute
+    lda cCOL
+    inc a
+    sta cCOL
+    cmp cWID
+    bcc _cp_ret
+    stz cCOL
+    jmp con_nl
+_cp_ret:
+    rts
+
+; ---- minimal ANSI/CSI parser (the '96 Infocom interpreter emits these):
+; ESC[r;cH cursor, ESC[2J clear, ESC[K clear-eol, ESC[..m attrs (ignored)
+_cp_esc:
+    cpx #1
+    bne _cp_csi
+    cmp #$005B               ; '[' after ESC?
+    bne _cp_abort
+    inc aST                  ; -> collecting params
+    stz aP1
+    stz aAC
+    stz aNP
+    rts
+_cp_abort:
+    stz aST                  ; lone ESC: drop it, print char as-is
+    bra _cp_norm
+_cp_csi:
+    cmp #$003B               ; ';'
+    bne _cp_dig
+    lda aAC
+    sta aP1
+    stz aAC
+    inc aNP
+    rts
+_cp_dig:
+    cmp #$0030               ; '0'-'9': aAC = aAC*10 + digit
+    bcc _cp_fin
+    cmp #$003A
+    bcs _cp_fin
+    and #$000F
+    sta cT0
+    lda aAC
+    asl a
+    asl a
+    clc
+    adc aAC                  ; *5
+    asl a                    ; *10
+    clc
+    adc cT0
+    sta aAC
+    rts
+_cp_fin:                     ; A = final letter; aP1/aAC = params
+    stz aST
+    cmp #$0048               ; 'H' / 'f': set cursor (1-based row;col)
+    beq _cp_pos
+    cmp #$0066
+    beq _cp_pos
+    cmp #$004A               ; 'J': clear screen
+    beq _cp_cls
+    cmp #$004B               ; 'K': clear to end of line
+    beq _cp_eol
+    cmp #$006D               ; 'm': set attributes (SGR)
+    beq _cp_sgr
+    rts
+_cp_cls:
+    jmp con_clear
+_cp_pos:
+    lda aP1
+    beq _cp_pr0
+    dec a
+_cp_pr0:
+    cmp #25
+    bcc _cp_pr1
+    lda #24
+_cp_pr1:
+    sta cROW
+    lda aAC
+    beq _cp_pc0
+    dec a
+_cp_pc0:
+    cmp #80
+    bcc _cp_pc1
+    lda #79
+_cp_pc1:
+    sta cCOL
+    rts
+_cp_eol:
+    jsr con_off
+    tax
+    lda #80
+    sec
+    sbc cCOL
+    sta cT0
+    lda cATTR
+    xba
+    and #$FF00
+    ora #$0020
+_cp_ek:
+    sta.l $7FE000,x
+    inx
+    inx
+    dec cT0
+    bne _cp_ek
+    rts
+
+_cp_sgr:                     ; ESC[..m — apply up to two SGR parameters
+    lda aNP
+    beq _cp_sg1
+    lda aP1
+    jsr sgr_apply
+_cp_sg1:
+    lda aAC
+    jsr sgr_apply
+    rts
+
+sgr_apply:                   ; A = SGR parameter -> update cATTR
+    bne _sg_n0
+    lda #$0007               ; 0: reset
+    sta cATTR
+    rts
+_sg_n0:
+    cmp #1
+    bne _sg_n1
+    lda cATTR
+    ora #$0008               ; 1: bold -> intensity bit
+    sta cATTR
+    rts
+_sg_n1:
+    cmp #7
+    bne _sg_n7
+    lda #$0070               ; 7: reverse video
+    sta cATTR
+    rts
+_sg_n7:
+    cmp #30
+    bcc _sg_r
+    cmp #38
+    bcs _sg_bg
+    sec
+    sbc #30
+    asl a
+    tax
+    lda cATTR
+    and #$00F8               ; keep bg + intensity
+    ora.l ansi2cga,x
+    sta cATTR
+    rts
+_sg_bg:
+    cmp #40
+    bcc _sg_r
+    cmp #48
+    bcs _sg_r
+    sec
+    sbc #40
+    asl a
+    tax
+    lda.l ansi2cga,x
+    asl a
+    asl a
+    asl a
+    asl a
+    sta cT0
+    lda cATTR
+    and #$000F
+    ora cT0
+    sta cATTR
+_sg_r:
+    rts
+
+ansi2cga: .dw 0, 4, 2, 6, 1, 5, 3, 7
+
+attr_reset:                  ; LUT: all unallocated except $07 -> pair 0
+    ldx #$0000
+    lda #$FFFF
+_ar_l:
+    sta.w $0400,x
+    inx
+    inx
+    cpx #$0100
+    bcc _ar_l
+    stz.w $040E              ; attr $07 = the fixed green pair
+    stz nNEXT
+    lda #$0007
+    sta cATTR
+    rts
+
+con_nl:
+    lda cROW
+    cmp #24
+    bcs _nl_scroll
+    inc a
+    sta cROW
+    rts
+_nl_scroll:                  ; scroll the buffer, not the tilemap
+    phy                      ; Y is the guest IP — MVN clobbers X/Y!
+    phx
+    phb
+    lda #3839
+    ldx #$E0A0
+    ldy #$E000
+    .db $54, $7F, $7F        ; mvn $7F,$7F
+    plb
+    ldx #$0000
+    lda #$0720
+_nl_c:
+    sta.l $7FEF00,x
+    inx
+    inx
+    cpx #160
+    bcc _nl_c
+    plx
+    ply
+    rts
+
+con_clear:
+    ldx #$0000
+    lda #$0720
+_cc_f:
+    sta.l $7FE000,x
+    inx
+    inx
+    cpx #4000
+    bcc _cc_f
+    stz cROW
+    stz cCOL
+    rts
+
+;----------------------------------------------------------------------
+; PC speaker -> S-SMP. Guest OUTs to the PIT ($42/$43) and the gate
+; ($61) land here; tone = 1193182/divisor Hz, forwarded to the SPC700
+; beep driver as DSP pitch = 2443637/divisor (see spc_beep.asm).
+; Preserves Y (guest IP). X and cT0 are scratch.
+;----------------------------------------------------------------------
+spk_out:                     ; X = port, A = value (low byte)
+    cpx #$0042
+    beq _sk_div
+    cpx #$0043
+    beq _sk_ctl
+    cpx #$0061
+    beq _sk_gate
+    rts
+_sk_ctl:
+    stz sFLIP                ; control write resets the byte flip-flop
+    rts
+_sk_div:
+    and #$00FF
+    ldx sFLIP
+    bne _sk_hi
+    sta sDIV                 ; low byte (high cleared by the AND)
+    inc sFLIP
+    rts
+_sk_hi:
+    xba
+    and #$FF00
+    sta cT0
+    lda sDIV
+    and #$00FF
+    ora cT0
+    sta sDIV
+    stz sFLIP
+    lda sGATE                ; retune a playing note (GW-BASIC PLAY)
+    bne _sk_send
+    rts
+_sk_gate:
+    and #$0003               ; bits 0-1 both set = speaker on
+    cmp #$0003
+    beq _sk_on
+    stz sGATE
+    sep #$20
+    lda #$00
+    sta.l $002142            ; silence
+    rep #$20
+    rts
+_sk_on:
+    lda sGATE
+    bne _sk_r                ; already on
+    inc sGATE
+_sk_send:
+    ; pitch = 2443637 / divisor, clamped to the DSP's 14 bits
+    lda sDIV
+    beq _sk_r
+    lda #$4A75               ; 2443637 = $00254A75
+    sta sD0
+    lda #$0025
+    sta sD1
+    stz sREM
+    ldx #32
+_sk_dl:
+    asl sD0
+    rol sD1
+    rol sREM
+    bcs _sk_sb               ; bit 17 out: remainder >= divisor for sure
+    lda sREM
+    cmp sDIV
+    bcc _sk_nx
+_sk_sb:
+    lda sREM
+    sec
+    sbc sDIV
+    sta sREM
+    inc sD0                  ; quotient bit
+_sk_nx:
+    dex
+    bne _sk_dl
+    lda sD1
+    bne _sk_mx
+    lda sD0
+    cmp #$4000
+    bcc _sk_snd
+_sk_mx:
+    lda #$3FFF
+_sk_snd:
+    sep #$20
+    sta.l $002140            ; pitch lo
+    xba
+    sta.l $002141            ; pitch hi
+    lda #$01
+    sta.l $002142            ; play
+    rep #$20
+_sk_r:
+    rts
+
+beep_bel:                    ; BEL: ~886 Hz for 12 frames
+    sep #$20
+    lda #$17
+    sta.l $002140
+    lda #$07
+    sta.l $002141
+    lda #$01
+    sta.l $002142
+    rep #$20
+    lda #12
+    sta cBEEP
+    rts
+
+apu_upload:                  ; IPL-ROM upload of spc_beep to $0200, run it
+    sep #$20
+    ldx #$0000
+_au_w0:
+    lda.l $002140
+    cmp #$AA
+    beq _au_go
+    dex
+    bne _au_w0
+    rep #$20                 ; APU never answered: run silent
+    rts
+_au_go:
+    rep #$20
+    lda #$0200
+    sta.l $002142            ; dest address
+    sep #$20
+    lda #$01
+    sta.l $002141
+    lda #$CC
+    sta.l $002140
+_au_wc:
+    lda.l $002140
+    cmp #$CC
+    bne _au_wc
+    ldx #$0000
+_au_l:
+    lda.l spc_blob,x
+    sta.l $002141
+    txa
+    sta cT0
+    sta.l $002140
+_au_k:
+    lda.l $002140
+    cmp cT0
+    bne _au_k
+    inx
+    cpx #240
+    bcc _au_l
+    rep #$20
+    lda #$0210
+    sta.l $002142            ; entry point
+    sep #$20
+    lda #$00
+    sta.l $002141
+    lda #241                 ; last counter + 2: go
+    sta.l $002140
+    ldx #200                 ; let the IPL take the jump...
+_au_j:
+    dex
+    bne _au_j
+    lda #$00                 ; ...then scrub the mailbox: the driver
+    sta.l $002140            ; must find port2 = 0 (silence), not the
+    sta.l $002141            ; stale transfer address
+    sta.l $002142
+    rep #$20
+    rts
+
+spc_blob:
+.INCBIN "build/spc_beep64.bin" SKIP $0200 READ 240
+
+bdisk_start:                 ; B: format template (bank 0: bank 1 is full)
+.INCBIN "build/bdisk.bin"
+
+con_puts:                    ; X = string address (bank 0)
+    phy
+    txy
+_ps_l:
+    lda.w $0000,y
+    and #$00FF
+    beq _ps_d
+    phy
+    jsr con_putc
+    ply
+    iny
+    bra _ps_l
+_ps_d:
+    ply
+    rts
+
+;----------------------------------------------------------------------
+; HLE BIOS handlers (called from do_int; must preserve Y = return IP)
+;----------------------------------------------------------------------
+hle_int10:
+    lda gAX
+    xba
+    and #$00FF
+    cmp #$000E
+    bne _h10_n1
+    lda gAX
+    jmp con_putc
+_h10_n1:
+    cmp #$0002
+    bne _h10_n2
+    lda gDX                  ; DH=row DL=col
+    xba
+    and #$00FF
+    cmp #25
+    bcs _h10_ret
+    sta cROW
+    lda gDX
+    and #$00FF
+    cmp #80
+    bcs _h10_ret
+    sta cCOL
+_h10_ret:
+    rts
+_h10_n2:
+    cmp #$0003
+    bne _h10_n3
+    lda cROW
+    xba
+    and #$FF00
+    ora cCOL
+    sta gDX
+    lda #$0607
+    sta gCX
+    rts
+_h10_n3:
+    cmp #$0000
+    beq _h10_mode
+    cmp #$0006
+    beq _h10_scrj
+    cmp #$0007
+    beq _h10_scrj
+    cmp #$0008
+    bne _h10_n4
+    jsr con_off
+    tax
+    lda.l $7FE000,x          ; AL = char, AH = its real attribute
+    sta gAX
+    rts
+_h10_n4:
+    cmp #$000F
+    bne _h10_n5
+    lda cWID
+    xba
+    and #$FF00               ; AH = columns
+    ora cMODE                ; AL = mode
+    sta gAX
+    rts
+_h10_n5:
+    cmp #$0009
+    beq _h10_wc
+    cmp #$000A
+    beq _h10_wca
+    rts
+_h10_wc:                     ; AH=9: char AL with attribute BL
+    jsr con_off
+    tax
+    lda gBX
+    xba
+    and #$FF00
+    sta cT0
+    lda gAX
+    and #$00FF
+    ora cT0
+    sta.l $7FE000,x
+    rts
+_h10_wca:                    ; AH=0A: char only, cell attribute kept
+    jsr con_off
+    tax
+    lda.l $7FE000,x
+    and #$FF00
+    sta cT0
+    lda gAX
+    and #$00FF
+    ora cT0
+    sta.l $7FE000,x
+    rts
+_h10_scrj:
+    jmp _h10_scr
+
+_h10_mode:                   ; AH=0 set mode: AL 0/1 = 40x25, else 80x25
+    lda gAX
+    and #$00FF
+    sta cMODE
+    cmp #2
+    bcs _h10_m80
+    lda #40
+    bra _h10_mw
+_h10_m80:
+    lda #80
+_h10_mw:
+    sta cWID
+    stz kPAN
+    jsr attr_reset
+_h10_clear:
+    jmp con_clear
+
+_h10_sret:
+    rts
+
+_h10_scr:
+    ; window scroll, full-width windows only (CL=0, DL>=79)
+    lda gCX
+    and #$00FF
+    bne _h10_sret
+    lda cWID
+    dec a
+    sta aT2
+    lda gDX
+    and #$00FF
+    cmp aT2
+    bcc _h10_sret
+    lda gCX
+    xba
+    and #$00FF               ; CH = top row
+    cmp #25
+    bcs _h10_sret
+    sta cT0
+    lda gDX
+    xba
+    and #$00FF               ; DH = bottom row
+    cmp #25
+    bcc _h10_sb
+    lda #24
+_h10_sb:
+    cmp cT0
+    bcc _h10_sret
+    sec
+    sbc cT0
+    inc a
+    sta cT1                  ; window height (rows)
+    lda gAX
+    and #$00FF               ; AL = line count
+    beq _h10_wclr
+    cmp cT1
+    bcs _h10_wclr            ; scrolling the whole window = clear it
+    sta cT2n
+    lda gAX
+    xba
+    and #$00FF
+    cmp #$0007
+    beq _h10_dn
+    ; ---- scroll up: rows top+AL..bot -> top, blank the bottom AL rows
+    lda cT1
+    sec
+    sbc cT2n
+    jsr mul160
+    dec a
+    sta aT0                  ; byte count - 1
+    lda cT0
+    clc
+    adc cT2n
+    jsr row_addr
+    sta aT1                  ; src
+    lda cT0
+    jsr row_addr             ; dst
+    phy                      ; Y = guest IP; MVN clobbers X/Y
+    phx
+    phb
+    tay
+    ldx aT1
+    lda aT0
+    .db $54, $7F, $7F        ; mvn $7F,$7F
+    plb
+    plx
+    ply
+    lda cT0
+    clc
+    adc cT1
+    sec
+    sbc cT2n
+    jsr row_addr
+    tax                      ; blank start
+    lda cT2n
+    bra _h10_blank
+_h10_wclr:                   ; clear rows top..top+height-1
+    lda cT0
+    jsr row_addr
+    tax
+    lda cT1
+    bra _h10_blank
+_h10_dn:
+    ; ---- scroll down: rows top..bot-AL -> top+AL, blank the top AL rows
+    lda cT1
+    sec
+    sbc cT2n
+    jsr mul160
+    dec a
+    sta aT0                  ; byte count - 1
+    lda cT0
+    jsr row_addr
+    clc
+    adc aT0
+    sta aT1                  ; src (highest byte, MVP descends)
+    lda cT0
+    clc
+    adc cT2n
+    jsr row_addr
+    clc
+    adc aT0                  ; dst (highest byte)
+    phy
+    phx
+    phb
+    tay
+    ldx aT1
+    lda aT0
+    .db $44, $7F, $7F        ; mvp $7F,$7F
+    plb
+    plx
+    ply
+    lda cT0
+    jsr row_addr
+    tax
+    lda cT2n
+_h10_blank:                  ; X = buffer addr, A = row count
+    jsr mul160
+    lsr a
+    sta aT0                  ; words
+    lda gBX
+    and #$FF00               ; BH = fill attribute (already the high byte)
+    ora #$0020
+_h10_bl:
+    sta.l $7F0000,x
+    inx
+    inx
+    dec aT0
+    bne _h10_bl
+    rts
+
+mul160:                      ; A = rows -> A = rows*160
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; *32
+    sta aT2
+    asl a
+    asl a                    ; *128
+    clc
+    adc aT2
+    rts
+
+row_addr:                    ; A = row -> in-bank addr $E000 + row*160
+    jsr mul160
+    clc
+    adc #$E000
+    rts
+
+hle_int11:
+    lda #$0061               ; two floppies (A: B:), 80x25 color; C: is
+    sta gAX                  ; the fixed disk (INT 13h DL=80h)
+    rts
+
+hle_int12:
+    lda #112                 ; KB of guest RAM
+    sta gAX
+    rts
+
+hle_int1A:
+    lda gAX
+    xba
+    and #$00FF
+    bne _h1a_set
+    lda cTickH
+    sta gCX
+    lda cTickL
+    sta gDX
+    sep #$20
+    stz gAX                  ; AL=0: no midnight rollover
+    rep #$20
+    rts
+_h1a_set:
+    cmp #$0001
+    beq _h1a_ret
+    jsr flags_norm
+    lda fSTATIC
+    ora #$0001
+    sta fSTATIC
+_h1a_ret:
+    rts
+
+hle_int16:
+    lda gAX
+    xba
+    and #$00FF
+    bne _h16_n0
+    ; AH=0: pop key (DOS 2.0 polls AH=1 first, so this never blocks)
+    lda cKbH
+    cmp cKbT
+    beq _h16_empty0
+    ldx cKbH
+    lda.w $0700,x
+    sta gAX
+    txa
+    clc
+    adc #2
+    and #$003E
+    sta cKbH
+    rts
+_h16_empty0:
+    dey                      ; ring empty: rewind IP so INT 16h re-executes
+    dey                      ; (emulator-level blocking; NMI will add keys)
+    rts
+_h16_n0:
+    cmp #$0001
+    bne _h16_n1
+    jsr flags_norm
+    lda cKbH
+    cmp cKbT
+    beq _h16_zf1
+    ldx cKbH
+    lda.w $0700,x
+    sta gAX
+    lda fSTATIC
+    and #$FFBF               ; ZF=0: key available
+    sta fSTATIC
+    rts
+_h16_zf1:
+    lda fSTATIC
+    ora #F_ZF
+    sta fSTATIC
+    rts
+_h16_n1:
+    cmp #$0002
+    bne _h16_ret
+    sep #$20
+    stz gAX
+    rep #$20
+_h16_ret:
+    rts
+
+;----------------------------------------------------------------------
+; INT 13h: floppy = 180 KB image in ROM banks 2-7 (read-only)
+; geometry 40 cyl / 1 head / 9 spt; LBA = cyl*9 + sec-1
+;----------------------------------------------------------------------
+hle_int13:
+    lda gAX
+    xba
+    and #$00FF
+    beq _h13_ok              ; 00 reset
+    cmp #$0001
+    beq _h13_ok              ; 01 status
+    cmp #$0004
+    beq _h13_ok              ; 04 verify
+    cmp #$0002
+    beq _h13_read
+    cmp #$0003
+    beq _h13_read            ; writes: routed per-drive (B: is writable)
+    cmp #$0008
+    beq _h13_parm            ; 08 get drive parameters (fixed disk only)
+    cmp #$000C
+    beq _h13_ok              ; XT fixed-disk extras: 0C seek
+    cmp #$000D
+    beq _h13_ok              ; 0D alternate reset
+    cmp #$0010
+    beq _h13_ok              ; 10 test ready
+    cmp #$0011
+    beq _h13_ok              ; 11 recalibrate
+_h13_bad:
+    lda #$0001
+_h13_err:
+    xba
+    and #$FF00
+    sta cT0
+    lda gAX
+    and #$00FF
+    ora cT0
+    sta gAX
+    jsr flags_norm
+    lda fSTATIC
+    ora #$0001               ; CF=1
+    sta fSTATIC
+    rts
+_h13_ok:
+    lda gAX
+    and #$00FF
+    sta gAX                  ; AH=0
+    jsr flags_norm
+    lda fSTATIC
+    and #$FFFE               ; CF=0
+    sta fSTATIC
+    rts
+_h13_parm:                   ; AH=08: only the fixed disk answers
+    lda gDX
+    and #$00FF
+    cmp #$0080
+    bne _h13_bad
+    lda #$6A11               ; CH=max cyl 106, CL=spt 17 (cyl hi bits 0)
+    sta gCX
+    lda #$0301               ; DH=max head 3, DL=1 fixed disk present
+    sta gDX
+    bra _h13_ok
+_h13_read:
+    lda gDX
+    and #$00FF
+    cmp #$0080
+    bne _h13_flp
+    jmp _h13_hd              ; C: fixed disk: own geometry
+_h13_flp:
+    ; floppy validation: DL<2, DH<2 (B: also needs DH=0), 1<=sec<=9, cyl<40
+    lda gDX
+    and #$FE00
+    bne _h13_badj
+    lda gDX
+    and #$00FF
+    cmp #2
+    bcs _h13_badj
+    lda gCX
+    and #$003F
+    beq _h13_badj
+    cmp #10
+    bcs _h13_badj
+    dec a
+    sta cT0                  ; sec-1
+    lda gCX
+    xba
+    and #$00FF               ; cyl
+    cmp #40
+    bcs _h13_badj
+    sta cT1                  ; cyl
+    asl a                    ; cyl*2
+    sta cT2n
+    lda gDX
+    xba
+    and #$00FF               ; head
+    clc
+    adc cT2n                 ; cyl*2+head
+    sta cT1
+    asl a
+    asl a
+    asl a
+    clc
+    adc cT1                  ; *9
+    clc
+    adc cT0
+    sta cT0                  ; LBA
+    ldx #24
+    lda gBX
+    jsr mk_ptr               ; mPTR = ES:BX
+    phy
+    lda gAX
+    and #$00FF
+    sta cT1                  ; sectors remaining
+    lda gDX
+    and #$00FF
+    beq _h13_romA
+    jmp _h13_vdisk           ; DL=1 -> B: VRAM disk
+_h13_romA:
+    lda #$0082               ; A: ROM disk, banks $82+
+_h13_rom:
+    sta cT2n                 ; bank base for _h13_sec
+    ; ---- ROM drives: read-only
+    lda gAX
+    xba
+    and #$00FF
+    cmp #$0003
+    bne _h13_sec
+    ply
+    lda #$0003               ; write-protected
+    jmp _h13_err
+_h13_badj:
+    jmp _h13_bad
+_h13_sec:
+    lda cT0
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    clc
+    adc cT2n                 ; per-drive bank base (fast mirrors)
+    sep #$20
+    sta mPTR2+2
+    rep #$20
+    lda cT0
+    and #$003F
+    asl a
+    xba
+    and #$FE00
+    clc
+    adc #$8000
+    sta mPTR2
+    ldy #0
+_h13_cp:
+    lda [mPTR2],y
+    sta [mPTR],y
+    iny
+    iny
+    cpy #512
+    bcc _h13_cp
+    lda mPTR
+    clc
+    adc #512
+    sta mPTR
+    bcc _h13_nc
+    sep #$20
+    inc mPTR+2
+    rep #$20
+_h13_nc:
+    inc cT0
+    dec cT1
+    lda cT1
+    bne _h13_sec
+    ply
+    jmp _h13_ok
+
+    ; ---- C: fixed disk (DL=80h): 107 cyl x 4 heads x 17 spt, ROM banks
+    ; $8E-$FF via the fast mirrors, read-only. LBA fits 16 bits (<=7275).
+_h13_hd:
+    lda gDX
+    and #$FC00               ; head < 4
+    bne _h13_badj2
+    lda gCX
+    and #$00C0               ; cyl bits 8-9 must be 0 (cyl < 107)
+    bne _h13_badj2
+    lda gCX
+    and #$003F               ; 1 <= sec <= 17
+    beq _h13_badj2
+    cmp #18
+    bcs _h13_badj2
+    dec a
+    sta cT0                  ; sec-1
+    lda gCX
+    xba
+    and #$00FF               ; cyl
+    cmp #107
+    bcs _h13_badj2
+    asl a
+    asl a                    ; cyl*4
+    sta cT2n
+    lda gDX
+    xba
+    and #$00FF               ; head
+    clc
+    adc cT2n                 ; cyl*4 + head
+    sta cT1
+    asl a
+    asl a
+    asl a
+    asl a                    ; *16
+    clc
+    adc cT1                  ; *17
+    clc
+    adc cT0
+    sta cT0                  ; LBA
+    ldx #24
+    lda gBX
+    jsr mk_ptr               ; mPTR = ES:BX
+    phy
+    lda gAX
+    and #$00FF
+    sta cT1                  ; sectors remaining
+    lda #$008E
+    sta cT2n                 ; HD bank base
+    lda gAX
+    xba
+    and #$00FF
+    cmp #$0003
+    bne _h13_secj
+    ply
+    lda #$0003               ; fixed disk is ROM: write-protected
+    jmp _h13_err
+_h13_secj:
+    jmp _h13_sec
+_h13_badj2:
+    jmp _h13_bad
+
+    ; ---- drive B: SRAM disk (LBA 0-63, 32 KB), read/write, persistent
+_h13_vdisk:
+    lda gDX
+    and #$FF00
+    bne _h13_vbad            ; B: is single-sided
+    lda cT0
+    clc
+    adc cT1
+    cmp #65
+    bcs _h13_vbad
+_h13_vsec:
+    lda cT0
+    xba
+    asl a                    ; LBA*512 -> SRAM offset
+    sta mPTR2
+    sep #$20
+    lda.b #$70               ; SRAM bank
+    sta mPTR2+2
+    rep #$20
+    lda gAX
+    xba
+    and #$00FF
+    cmp #$0003
+    beq _h13_vw
+    ldy #0
+_h13_vr:
+    lda [mPTR2],y            ; SRAM -> guest
+    sta [mPTR],y
+    iny
+    iny
+    cpy #512
+    bcc _h13_vr
+    bra _h13_vnext
+_h13_vw:
+    ldy #0
+_h13_vwl:
+    lda [mPTR],y             ; guest -> SRAM
+    sta [mPTR2],y
+    iny
+    iny
+    cpy #512
+    bcc _h13_vwl
+_h13_vnext:
+    lda mPTR
+    clc
+    adc #512
+    sta mPTR
+    bcc _h13_vnc
+    sep #$20
+    inc mPTR+2
+    rep #$20
+_h13_vnc:
+    inc cT0
+    dec cT1
+    lda cT1
+    bne _h13_vsec
+    ply
+    jmp _h13_ok
+_h13_vbad:
+    ply
+    lda #$0004               ; sector not found
+    jmp _h13_err
+
+;----------------------------------------------------------------------
+; keyboard inject: START types "dir" + Enter (called from NMI)
+;----------------------------------------------------------------------
+kb_push:                     ; A = (scan<<8)|ascii
+    ldx cKbT
+    sta.w $0700,x            ; 32-entry ring in low WRAM
+    txa
+    clc
+    adc #2
+    and #$003E
+    sta cKbT
+    rts
+
+kb_inject_str:               ; X = asciiz string (bank 0)
+_ki_l:
+    lda.w $0000,x
+    and #$00FF
+    beq _ki_d
+    ora #$1000               ; nonzero scan code (DOS only reads ASCII)
+    phx
+    jsr kb_push
+    plx
+    inx
+    bra _ki_l
+_ki_d:
+    rts
+
+kbstr_dir:  .db "dir b:", $0D, 0
+kbstr_copy: .db "copy command.com b:", $0D, 0
+kbstr_chk:  .db "chkdsk b:", $0D, 0
+
+;----------------------------------------------------------------------
+; NMI: ack, drain VRAM queue, ticks, joypad (DBR must be 0 for MMIO)
+;----------------------------------------------------------------------
+VBlank:
+    jml _vb_fast             ; NMI vector runs in bank $00: go fast
+_vb_fast:
+    rep #$30
+    pha
+    phx
+    phy
+    phb
+    sep #$20
+    lda.b #$00
+    pha
+    plb
+    lda $4210
+    lda.b #$80
+    sta $2115
+    rep #$20
+    inc cNMI
+.IFNDEF TRACE
+    ; 18.2065 Hz tick from 60.1 Hz NMI: add 0.30303 in 16.16 fixed point
+    lda cTickA
+    clc
+    adc #19854
+    sta cTickA
+    bcc _vb_notick
+    inc cTickL
+    bne _vb_tkw
+    inc cTickH
+_vb_tkw:
+    lda #1
+    sta cTickP               ; request a guest INT 8
+    lda cTickL               ; mirror into guest BDA 40:6C (TP polls it)
+    sta.l $7E246C
+    lda cTickH
+    sta.l $7E246E
+_vb_notick:
+.ENDIF
+    lda cBEEP                ; timed BEL: gate the speaker off at zero
+    beq _vb_nbeep
+    dec a
+    sta cBEEP
+    bne _vb_nbeep
+    sep #$20
+    lda #$00
+    sta.l $002142
+    rep #$20
+_vb_nbeep:
+    ldy #24                  ; drain budget (queue now kbd-only)
+_vb_drain:
+    lda cQT
+    cmp cQH
+    beq _vb_pad
+    tax
+    lda.w CQBASE,x
+    bmi _vb_vofs
+    sta $2116
+    lda.w CQBASE+2,x
+    sta $2118
+_vb_next:
+    txa
+    clc
+    adc #4
+    and #CQMASK
+    sta cQT
+    dey
+    bne _vb_drain
+_vb_pad:
+    sep #$20
+_vb_jw:
+    lda $4212
+    lsr a
+    bcs _vb_jw
+    rep #$20
+    lda cJoyN
+    sta cJoyP
+    lda $4218
+    sta cJoyN
+    jsr kbd_frame
+    jsr scan_rows            ; LAST: if the repaint overruns vblank only
+_vb_done:
+    rep #$30
+    plb
+    ply
+    plx
+    pla
+    rti
+_vb_vofs:
+    lda.w CQBASE+2,x
+    sep #$20
+    sta $0741
+    sta $0744
+    sta $0751
+    sta $0754
+    xba
+    sta $0742
+    sta $0745
+    sta $0752
+    sta $0755
+    rep #$20
+    bra _vb_next
+
+;----------------------------------------------------------------------
+; reset
+;----------------------------------------------------------------------
+Reset:
+    sei
+    clc
+    xce
+    jml _rst_fast            ; reset vectors land in bank $00: go fast
+_rst_fast:
+    rep #$38
+    ldx #$1FFF
+    txs
+    lda #$0000
+    tcd
+    sep #$20
+    lda.b #$00
+    pha
+    plb
+
+    lda.b #$8F
+    sta $2100
+    ; PPU init: mode 5 two-layer 64-col console (as proven in M1)
+    stz $2101
+    stz $2102
+    stz $2103
+    stz $2104
+    lda.b #$05
+    sta $2105
+    stz $2106
+    lda.b #$04
+    sta $2107
+    stz $2108
+    stz $2109
+    stz $210A
+    lda.b #$13
+    sta $210B
+    stz $210C
+    stz $210D
+    stz $210D
+    lda.b #$FF
+    sta $210E
+    lda.b #$03
+    sta $210E
+    stz $210F
+    stz $210F
+    lda.b #$FF
+    sta $2110
+    lda.b #$03
+    sta $2110
+    stz $2111
+    stz $2111
+    stz $2112
+    stz $2112
+    stz $2113
+    stz $2113
+    stz $2114
+    stz $2114
+    lda.b #$80
+    sta $2115
+    stz $211A
+    stz $2121
+    stz $2123
+    stz $2124
+    stz $2125
+    stz $2126
+    stz $2127
+    stz $2128
+    stz $2129
+    stz $212A
+    stz $212B
+    lda.b #$03
+    sta $212C
+    sta $212D
+    stz $212E
+    stz $212F
+    lda.b #$30
+    sta $2130
+    stz $2131
+    lda.b #$E0
+    sta $2132
+    stz $2133
+    stz $4200
+    lda.b #$FF
+    sta $4201
+    stz $420B
+    stz $420C
+    lda.b #$01
+    sta $420D                ; FastROM: 3.58 MHz cartridge access
+
+    ; CGRAM: fonts encode bg = color 1, fg = color 2, so each palette
+    ; holds one (bg, fg) attribute pair. Pair 0 (CGRAM 1/2, shared by
+    ; both layers' palette 0) = the default black/green. Pair 7 is the
+    ; fixed keyboard highlight: 2bpp pal 7 = CGRAM 29/30, 4bpp pal 7 =
+    ; CGRAM 113/114 (yellow bg, black fg). Pairs 1-3, 5-6 are allocated
+    ; dynamically from CGA attribute bytes (2bpp pal 4 aliases 4bpp
+    ; pal 1 in CGRAM, so pair 4 is unusable).
+    stz $2121
+    stz $2122
+    stz $2122                ; backdrop black
+    stz $2122
+    stz $2122                ; pair 0 bg: black
+    lda.b #$E0
+    sta $2122
+    lda.b #$03
+    sta $2122                ; pair 0 fg: green
+    lda.b #29
+    sta $2121
+    lda.b #$FF
+    sta $2122
+    lda.b #$03
+    sta $2122                ; pair 7 bg: yellow (2bpp)
+    stz $2122
+    stz $2122                ; pair 7 fg: black
+    lda.b #113
+    sta $2121
+    lda.b #$FF
+    sta $2122
+    lda.b #$03
+    sta $2122                ; pair 7 bg: yellow (4bpp)
+    stz $2122
+    stz $2122
+
+    ; fonts -> VRAM
+    rep #$20
+    lda #$1000
+    sta $2116
+    sep #$20
+    lda.b #$01
+    sta $4300
+    lda.b #$18
+    sta $4301
+    rep #$20
+    lda #font_bg2
+    sta $4302
+    sep #$20
+    lda.b #:font_bg2
+    sta $4304
+    rep #$20
+    lda #$3000
+    sta $4305
+    sep #$20
+    lda.b #$01
+    sta $420B
+    rep #$20
+    lda #$3000
+    sta $2116
+    lda #font_bg1
+    sta $4302
+    sep #$20
+    lda.b #:font_bg1
+    sta $4304
+    rep #$20
+    lda #$4000
+    sta $4305
+    sep #$20
+    lda.b #$01
+    sta $420B
+
+    ; clear tilemaps
+    rep #$20
+    lda #$0000
+    sta $2116
+    lda #BLANKE
+    ldx #2048
+_rst_clr:
+    sta $2118
+    dex
+    bne _rst_clr
+
+    ; -- guest memory: zero $7E:2000-$7E:FFFF and $7F:0000-$7F:9FFF
+    lda #$0000
+    ldx #$2000
+_rst_z1:
+    sta.l $7E0000,x
+    inx
+    inx
+    bne _rst_z1
+    ldx #$0000
+_rst_z2:
+    sta.l $7F0000,x
+    inx
+    inx
+    cpx #$E000               ; guest now 112 KB ($7E2000-$7FDFFF)
+    bcc _rst_z2
+
+    ; -- IVT: all 256 vectors -> 0000:04F0 (IRET stub in BDA scratch,
+    ; safe from the boot sector's directory read at 0x500-0x6FF)
+    ldx #$0000
+_rst_ivt:
+    lda #$04F0
+    sta.l $7E2000,x
+    inx
+    inx
+    lda #$0000
+    sta.l $7E2000,x
+    inx
+    inx
+    cpx #$0400
+    bcc _rst_ivt
+    sep #$20
+    lda.b #$CF               ; IRET
+    sta.l $7E24F0
+    rep #$20
+
+    ; -- BIOS data area: equipment + memory size
+    lda #$0061
+    sta.l $7E2410
+    lda #112
+    sta.l $7E2413
+
+    ; -- boot sector: image offset 0 (bank 2) -> linear 0x7C00
+    ldx #$0000
+_rst_bs:
+    lda.l $828000,x
+    sta.l $7E9C00,x
+    inx
+    inx
+    cpx #$0200
+    bcc _rst_bs
+
+    ; -- guest registers
+    lda #$0000
+    sta gAX
+    sta gCX
+    sta gBX
+    sta gSI
+    sta gDI
+    sta gBP
+    sta gDX                  ; DL = 0: boot drive A
+    sta gES
+    sta gCS
+    sta gSS
+    sta gDS
+    sta gHALT
+    sta lfKIND
+    lda #$7C00
+    sta gIP
+    sta gSP
+    lda #$F002
+    sta fSTATIC
+    lda #GUEST_BASE
+    sta bES
+    sta bCS
+    sta bSS
+    sta bDS
+    sep #$20
+    lda.b #$7E
+    sta bES+2
+    sta bCS+2
+    sta bSS+2
+    sta bDS+2
+    rep #$20
+
+    ; -- B: SRAM disk ($70:0000, 32 KB, battery-backed). Format from the
+    ; ROM template ONLY if the boot signature is missing — a formatted
+    ; disk means the battery kept the user's files: preserve them.
+    lda.l $7001FE
+    cmp #$AA55
+    bne _rst_dofmt
+    lda.l $700200
+    and #$00FF
+    cmp #$00FC               ; B: FAT media byte
+    beq _rst_fmtd
+_rst_dofmt:
+    ldx #$0000
+_rst_fmt:
+    lda.l bdisk_start,x
+    sta.l $700000,x
+    inx
+    inx
+    cpx #4608
+    bcc _rst_fmt
+_rst_fmtd:
+
+    ; -- on-screen keyboard: draw into its tilemaps, set up the HDMA
+    ; raster split (terminal scrolls above, keyboard fixed below)
+    jsr kbd_draw
+    stz kSEL
+    stz kMOD
+    stz kVIS
+    stz kRPT
+    lda #27
+    sta kROWS
+    stz cTOP                 ; kbd_tables derives the vofs from cTOP — it
+    jsr kbd_tables           ; must be zeroed BEFORE the tables are built
+                             ; (power-on WRAM is random: boot-time garbage
+                             ; here scrambled the whole display)
+    sep #$20
+    lda.b #$02               ; ch2: mode 2 (write-twice) -> $210E BG1VOFS
+    sta.l $004320
+    lda.b #$0E
+    sta.l $004321
+    lda.b #$02               ; ch3: -> $2110 BG2VOFS
+    sta.l $004330
+    lda.b #$10
+    sta.l $004331
+    stz.w $4340              ; ch4: mode 0 -> $2107 BG1SC
+    lda.b #$07
+    sta.l $004341
+    stz.w $4350              ; ch5: mode 0 -> $2108 BG2SC
+    lda.b #$08
+    sta.l $004351
+    stz.w $4324
+    stz.w $4334
+    stz.w $4344
+    stz.w $4354              ; tables live in bank 0 WRAM
+    rep #$20
+    lda #$0740
+    sta.l $004322
+    lda #$0750
+    sta.l $004332
+    lda #$0760
+    sta.l $004342
+    lda #$0770
+    sta.l $004352
+    sep #$20
+    lda.b #$3C               ; HDMA on channels 2-5
+    sta.l $00420C
+    rep #$20
+
+    ; -- console state + keyboard: pre-answer DATE and TIME prompts
+    stz cNMI
+    stz cQH
+    stz cQT
+    stz cROW
+    stz cCOL
+    stz cTOP
+    stz cJoyP
+    stz cJoyN
+    stz cTickA
+    stz cTickL
+    stz cTickH
+    stz cKbH
+    stz cKbT
+    stz cTickP
+    stz kPAN
+    stz scanROW
+    lda #80
+    sta cWID
+    lda #3
+    sta cMODE
+    stz aST
+    stz sFLIP
+    stz sDIV
+    stz sGATE
+    stz cBEEP
+    jsr attr_reset
+    jsr apu_upload
+    jsr con_clear
+
+    ; -- NMI + autojoy on, screen on
+    sep #$20
+    lda.b #$81
+    sta $4200
+    rep #$30
+    wai
+    wai
+    sep #$20
+    lda.b #$0F
+    sta $2100
+    rep #$30
+
+    ldx #boot_banner
+    jsr con_puts
+
+    ; -- run the 8086 forever
+.IFDEF TRACE
+    stz snapPTR
+    lda #TRACE_SKIP
+    sta tSKIP
+    lda #TRACE_COUNT
+    sta stepCNT
+_rst_run:
+    jsr x86step
+    lda tSKIP
+    beq _rst_snap
+    dec tSKIP
+    bra _rst_run
+_rst_snap:
+    jsr dsnap
+    dec stepCNT
+    bne _rst_run
+    lda #TRACE_COUNT
+    sta.l $7FFFFA
+    lda #$CAFE
+    sta.l $7FFFFC
+_rst_halt:
+    wai
+    bra _rst_halt
+dsnap:
+    jsr flags_norm
+    ldx snapPTR
+    lda gAX
+    sta.l $7FA000,x
+    lda gCX
+    sta.l $7FA002,x
+    lda gDX
+    sta.l $7FA004,x
+    lda gBX
+    sta.l $7FA006,x
+    lda gSP
+    sta.l $7FA008,x
+    lda gBP
+    sta.l $7FA00A,x
+    lda gSI
+    sta.l $7FA00C,x
+    lda gDI
+    sta.l $7FA00E,x
+    lda gES
+    sta.l $7FA010,x
+    lda gCS
+    sta.l $7FA012,x
+    lda gSS
+    sta.l $7FA014,x
+    lda gDS
+    sta.l $7FA016,x
+    lda gIP
+    sta.l $7FA018,x
+    lda fSTATIC
+    sta.l $7FA01A,x
+    txa
+    clc
+    adc #28
+    sta snapPTR
+    rts
+.ELSE
+_rst_run:
+    jsr x86step
+    lda cTickP
+    beq _rst_nirq
+    lda fSTATIC              ; IF lives in the static flag bits
+    and #$0200
+    beq _rst_nirq
+    stz cTickP
+    ldy gIP
+    lda #8                   ; 18.2 Hz timer tick -> guest IVT[8]
+    jsr do_int
+    sty gIP
+_rst_nirq:
+    lda gHALT
+    beq _rst_run
+_rst_halt:
+    wai
+    bra _rst_halt
+.ENDIF
+
+
+;----------------------------------------------------------------------
+; on-screen keyboard. Runs from the NMI (DBR=0, inside vblank), so all
+; VRAM writes here go straight to the ports. Uses only kT0-kT3 temps
+; (the core's cT0/cT1/mA temps may be live mid-INT 13h when NMI fires).
+;----------------------------------------------------------------------
+scan_rows:                   ; repaint 2 virtual rows -> tilemaps
+    lda #2
+    sta kT3
+_sr_l:
+    lda scanROW
+    inc a
+    cmp #25
+    bcc _sr_ok
+    lda #0
+_sr_ok:
+    sta scanROW
+    stz kT2                  ; vertical offset (keyboard visible + deep cursor)
+    lda kVIS
+    beq _sr_nv
+    lda cROW
+    cmp #23
+    bcc _sr_nv
+    sec
+    sbc #22
+    sta kT2
+_sr_nv:
+    lda scanROW
+    sec
+    sbc kT2
+    bmi _sr_nxj
+    cmp #23
+    bcs _sr_chk
+    bra _sr_go
+_sr_chk:
+    ldx kVIS                 ; rows 23-24 only visible without keyboard
+    bne _sr_nxj
+    cmp #25
+    bcc _sr_go
+_sr_nxj:
+    jmp _sr_next
+_sr_go:
+    sta kT1                  ; screen row
+    ; src offset = scanROW*160 + kPAN*2
+    lda scanROW
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta kT0
+    asl a
+    asl a
+    clc
+    adc kT0
+    sta kT0
+    lda kPAN
+    asl a
+    clc
+    adc kT0
+    sta kT0
+    ; BG2 (even columns): map addr = row*32. Per cell: tile from the
+    ; char byte, palette bits from the attribute byte via the LUT at
+    ; WRAM $0400 (Y indexes it; nCNT is the loop counter).
+    lda kT1
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta.w $2116
+    ldx kT0
+    lda #32
+    sta nCNT
+    lda cWID
+    cmp #80
+    beq _sr_b2
+    jmp _sr_w40
+_sr_b2:
+    lda.l $7FE000,x
+    tay
+    and #$FF00
+    cmp #$0700               ; the default attr: no LUT, palette 0
+    bne _sr_b2s
+    tya
+    and #$00FF
+    asl a
+    ora #$2000
+    bra _sr_b2w
+_sr_b2s:
+    tya
+    and #$00FF
+    asl a
+    sta nTIL
+    tya
+    xba
+    and #$007F
+    asl a
+    tay
+    lda.w $0400,y            ; attr -> palette bits
+    cmp #$FFFF
+    bne _sr_b2h
+    jsr sr_alloc
+_sr_b2h:
+    ora nTIL
+    ora #$2000
+_sr_b2w:
+    sta.w $2118
+    inx
+    inx
+    inx
+    inx
+    dec nCNT
+    bne _sr_b2
+    ; BG1 (odd columns): map addr = $0400 + row*32
+    lda kT1
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    clc
+    adc #$0400
+    sta.w $2116
+    ldx kT0
+    inx
+    inx
+    lda #32
+    sta nCNT
+_sr_b1:
+    lda.l $7FE000,x
+    tay
+    and #$FF00
+    cmp #$0700
+    bne _sr_b1s
+    tya
+    and #$00FF
+    asl a
+    ora #$2000
+    bra _sr_b1w
+_sr_b1s:
+    tya
+    and #$00FF
+    asl a
+    sta nTIL
+    tya
+    xba
+    and #$007F
+    asl a
+    tay
+    lda.w $0400,y
+    cmp #$FFFF
+    bne _sr_b1h
+    jsr sr_alloc
+_sr_b1h:
+    ora nTIL
+    ora #$2000
+_sr_b1w:
+    sta.w $2118
+    inx
+    inx
+    inx
+    inx
+    dec nCNT
+    bne _sr_b1
+    bra _sr_next
+    ; 40-column mode: one char per 16px cell, double-width glyphs
+    ; (fat font at tiles 512+2c) on BG2; BG1 fully transparent.
+_sr_w40:
+    lda.l $7FE000,x
+    tay
+    and #$00FF
+    cmp #$0080
+    bcc _sr_w40k
+    lda #$0000
+_sr_w40k:
+    asl a
+    ora #$0200
+    sta nTIL
+    tya
+    xba
+    and #$007F
+    asl a
+    tay
+    lda.w $0400,y
+    cmp #$FFFF
+    bne _sr_w40h
+    jsr sr_alloc
+_sr_w40h:
+    ora nTIL
+    ora #$2000
+    sta.w $2118
+    inx
+    inx
+    dec nCNT
+    bne _sr_w40
+    lda kT1
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    clc
+    adc #$0400
+    sta.w $2116
+    lda #32
+    sta nCNT
+    lda #$2000               ; tile 0 = fully transparent
+_sr_w40b:
+    sta.w $2118
+    dec nCNT
+    bne _sr_w40b
+_sr_next:
+    dec kT3
+    lda kT3
+    beq _sr_done
+    jmp _sr_l
+_sr_done:
+    rts
+
+sr_alloc:                    ; Y = (attr&$7F)*2 -> A = palette bits.
+    phx                      ; Allocates a dynamic pair, writes its two
+    ldx nNEXT                ; colors to CGRAM (we are in vblank), and
+    cpx #10                  ; fills the LUT. Preserves X.
+    bcc _sa_go
+    lda #$0000               ; pool exhausted: default green pair
+    sta.w $0400,y
+    plx
+    rts
+_sa_go:
+    lda.l sr_pairs,x
+    sta nP
+    inx
+    inx
+    stx nNEXT
+    tya
+    lsr a                    ; the attribute byte
+    and #$000F
+    asl a
+    tax
+    lda.l cga_pal,x
+    sta nFG
+    tya
+    lsr a
+    and #$0070
+    lsr a
+    lsr a
+    lsr a                    ; bg*2
+    tax
+    lda.l cga_pal,x
+    sta nBG
+    lda nP
+    asl a
+    asl a
+    inc a                    ; 2bpp pal p: CGRAM 4p+1
+    jsr _sa_wr
+    lda nP
+    asl a
+    asl a
+    asl a
+    asl a
+    inc a                    ; 4bpp pal p: CGRAM 16p+1
+    jsr _sa_wr
+    lda nP
+    xba
+    asl a
+    asl a                    ; palette bits p<<10
+    sta.w $0400,y
+    plx
+    rts
+_sa_wr:                      ; CGRAM address A: write bg then fg
+    sep #$20
+    sta.l $002121
+    lda nBG
+    sta.l $002122
+    lda nBG+1
+    sta.l $002122
+    lda nFG
+    sta.l $002122
+    lda nFG+1
+    sta.l $002122
+    rep #$20
+    rts
+
+sr_pairs: .dw 1, 2, 3, 5, 6
+cga_pal:  .dw $0000, $5400, $02A0, $56A0, $0015, $5415, $0155, $56B5
+          .dw $294A, $7D4A, $2BEA, $7FEA, $295F, $7D5F, $2BFF, $7FFF
+
+kbd_frame:
+    lda cJoyP
+    eor #$FFFF
+    and cJoyN
+    sta kT0
+    and #$0020               ; L: pan left
+    beq _kf_pr
+    lda kPAN
+    sec
+    sbc #8
+    bpl _kf_pw
+    lda #0
+_kf_pw:
+    sta kPAN
+_kf_pr:
+    lda kT0
+    and #$0010               ; R: pan right
+    beq _kf_pd
+    lda cWID
+    sec
+    sbc #64                  ; max pan: 16 (80-col), wraps to 8 via 40-32
+    bpl _kf_pmx
+    lda #8                   ; 40-col mode: 32 visible of 40
+_kf_pmx:
+    sta kT1
+    lda kPAN
+    clc
+    adc #8
+    cmp kT1
+    bcc _kf_pw2
+    lda kT1
+_kf_pw2:
+    sta kPAN
+_kf_pd:
+    lda kVIS
+    beq _kf_hid
+    jmp _kf_vis
+_kf_hid:
+    lda kT0                  ; hidden: SELECT=show, START/Y/X = macros
+    and #$2000
+    beq _kf_h1
+    jmp kbd_toggle
+_kf_h1:
+    lda kT0
+    and #$1000
+    beq _kf_h2
+    ldx #kbstr_dir
+    jmp kb_inject_str
+_kf_h2:
+    lda kT0
+    and #$4000
+    beq _kf_h3
+    ldx #kbstr_chk
+    jmp kb_inject_str
+_kf_h3:
+    lda kT0
+    and #$0040
+    beq _kf_h4
+    ldx #kbstr_copy
+    jmp kb_inject_str
+_kf_h4:
+    ; d-pad -> arrow keys (extended scancodes, AL=0) with autorepeat
+    lda kT0
+    and #$0F00               ; newly pressed direction?
+    bne _kf_anew
+    lda cJoyN
+    and #$0F00               ; still held?
+    beq _kf_arst
+    inc kRPT
+    lda kRPT
+    cmp #15                  ; initial delay, then every 3 frames
+    bcc _kf_ad
+    lda #12
+    sta kRPT
+    lda cJoyN
+    and #$0F00
+    bra _kf_asel
+_kf_anew:
+    stz kRPT
+_kf_asel:
+    bit #$0800
+    beq _kf_a1
+    lda #$4800               ; up
+    jmp kb_push
+_kf_a1:
+    bit #$0400
+    beq _kf_a2
+    lda #$5000               ; down
+    jmp kb_push
+_kf_a2:
+    bit #$0200
+    beq _kf_a3
+    lda #$4B00               ; left
+    jmp kb_push
+_kf_a3:
+    bit #$0100
+    beq _kf_ad
+    lda #$4D00               ; right
+    jmp kb_push
+_kf_arst:
+    stz kRPT
+_kf_ad:
+    rts
+_kf_vis:
+    lda kT0
+    and #$2000               ; SELECT: hide
+    beq _kf_v1
+    jmp kbd_toggle
+_kf_v1:
+    lda kT0
+    and #$8000               ; B: backspace
+    beq _kf_v2
+    lda #$0E08
+    jsr kb_push
+_kf_v2:
+    lda kT0
+    and #$1000               ; START: enter
+    beq _kf_v3
+    lda #$1C0D
+    jsr kb_push
+_kf_v3:
+    lda kT0
+    and #$0040               ; X: space
+    beq _kf_v4
+    lda #$3920
+    jsr kb_push
+_kf_v4:
+    lda kT0
+    and #$4000               ; Y: sticky shift
+    beq _kf_v5
+    lda kMOD
+    eor #$0001
+    sta kMOD
+_kf_v5:
+    lda kT0
+    and #$0080               ; A: press selected key
+    beq _kf_v6
+    jsr kbd_emit
+_kf_v6:
+    lda cJoyN
+    and #$0F00               ; d-pad held?
+    bne _kf_pad
+    stz kRPT
+    rts
+_kf_pad:
+    lda kT0
+    and #$0F00
+    bne _kf_fresh
+    dec kRPT
+    lda kRPT
+    bne _kf_done
+    lda #5
+    sta kRPT
+    bra _kf_domove
+_kf_fresh:
+    lda #18
+    sta kRPT
+_kf_domove:
+    lda kSEL
+    ldx #$0000
+    jsr kbd_color
+    jsr kbd_nav
+    lda kSEL
+    ldx #$1C00
+    jsr kbd_color
+_kf_done:
+    rts
+
+kbd_rec_x:                   ; A = key idx -> X = kbd_keys offset (idx*6)
+    sta kT1
+    asl a
+    clc
+    adc kT1
+    asl a
+    tax
+    rts
+
+kbd_grid_rd:                 ; grid[kT2*64 + kT3] -> A
+    lda kT2
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    clc
+    adc kT3
+    tax
+    lda.l kbd_grid,x
+    and #$00FF
+    rts
+
+kbd_nav:
+    lda kSEL
+    jsr kbd_rec_x
+    lda.l kbd_keys,x         ; lo=row hi=col
+    sta kT1
+    and #$00FF
+    sta kT2                  ; row
+    lda kT1
+    xba
+    and #$00FF
+    sta kT3                  ; col
+    lda cJoyN
+    and #$0800               ; up
+    beq _kn_1
+    lda kT2
+    beq _kn_ret
+    dec a
+    sta kT2
+    bra _kn_updown
+_kn_1:
+    lda cJoyN
+    and #$0400               ; down
+    beq _kn_2
+    lda kT2
+    cmp #4
+    bcs _kn_ret
+    inc a
+    sta kT2
+_kn_updown:
+    jsr kbd_at
+    cmp #$00FF
+    beq _kn_ret
+    sta kSEL
+_kn_ret:
+    rts
+_kn_2:
+    lda cJoyN
+    and #$0200               ; left
+    beq _kn_3
+_kn_ll:
+    lda kT3
+    beq _kn_ret
+    dec a
+    sta kT3
+    jsr kbd_grid_rd
+    cmp #$00FF
+    beq _kn_ll
+    cmp kSEL
+    beq _kn_ll
+    sta kSEL
+    rts
+_kn_3:
+    lda cJoyN
+    and #$0100               ; right
+    beq _kn_ret
+_kn_rr:
+    lda kT3
+    cmp #63
+    bcs _kn_ret
+    inc a
+    sta kT3
+    jsr kbd_grid_rd
+    cmp #$00FF
+    beq _kn_rr
+    cmp kSEL
+    beq _kn_rr
+    sta kSEL
+    rts
+
+kbd_at:                      ; key at (kT2,kT3), scanning left then right
+    jsr kbd_grid_rd
+    cmp #$00FF
+    bne _ka_ret
+_ka_l:
+    lda kT3
+    beq _ka_r0
+    dec a
+    sta kT3
+    jsr kbd_grid_rd
+    cmp #$00FF
+    beq _ka_l
+    rts
+_ka_r0:
+    lda #63
+    sta kT3
+_ka_r:
+    jsr kbd_grid_rd
+    cmp #$00FF
+    bne _ka_ret
+    dec kT3
+    lda kT3
+    bne _ka_r
+    lda #$00FF
+_ka_ret:
+    rts
+
+kbd_emit:
+    lda kSEL
+    jsr kbd_rec_x
+    lda.l kbd_keys+3,x       ; lo=ascii hi=shifted
+    sta kT1
+    and #$00FF
+    cmp #$00FF               ; SHIFT key
+    bne _ke_1
+    lda kMOD
+    eor #$0001
+    sta kMOD
+    rts
+_ke_1:
+    cmp #$00FE               ; CTRL key
+    bne _ke_2
+    lda kMOD
+    eor #$0002
+    sta kMOD
+    rts
+_ke_2:
+    sta kT2
+    lda kMOD
+    and #$0001
+    beq _ke_3
+    lda kT1
+    xba
+    and #$00FF
+    sta kT2                  ; shifted char
+_ke_3:
+    lda kMOD
+    and #$0002
+    beq _ke_4
+    lda kT2
+    and #$001F               ; ctrl-<key>
+    sta kT2
+_ke_4:
+    lda.l kbd_keys+4,x       ; lo=shifted hi=scan
+    and #$FF00
+    ora kT2
+    jsr kb_push
+    stz kMOD
+    rts
+
+kbd_color:                   ; A = key idx, X = palette bits ($0000/$0400)
+    stx kT0
+    jsr kbd_rec_x
+    lda.l kbd_keys,x
+    sta kT1                  ; lo=row hi=col
+    lda.l kbd_keys+2,x
+    and #$00FF
+    sta kT2                  ; len
+_kc_l:
+    lda kT1
+    and #$00FF
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta kT3
+    lda kT1
+    xba
+    and #$00FF
+    clc
+    adc kT3                  ; row*64+col
+    tax
+    lda.l kbd_rows,x
+    and #$00FF
+    asl a
+    ora #$2000
+    ora kT0
+    pha
+    lda kT1
+    and #$00FF
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*32
+    sta kT3
+    lda kT1
+    xba
+    and #$00FF
+    lsr a
+    bcc _kc_e
+    clc
+    adc #$0C00
+    bra _kc_s
+_kc_e:
+    clc
+    adc #$0800
+_kc_s:
+    clc
+    adc kT3
+    sta.w $2116
+    pla
+    sta.w $2118
+    lda kT1
+    clc
+    adc #$0100               ; col++
+    sta kT1
+    dec kT2
+    lda kT2
+    bne _kc_l
+    rts
+
+kbd_draw:                    ; init-time: render all 5 rows (forced blank)
+    stz kT1                  ; lo=row hi=col, walk all cells
+_kd_l:
+    lda #1
+    sta kT2
+    lda kT1
+    pha
+    ; draw this single cell via kbd_color-style write: reuse loop body by
+    ; temporarily treating each cell as a 1-length key with pal 0
+    stz kT0
+    pla
+    sta kT1
+    lda kT1
+    and #$00FF
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta kT3
+    lda kT1
+    xba
+    and #$00FF
+    clc
+    adc kT3
+    tax
+    lda.l kbd_rows,x
+    and #$00FF
+    asl a
+    ora #$2000
+    pha
+    lda kT1
+    and #$00FF
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta kT3
+    lda kT1
+    xba
+    and #$00FF
+    lsr a
+    bcc _kd_e
+    clc
+    adc #$0C00
+    bra _kd_s
+_kd_e:
+    clc
+    adc #$0800
+_kd_s:
+    clc
+    adc kT3
+    sta.w $2116
+    pla
+    sta.w $2118
+    ; next cell: col++, wrap to next row after 63
+    lda kT1
+    clc
+    adc #$0100
+    sta kT1
+    xba
+    and #$00FF
+    bne _kd_l                ; col wrapped to 0? (256 cols -> carry into row)
+    lda kT1
+    inc a
+    sta kT1
+    and #$00FF
+    cmp #5
+    bcc _kd_l
+    ; highlight the initial selection
+    lda #0
+    ldx #$1C00
+    jmp kbd_color
+
+kbd_toggle:
+    lda kVIS
+    eor #$0001
+    sta kVIS
+    beq _kt_off
+    lda #22
+    bra _kt_st
+_kt_off:
+    lda #27
+_kt_st:
+    sta kROWS
+    lda cROW
+    cmp kROWS
+    bcc _kt_ok
+    lda kROWS
+    sta cROW
+_kt_ok:
+    jmp kbd_tables
+
+kbd_tables:                  ; (re)build the HDMA tables per kVIS (DBR=0)
+    lda cTOP
+    asl a
+    asl a
+    asl a
+    dec a
+    and #$03FF
+    sta kT0
+    sep #$20
+    lda.b #128
+    sta.w $0740
+    sta.w $0750
+    sta.w $0760
+    sta.w $0770
+    lda kT0
+    sta.w $0741
+    sta.w $0751
+    lda kT0+1
+    sta.w $0742
+    sta.w $0752
+    lda.b #$04
+    sta.w $0761
+    stz.w $0771
+    lda kVIS
+    bne _kt_v2
+    lda.b #96
+    bra _kt_c2
+_kt_v2:
+    lda.b #56
+_kt_c2:
+    sta.w $0743
+    sta.w $0753
+    sta.w $0762
+    sta.w $0772
+    lda kT0
+    sta.w $0744
+    sta.w $0754
+    lda kT0+1
+    sta.w $0745
+    sta.w $0755
+    lda.b #$04
+    sta.w $0763
+    stz.w $0773
+    lda kVIS
+    beq _kt_hid
+    lda.b #40
+    sta.w $0746
+    sta.w $0756
+    sta.w $0764
+    sta.w $0774
+    lda.b #71                ; scanline 184 -> keyboard map row 0
+    sta.w $0747
+    sta.w $0757
+    stz.w $0748
+    stz.w $0758
+    lda.b #$0C               ; BG1 map -> $0C00
+    sta.w $0765
+    lda.b #$08               ; BG2 map -> $0800
+    sta.w $0775
+    stz.w $0749
+    stz.w $0759
+    stz.w $0766
+    stz.w $0776
+    rep #$20
+    rts
+_kt_hid:
+    stz.w $0746
+    stz.w $0756
+    stz.w $0764
+    stz.w $0774
+    rep #$20
+    rts
+
+.INCLUDE "build/kbdlayout.asm"
+
+boot_banner:
+    .db "snes86: 8086 core up, 112KB guest RAM", $0D, $0A
+    .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
+
+.ENDS
+
+;----------------------------------------------------------------------
+; fonts (bank 1)
+;----------------------------------------------------------------------
+.BANK 1 SLOT 0
+.ORG 0
+.SECTION "FontData" SEMIFREE
+
+font_bg2:
+    .INCBIN "build/font_bg2.bin"
+font_bg1:
+    .INCBIN "build/font_bg1.bin"
+
+.ENDS
+
+;----------------------------------------------------------------------
+; PC DOS 2.00 disk image, 184320 bytes across banks 2-7
+;----------------------------------------------------------------------
+.BANK 2 SLOT 0
+.ORG 0
+.SECTION "Disk2" FORCE
+.INCBIN "build/adisk.img" SKIP 0 READ 32768
+.ENDS
+.BANK 3 SLOT 0
+.ORG 0
+.SECTION "Disk3" FORCE
+.INCBIN "build/adisk.img" SKIP 32768 READ 32768
+.ENDS
+.BANK 4 SLOT 0
+.ORG 0
+.SECTION "Disk4" FORCE
+.INCBIN "build/adisk.img" SKIP 65536 READ 32768
+.ENDS
+.BANK 5 SLOT 0
+.ORG 0
+.SECTION "Disk5" FORCE
+.INCBIN "build/adisk.img" SKIP 98304 READ 32768
+.ENDS
+.BANK 6 SLOT 0
+.ORG 0
+.SECTION "Disk6" FORCE
+.INCBIN "build/adisk.img" SKIP 131072 READ 32768
+.ENDS
+.BANK 7 SLOT 0
+.ORG 0
+.SECTION "Disk7" FORCE
+.INCBIN "build/adisk.img" SKIP 163840 READ 32768
+.ENDS
+.BANK 8 SLOT 0
+.ORG 0
+.SECTION "Disk8" FORCE
+.INCBIN "build/adisk.img" SKIP 196608 READ 32768
+.ENDS
+.BANK 9 SLOT 0
+.ORG 0
+.SECTION "Disk9" FORCE
+.INCBIN "build/adisk.img" SKIP 229376 READ 32768
+.ENDS
+.BANK 10 SLOT 0
+.ORG 0
+.SECTION "Disk10" FORCE
+.INCBIN "build/adisk.img" SKIP 262144 READ 32768
+.ENDS
+.BANK 11 SLOT 0
+.ORG 0
+.SECTION "Disk11" FORCE
+.INCBIN "build/adisk.img" SKIP 294912 READ 32768
+.ENDS
+.BANK 12 SLOT 0
+.ORG 0
+.SECTION "Disk12" FORCE
+.INCBIN "build/adisk.img" SKIP 327680 READ 32768
+.ENDS
+.BANK 13 SLOT 0
+.ORG 0
+.SECTION "Disk13" FORCE
+.INCBIN "build/adisk.img" SKIP 360448 READ 8192
+.ENDS
+.BANK 14 SLOT 0
+.ORG 0
+.SECTION "HDisk14" FORCE
+.INCBIN "build/hd.img" SKIP 0 READ 32768
+.ENDS
+.BANK 15 SLOT 0
+.ORG 0
+.SECTION "HDisk15" FORCE
+.INCBIN "build/hd.img" SKIP 32768 READ 32768
+.ENDS
+.BANK 16 SLOT 0
+.ORG 0
+.SECTION "HDisk16" FORCE
+.INCBIN "build/hd.img" SKIP 65536 READ 32768
+.ENDS
+.BANK 17 SLOT 0
+.ORG 0
+.SECTION "HDisk17" FORCE
+.INCBIN "build/hd.img" SKIP 98304 READ 32768
+.ENDS
+.BANK 18 SLOT 0
+.ORG 0
+.SECTION "HDisk18" FORCE
+.INCBIN "build/hd.img" SKIP 131072 READ 32768
+.ENDS
+.BANK 19 SLOT 0
+.ORG 0
+.SECTION "HDisk19" FORCE
+.INCBIN "build/hd.img" SKIP 163840 READ 32768
+.ENDS
+.BANK 20 SLOT 0
+.ORG 0
+.SECTION "HDisk20" FORCE
+.INCBIN "build/hd.img" SKIP 196608 READ 32768
+.ENDS
+.BANK 21 SLOT 0
+.ORG 0
+.SECTION "HDisk21" FORCE
+.INCBIN "build/hd.img" SKIP 229376 READ 32768
+.ENDS
+.BANK 22 SLOT 0
+.ORG 0
+.SECTION "HDisk22" FORCE
+.INCBIN "build/hd.img" SKIP 262144 READ 32768
+.ENDS
+.BANK 23 SLOT 0
+.ORG 0
+.SECTION "HDisk23" FORCE
+.INCBIN "build/hd.img" SKIP 294912 READ 32768
+.ENDS
+.BANK 24 SLOT 0
+.ORG 0
+.SECTION "HDisk24" FORCE
+.INCBIN "build/hd.img" SKIP 327680 READ 32768
+.ENDS
+.BANK 25 SLOT 0
+.ORG 0
+.SECTION "HDisk25" FORCE
+.INCBIN "build/hd.img" SKIP 360448 READ 32768
+.ENDS
+.BANK 26 SLOT 0
+.ORG 0
+.SECTION "HDisk26" FORCE
+.INCBIN "build/hd.img" SKIP 393216 READ 32768
+.ENDS
+.BANK 27 SLOT 0
+.ORG 0
+.SECTION "HDisk27" FORCE
+.INCBIN "build/hd.img" SKIP 425984 READ 32768
+.ENDS
+.BANK 28 SLOT 0
+.ORG 0
+.SECTION "HDisk28" FORCE
+.INCBIN "build/hd.img" SKIP 458752 READ 32768
+.ENDS
+.BANK 29 SLOT 0
+.ORG 0
+.SECTION "HDisk29" FORCE
+.INCBIN "build/hd.img" SKIP 491520 READ 32768
+.ENDS
+.BANK 30 SLOT 0
+.ORG 0
+.SECTION "HDisk30" FORCE
+.INCBIN "build/hd.img" SKIP 524288 READ 32768
+.ENDS
+.BANK 31 SLOT 0
+.ORG 0
+.SECTION "HDisk31" FORCE
+.INCBIN "build/hd.img" SKIP 557056 READ 32768
+.ENDS
+.BANK 32 SLOT 0
+.ORG 0
+.SECTION "HDisk32" FORCE
+.INCBIN "build/hd.img" SKIP 589824 READ 32768
+.ENDS
+.BANK 33 SLOT 0
+.ORG 0
+.SECTION "HDisk33" FORCE
+.INCBIN "build/hd.img" SKIP 622592 READ 32768
+.ENDS
+.BANK 34 SLOT 0
+.ORG 0
+.SECTION "HDisk34" FORCE
+.INCBIN "build/hd.img" SKIP 655360 READ 32768
+.ENDS
+.BANK 35 SLOT 0
+.ORG 0
+.SECTION "HDisk35" FORCE
+.INCBIN "build/hd.img" SKIP 688128 READ 32768
+.ENDS
+.BANK 36 SLOT 0
+.ORG 0
+.SECTION "HDisk36" FORCE
+.INCBIN "build/hd.img" SKIP 720896 READ 32768
+.ENDS
+.BANK 37 SLOT 0
+.ORG 0
+.SECTION "HDisk37" FORCE
+.INCBIN "build/hd.img" SKIP 753664 READ 32768
+.ENDS
+.BANK 38 SLOT 0
+.ORG 0
+.SECTION "HDisk38" FORCE
+.INCBIN "build/hd.img" SKIP 786432 READ 32768
+.ENDS
+.BANK 39 SLOT 0
+.ORG 0
+.SECTION "HDisk39" FORCE
+.INCBIN "build/hd.img" SKIP 819200 READ 32768
+.ENDS
+.BANK 40 SLOT 0
+.ORG 0
+.SECTION "HDisk40" FORCE
+.INCBIN "build/hd.img" SKIP 851968 READ 32768
+.ENDS
+.BANK 41 SLOT 0
+.ORG 0
+.SECTION "HDisk41" FORCE
+.INCBIN "build/hd.img" SKIP 884736 READ 32768
+.ENDS
+.BANK 42 SLOT 0
+.ORG 0
+.SECTION "HDisk42" FORCE
+.INCBIN "build/hd.img" SKIP 917504 READ 32768
+.ENDS
+.BANK 43 SLOT 0
+.ORG 0
+.SECTION "HDisk43" FORCE
+.INCBIN "build/hd.img" SKIP 950272 READ 32768
+.ENDS
+.BANK 44 SLOT 0
+.ORG 0
+.SECTION "HDisk44" FORCE
+.INCBIN "build/hd.img" SKIP 983040 READ 32768
+.ENDS
+.BANK 45 SLOT 0
+.ORG 0
+.SECTION "HDisk45" FORCE
+.INCBIN "build/hd.img" SKIP 1015808 READ 32768
+.ENDS
+.BANK 46 SLOT 0
+.ORG 0
+.SECTION "HDisk46" FORCE
+.INCBIN "build/hd.img" SKIP 1048576 READ 32768
+.ENDS
+.BANK 47 SLOT 0
+.ORG 0
+.SECTION "HDisk47" FORCE
+.INCBIN "build/hd.img" SKIP 1081344 READ 32768
+.ENDS
+.BANK 48 SLOT 0
+.ORG 0
+.SECTION "HDisk48" FORCE
+.INCBIN "build/hd.img" SKIP 1114112 READ 32768
+.ENDS
+.BANK 49 SLOT 0
+.ORG 0
+.SECTION "HDisk49" FORCE
+.INCBIN "build/hd.img" SKIP 1146880 READ 32768
+.ENDS
+.BANK 50 SLOT 0
+.ORG 0
+.SECTION "HDisk50" FORCE
+.INCBIN "build/hd.img" SKIP 1179648 READ 32768
+.ENDS
+.BANK 51 SLOT 0
+.ORG 0
+.SECTION "HDisk51" FORCE
+.INCBIN "build/hd.img" SKIP 1212416 READ 32768
+.ENDS
+.BANK 52 SLOT 0
+.ORG 0
+.SECTION "HDisk52" FORCE
+.INCBIN "build/hd.img" SKIP 1245184 READ 32768
+.ENDS
+.BANK 53 SLOT 0
+.ORG 0
+.SECTION "HDisk53" FORCE
+.INCBIN "build/hd.img" SKIP 1277952 READ 32768
+.ENDS
+.BANK 54 SLOT 0
+.ORG 0
+.SECTION "HDisk54" FORCE
+.INCBIN "build/hd.img" SKIP 1310720 READ 32768
+.ENDS
+.BANK 55 SLOT 0
+.ORG 0
+.SECTION "HDisk55" FORCE
+.INCBIN "build/hd.img" SKIP 1343488 READ 32768
+.ENDS
+.BANK 56 SLOT 0
+.ORG 0
+.SECTION "HDisk56" FORCE
+.INCBIN "build/hd.img" SKIP 1376256 READ 32768
+.ENDS
+.BANK 57 SLOT 0
+.ORG 0
+.SECTION "HDisk57" FORCE
+.INCBIN "build/hd.img" SKIP 1409024 READ 32768
+.ENDS
+.BANK 58 SLOT 0
+.ORG 0
+.SECTION "HDisk58" FORCE
+.INCBIN "build/hd.img" SKIP 1441792 READ 32768
+.ENDS
+.BANK 59 SLOT 0
+.ORG 0
+.SECTION "HDisk59" FORCE
+.INCBIN "build/hd.img" SKIP 1474560 READ 32768
+.ENDS
+.BANK 60 SLOT 0
+.ORG 0
+.SECTION "HDisk60" FORCE
+.INCBIN "build/hd.img" SKIP 1507328 READ 32768
+.ENDS
+.BANK 61 SLOT 0
+.ORG 0
+.SECTION "HDisk61" FORCE
+.INCBIN "build/hd.img" SKIP 1540096 READ 32768
+.ENDS
+.BANK 62 SLOT 0
+.ORG 0
+.SECTION "HDisk62" FORCE
+.INCBIN "build/hd.img" SKIP 1572864 READ 32768
+.ENDS
+.BANK 63 SLOT 0
+.ORG 0
+.SECTION "HDisk63" FORCE
+.INCBIN "build/hd.img" SKIP 1605632 READ 32768
+.ENDS
+.BANK 64 SLOT 0
+.ORG 0
+.SECTION "HDisk64" FORCE
+.INCBIN "build/hd.img" SKIP 1638400 READ 32768
+.ENDS
+.BANK 65 SLOT 0
+.ORG 0
+.SECTION "HDisk65" FORCE
+.INCBIN "build/hd.img" SKIP 1671168 READ 32768
+.ENDS
+.BANK 66 SLOT 0
+.ORG 0
+.SECTION "HDisk66" FORCE
+.INCBIN "build/hd.img" SKIP 1703936 READ 32768
+.ENDS
+.BANK 67 SLOT 0
+.ORG 0
+.SECTION "HDisk67" FORCE
+.INCBIN "build/hd.img" SKIP 1736704 READ 32768
+.ENDS
+.BANK 68 SLOT 0
+.ORG 0
+.SECTION "HDisk68" FORCE
+.INCBIN "build/hd.img" SKIP 1769472 READ 32768
+.ENDS
+.BANK 69 SLOT 0
+.ORG 0
+.SECTION "HDisk69" FORCE
+.INCBIN "build/hd.img" SKIP 1802240 READ 32768
+.ENDS
+.BANK 70 SLOT 0
+.ORG 0
+.SECTION "HDisk70" FORCE
+.INCBIN "build/hd.img" SKIP 1835008 READ 32768
+.ENDS
+.BANK 71 SLOT 0
+.ORG 0
+.SECTION "HDisk71" FORCE
+.INCBIN "build/hd.img" SKIP 1867776 READ 32768
+.ENDS
+.BANK 72 SLOT 0
+.ORG 0
+.SECTION "HDisk72" FORCE
+.INCBIN "build/hd.img" SKIP 1900544 READ 32768
+.ENDS
+.BANK 73 SLOT 0
+.ORG 0
+.SECTION "HDisk73" FORCE
+.INCBIN "build/hd.img" SKIP 1933312 READ 32768
+.ENDS
+.BANK 74 SLOT 0
+.ORG 0
+.SECTION "HDisk74" FORCE
+.INCBIN "build/hd.img" SKIP 1966080 READ 32768
+.ENDS
+.BANK 75 SLOT 0
+.ORG 0
+.SECTION "HDisk75" FORCE
+.INCBIN "build/hd.img" SKIP 1998848 READ 32768
+.ENDS
+.BANK 76 SLOT 0
+.ORG 0
+.SECTION "HDisk76" FORCE
+.INCBIN "build/hd.img" SKIP 2031616 READ 32768
+.ENDS
+.BANK 77 SLOT 0
+.ORG 0
+.SECTION "HDisk77" FORCE
+.INCBIN "build/hd.img" SKIP 2064384 READ 32768
+.ENDS
+.BANK 78 SLOT 0
+.ORG 0
+.SECTION "HDisk78" FORCE
+.INCBIN "build/hd.img" SKIP 2097152 READ 32768
+.ENDS
+.BANK 79 SLOT 0
+.ORG 0
+.SECTION "HDisk79" FORCE
+.INCBIN "build/hd.img" SKIP 2129920 READ 32768
+.ENDS
+.BANK 80 SLOT 0
+.ORG 0
+.SECTION "HDisk80" FORCE
+.INCBIN "build/hd.img" SKIP 2162688 READ 32768
+.ENDS
+.BANK 81 SLOT 0
+.ORG 0
+.SECTION "HDisk81" FORCE
+.INCBIN "build/hd.img" SKIP 2195456 READ 32768
+.ENDS
+.BANK 82 SLOT 0
+.ORG 0
+.SECTION "HDisk82" FORCE
+.INCBIN "build/hd.img" SKIP 2228224 READ 32768
+.ENDS
+.BANK 83 SLOT 0
+.ORG 0
+.SECTION "HDisk83" FORCE
+.INCBIN "build/hd.img" SKIP 2260992 READ 32768
+.ENDS
+.BANK 84 SLOT 0
+.ORG 0
+.SECTION "HDisk84" FORCE
+.INCBIN "build/hd.img" SKIP 2293760 READ 32768
+.ENDS
+.BANK 85 SLOT 0
+.ORG 0
+.SECTION "HDisk85" FORCE
+.INCBIN "build/hd.img" SKIP 2326528 READ 32768
+.ENDS
+.BANK 86 SLOT 0
+.ORG 0
+.SECTION "HDisk86" FORCE
+.INCBIN "build/hd.img" SKIP 2359296 READ 32768
+.ENDS
+.BANK 87 SLOT 0
+.ORG 0
+.SECTION "HDisk87" FORCE
+.INCBIN "build/hd.img" SKIP 2392064 READ 32768
+.ENDS
+.BANK 88 SLOT 0
+.ORG 0
+.SECTION "HDisk88" FORCE
+.INCBIN "build/hd.img" SKIP 2424832 READ 32768
+.ENDS
+.BANK 89 SLOT 0
+.ORG 0
+.SECTION "HDisk89" FORCE
+.INCBIN "build/hd.img" SKIP 2457600 READ 32768
+.ENDS
+.BANK 90 SLOT 0
+.ORG 0
+.SECTION "HDisk90" FORCE
+.INCBIN "build/hd.img" SKIP 2490368 READ 32768
+.ENDS
+.BANK 91 SLOT 0
+.ORG 0
+.SECTION "HDisk91" FORCE
+.INCBIN "build/hd.img" SKIP 2523136 READ 32768
+.ENDS
+.BANK 92 SLOT 0
+.ORG 0
+.SECTION "HDisk92" FORCE
+.INCBIN "build/hd.img" SKIP 2555904 READ 32768
+.ENDS
+.BANK 93 SLOT 0
+.ORG 0
+.SECTION "HDisk93" FORCE
+.INCBIN "build/hd.img" SKIP 2588672 READ 32768
+.ENDS
+.BANK 94 SLOT 0
+.ORG 0
+.SECTION "HDisk94" FORCE
+.INCBIN "build/hd.img" SKIP 2621440 READ 32768
+.ENDS
+.BANK 95 SLOT 0
+.ORG 0
+.SECTION "HDisk95" FORCE
+.INCBIN "build/hd.img" SKIP 2654208 READ 32768
+.ENDS
+.BANK 96 SLOT 0
+.ORG 0
+.SECTION "HDisk96" FORCE
+.INCBIN "build/hd.img" SKIP 2686976 READ 32768
+.ENDS
+.BANK 97 SLOT 0
+.ORG 0
+.SECTION "HDisk97" FORCE
+.INCBIN "build/hd.img" SKIP 2719744 READ 32768
+.ENDS
+.BANK 98 SLOT 0
+.ORG 0
+.SECTION "HDisk98" FORCE
+.INCBIN "build/hd.img" SKIP 2752512 READ 32768
+.ENDS
+.BANK 99 SLOT 0
+.ORG 0
+.SECTION "HDisk99" FORCE
+.INCBIN "build/hd.img" SKIP 2785280 READ 32768
+.ENDS
+.BANK 100 SLOT 0
+.ORG 0
+.SECTION "HDisk100" FORCE
+.INCBIN "build/hd.img" SKIP 2818048 READ 32768
+.ENDS
+.BANK 101 SLOT 0
+.ORG 0
+.SECTION "HDisk101" FORCE
+.INCBIN "build/hd.img" SKIP 2850816 READ 32768
+.ENDS
+.BANK 102 SLOT 0
+.ORG 0
+.SECTION "HDisk102" FORCE
+.INCBIN "build/hd.img" SKIP 2883584 READ 32768
+.ENDS
+.BANK 103 SLOT 0
+.ORG 0
+.SECTION "HDisk103" FORCE
+.INCBIN "build/hd.img" SKIP 2916352 READ 32768
+.ENDS
+.BANK 104 SLOT 0
+.ORG 0
+.SECTION "HDisk104" FORCE
+.INCBIN "build/hd.img" SKIP 2949120 READ 32768
+.ENDS
+.BANK 105 SLOT 0
+.ORG 0
+.SECTION "HDisk105" FORCE
+.INCBIN "build/hd.img" SKIP 2981888 READ 32768
+.ENDS
+.BANK 106 SLOT 0
+.ORG 0
+.SECTION "HDisk106" FORCE
+.INCBIN "build/hd.img" SKIP 3014656 READ 32768
+.ENDS
+.BANK 107 SLOT 0
+.ORG 0
+.SECTION "HDisk107" FORCE
+.INCBIN "build/hd.img" SKIP 3047424 READ 32768
+.ENDS
+.BANK 108 SLOT 0
+.ORG 0
+.SECTION "HDisk108" FORCE
+.INCBIN "build/hd.img" SKIP 3080192 READ 32768
+.ENDS
+.BANK 109 SLOT 0
+.ORG 0
+.SECTION "HDisk109" FORCE
+.INCBIN "build/hd.img" SKIP 3112960 READ 32768
+.ENDS
+.BANK 110 SLOT 0
+.ORG 0
+.SECTION "HDisk110" FORCE
+.INCBIN "build/hd.img" SKIP 3145728 READ 32768
+.ENDS
+.BANK 111 SLOT 0
+.ORG 0
+.SECTION "HDisk111" FORCE
+.INCBIN "build/hd.img" SKIP 3178496 READ 32768
+.ENDS
+.BANK 112 SLOT 0
+.ORG 0
+.SECTION "HDisk112" FORCE
+.INCBIN "build/hd.img" SKIP 3211264 READ 32768
+.ENDS
+.BANK 113 SLOT 0
+.ORG 0
+.SECTION "HDisk113" FORCE
+.INCBIN "build/hd.img" SKIP 3244032 READ 32768
+.ENDS
+.BANK 114 SLOT 0
+.ORG 0
+.SECTION "HDisk114" FORCE
+.INCBIN "build/hd.img" SKIP 3276800 READ 32768
+.ENDS
+.BANK 115 SLOT 0
+.ORG 0
+.SECTION "HDisk115" FORCE
+.INCBIN "build/hd.img" SKIP 3309568 READ 32768
+.ENDS
+.BANK 116 SLOT 0
+.ORG 0
+.SECTION "HDisk116" FORCE
+.INCBIN "build/hd.img" SKIP 3342336 READ 32768
+.ENDS
+.BANK 117 SLOT 0
+.ORG 0
+.SECTION "HDisk117" FORCE
+.INCBIN "build/hd.img" SKIP 3375104 READ 32768
+.ENDS
+.BANK 118 SLOT 0
+.ORG 0
+.SECTION "HDisk118" FORCE
+.INCBIN "build/hd.img" SKIP 3407872 READ 32768
+.ENDS
+.BANK 119 SLOT 0
+.ORG 0
+.SECTION "HDisk119" FORCE
+.INCBIN "build/hd.img" SKIP 3440640 READ 32768
+.ENDS
+.BANK 120 SLOT 0
+.ORG 0
+.SECTION "HDisk120" FORCE
+.INCBIN "build/hd.img" SKIP 3473408 READ 32768
+.ENDS
+.BANK 121 SLOT 0
+.ORG 0
+.SECTION "HDisk121" FORCE
+.INCBIN "build/hd.img" SKIP 3506176 READ 32768
+.ENDS
+.BANK 122 SLOT 0
+.ORG 0
+.SECTION "HDisk122" FORCE
+.INCBIN "build/hd.img" SKIP 3538944 READ 32768
+.ENDS
+.BANK 123 SLOT 0
+.ORG 0
+.SECTION "HDisk123" FORCE
+.INCBIN "build/hd.img" SKIP 3571712 READ 32768
+.ENDS
+.BANK 124 SLOT 0
+.ORG 0
+.SECTION "HDisk124" FORCE
+.INCBIN "build/hd.img" SKIP 3604480 READ 32768
+.ENDS
+.BANK 125 SLOT 0
+.ORG 0
+.SECTION "HDisk125" FORCE
+.INCBIN "build/hd.img" SKIP 3637248 READ 32768
+.ENDS
+.BANK 126 SLOT 0
+.ORG 0
+.SECTION "HDisk126" FORCE
+.INCBIN "build/hd.img" SKIP 3670016 READ 32768
+.ENDS
+.BANK 127 SLOT 0
+.ORG 0
+.SECTION "HDisk127" FORCE
+.INCBIN "build/hd.img" SKIP 3702784 READ 22528
+.ENDS
