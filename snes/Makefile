@@ -61,5 +61,8 @@ build/kbdlayout.asm: tools/mkkbd.py
 build/adisk.img: tools/mkadisk.py tools/autoexec.bat ../disks/pcdos200-disk1.img ../disks/pcdos200-disk2.img
 	python3 tools/mkadisk.py build
 
-build/hd.img: tools/mkhd.py tools/autoexec.bat ../disks/gwbasic.exe ../disks/zork1_snes.com ../disks/ws_installed.com ../disks/mp_com_compaq.bin ../disks/tp301.img
+build/hd.img: tools/mkhd.py tools/autoexec.bat ../disks/gwbasic.exe ../disks/zork1_snes.com ../disks/ws_installed.com ../disks/mp_com_compaq.bin ../disks/tp301.img build/cgatest.com
 	python3 tools/mkhd.py build
+
+build/cgatest.com: tools/mkcgatest.py
+	python3 tools/mkcgatest.py build/cgatest.com

@@ -56,6 +56,9 @@ typedef struct {
     const char *exit_reason;
     /* console cursor (approximate; enough for INT 10h AH=03) */
     int row, col, cols, vmode;
+    /* CGA graphics: -cga dumps the B800 bitmap as PPM on exit/mode-away */
+    const char *cga_out;
+    uint8_t cga_3d9;         /* port 3D9 shadow: bit5 pal, bit4 bright, low bg */
     struct timeval t0;
 } Harness;
 
@@ -75,6 +78,73 @@ static uint8_t io_in8(X86 *c, uint16_t port)
 }
 static int g_trace = 0;   /* -T: freeze INT 1Ah ticks for lockstep traces */
 static void on_sigint(int sig) { (void)sig; g_stop = 1; }
+
+/* ------------------------------------------------------------------ */
+/* CGA graphics (modes 4/5 = 320x200x4, 6 = 640x200x2)                 */
+
+static int gfx_mode(int m) { return m == 4 || m == 5 || m == 6; }
+
+static const uint8_t cga_rgb[16][3] = {
+    {0,0,0},       {0,0,170},    {0,170,0},    {0,170,170},
+    {170,0,0},     {170,0,170},  {170,85,0},   {170,170,170},
+    {85,85,85},    {85,85,255},  {85,255,85},  {85,255,255},
+    {255,85,85},   {255,85,255}, {255,255,85}, {255,255,255}
+};
+
+static void cga_dump(X86 *c, Harness *h)
+{
+    if (!h->cga_out || !gfx_mode(h->vmode)) return;
+    FILE *f = fopen(h->cga_out, "wb");
+    if (!f) { perror(h->cga_out); return; }
+    int w = (h->vmode == 6) ? 640 : 320;
+    fprintf(f, "P6\n%d 200\n255\n", w);
+    for (int y = 0; y < 200; y++) {
+        const uint8_t *ln = &c->mem[0xB8000 + (y & 1) * 0x2000 + (y >> 1) * 80];
+        for (int x = 0; x < w; x++) {
+            int idx;
+            if (h->vmode == 6) {
+                idx = ((ln[x >> 3] >> (7 - (x & 7))) & 1) ? 15 : 0;
+            } else {
+                int v = (ln[x >> 2] >> (6 - 2 * (x & 3))) & 3;
+                if (v == 0) idx = h->cga_3d9 & 0x0F;
+                else        idx = v * 2 + ((h->cga_3d9 >> 5) & 1)
+                                        + ((h->cga_3d9 & 0x10) ? 8 : 0);
+            }
+            fwrite(cga_rgb[idx], 1, 3, f);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "CGA mode %d %dx200 -> %s\n", h->vmode, w, h->cga_out);
+}
+
+/* GW-BASIC (and games) switch CGA modes by programming port 3D8
+ * directly, never calling INT 10h — mode tracking must watch the port.
+ * 3D8 bits: 0=80col, 1=graphics, 2=no color burst, 4=640x200 */
+static int traceio(void)
+{
+    static int on = -1;
+    if (on < 0) on = getenv("TRACEIO") != NULL;
+    return on;
+}
+
+static void io_out8(X86 *c, uint16_t port, uint8_t v)
+{
+    if (!g_h) return;
+    if (traceio())
+        fprintf(stderr, "OUT %04X <- %02X\n", port, v);
+    if (port == 0x3D9) {
+        g_h->cga_3d9 = v;
+    } else if (port == 0x3D8) {
+        int newm = (v & 2) ? ((v & 0x10) ? 6 : ((v & 4) ? 5 : 4))
+                           : ((v & 1) ? 3 : 1);
+        if (gfx_mode(g_h->vmode) && !gfx_mode(newm))
+            cga_dump(c, g_h);        /* leaving gfx: keep the frame */
+        if (newm != g_h->vmode) {
+            g_h->vmode = newm;
+            g_h->cols = (newm == 6 || newm == 3) ? 80 : 40;
+        }
+    }
+}
 
 /* ------------------------------------------------------------------ */
 /* tty                                                                 */
@@ -152,13 +222,24 @@ static void tty_putc(Harness *h, uint8_t ch)
 static int bios_video(X86 *c, Harness *h)
 {
     uint8_t ah = rah(c);
+    if (traceio() && ah != 0x02 && ah != 0x03 && ah != 0x09 && ah != 0x0E)
+        fprintf(stderr, "INT10 AH=%02X AL=%02X BX=%04X\n", ah, ral(c), c->r[X86_BX]);
     switch (ah) {
-    case 0x00:                                   /* set mode */
-        h->vmode = ral(c) & 0x7F;
-        h->cols = (h->vmode == 0 || h->vmode == 1) ? 40 : 80;
-        if (h->tty) fputs("\033[2J\033[H", stdout);
+    case 0x00: {                                 /* set mode */
+        int newm = ral(c) & 0x7F;
+        cga_dump(c, h);                          /* leaving gfx? keep the frame */
+        h->vmode = newm;
+        h->cols = (newm == 0 || newm == 1 || newm == 4 || newm == 5) ? 40 : 80;
+        if (gfx_mode(newm)) {
+            if (!(ral(c) & 0x80))                /* AL bit7 = no-clear */
+                memset(&c->mem[0xB8000], 0, 0x4000);
+            h->cga_3d9 = 0x30;                   /* bright cyan/magenta/white */
+        } else if (h->tty) {
+            fputs("\033[2J\033[H", stdout);
+        }
         h->row = h->col = 0;
         break;
+    }
     case 0x01: break;                            /* cursor shape */
     case 0x02:                                   /* set cursor pos */
         h->row = (uint8_t)(c->r[X86_DX] >> 8);
@@ -170,6 +251,11 @@ static int bios_video(X86 *c, Harness *h)
         break;
     case 0x05: break;                            /* select page */
     case 0x06: case 0x07:                        /* scroll up/down */
+        if (gfx_mode(h->vmode)) {
+            if (ral(c) == 0)                     /* AL=0: clear the bitmap */
+                memset(&c->mem[0xB8000], 0, 0x4000);
+            break;
+        }
         if (ral(c) == 0 && h->tty) {             /* AL=0: clear window */
             fputs("\033[2J\033[H", stdout);
             h->row = h->col = 0;
@@ -182,6 +268,42 @@ static int bios_video(X86 *c, Harness *h)
         int n = c->r[X86_CX] ? c->r[X86_CX] : 1;
         for (int i = 0; i < n; i++)
             putchar(ral(c));
+        break;
+    }
+    case 0x0B: {                                 /* CGA palette/background */
+        uint8_t bh = (uint8_t)(c->r[X86_BX] >> 8), bl = (uint8_t)c->r[X86_BX];
+        if (bh == 0)                             /* background+border color */
+            h->cga_3d9 = (uint8_t)((h->cga_3d9 & 0xE0) | (bl & 0x1F));
+        else                                     /* palette select (bit 0) */
+            h->cga_3d9 = (uint8_t)((h->cga_3d9 & ~0x20) | ((bl & 1) << 5));
+        break;
+    }
+    case 0x0C: {                                 /* write pixel */
+        int x = c->r[X86_CX], y = c->r[X86_DX];
+        uint8_t v = ral(c), xr = (uint8_t)(v & 0x80);
+        if (h->vmode == 6 && x < 640 && y < 200) {
+            uint8_t *p = &c->mem[0xB8000 + (y & 1) * 0x2000 + (y >> 1) * 80 + (x >> 3)];
+            uint8_t m = (uint8_t)(0x80 >> (x & 7));
+            if (xr) *p ^= (v & 1) ? m : 0;
+            else    *p = (uint8_t)((*p & ~m) | ((v & 1) ? m : 0));
+        } else if ((h->vmode == 4 || h->vmode == 5) && x < 320 && y < 200) {
+            uint8_t *p = &c->mem[0xB8000 + (y & 1) * 0x2000 + (y >> 1) * 80 + (x >> 2)];
+            int sh = 6 - 2 * (x & 3);
+            if (xr) *p ^= (uint8_t)((v & 3) << sh);
+            else    *p = (uint8_t)((*p & ~(3 << sh)) | ((v & 3) << sh));
+        }
+        break;
+    }
+    case 0x0D: {                                 /* read pixel */
+        int x = c->r[X86_CX], y = c->r[X86_DX];
+        uint8_t v = 0;
+        if (h->vmode == 6 && x < 640 && y < 200)
+            v = (c->mem[0xB8000 + (y & 1) * 0x2000 + (y >> 1) * 80 + (x >> 3)]
+                 >> (7 - (x & 7))) & 1;
+        else if ((h->vmode == 4 || h->vmode == 5) && x < 320 && y < 200)
+            v = (c->mem[0xB8000 + (y & 1) * 0x2000 + (y >> 1) * 80 + (x >> 2)]
+                 >> (6 - 2 * (x & 3))) & 3;
+        sal(c, v);
         break;
     }
     case 0x0E:                                   /* teletype */
@@ -421,7 +543,11 @@ static int bios_time(X86 *c, Harness *h)
 /* ------------------------------------------------------------------ */
 /* hook + boot                                                         */
 
-#define EQUIPMENT 0x0021   /* floppy present, 80x25 color, 1 drive, no FPU */
+#define EQUIPMENT 0x0061   /* floppies present, 80x25 color, 2 drives, no
+                            * FPU — matches the SNES build. GW-BASIC gates
+                            * its graphics driver on a table lookup indexed
+                            * by this exact byte; 0x21 lands on a zero entry
+                            * and SCREEN silently refuses to switch modes. */
 
 static int bios_hook(X86 *c, int n)
 {
@@ -485,6 +611,13 @@ static void guest_bios_setup(X86 *c, Harness *h)
     c->mem[0x411] = EQUIPMENT >> 8;
     c->mem[0x413] = (uint8_t)h->mem_kb;          /* memory size KB */
     c->mem[0x414] = (uint8_t)(h->mem_kb >> 8);
+    c->mem[0x449] = 0x03;                        /* current video mode */
+    c->mem[0x44A] = 80;                          /* columns */
+    c->mem[0x44C] = 0x00; c->mem[0x44D] = 0x10;  /* page size 4096 */
+    c->mem[0x460] = 0x07; c->mem[0x461] = 0x06;  /* cursor shape */
+    c->mem[0x463] = 0xD4; c->mem[0x464] = 0x03;  /* CRTC base 3D4 */
+    c->mem[0x465] = 0x29;                        /* 3D8 shadow: 80x25 on */
+    c->mem[0x466] = 0x30;                        /* 3D9 shadow */
     c->mem[0xFFFFE] = 0xFF;                      /* model byte: original PC */
 }
 
@@ -562,6 +695,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-v"))                 h.verbose = 1;
         else if (!strcmp(argv[i], "-w"))                 writeback = 1;
         else if (!strcmp(argv[i], "-d") && i + 1 < argc) hdimg = argv[++i];
+        else if (!strcmp(argv[i], "-cga") && i + 1 < argc) h.cga_out = argv[++i];
         else if (argv[i][0] != '-')                      img = argv[i];
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
@@ -613,6 +747,7 @@ int main(int argc, char **argv)
     if (!c) { fprintf(stderr, "out of memory\n"); return 1; }
     g_h = &h;
     c->in8 = io_in8;
+    c->out8 = io_out8;
     c->int_hook = bios_hook;
     c->ctx = &h;
     guest_bios_setup(c, &h);
@@ -665,6 +800,7 @@ int main(int argc, char **argv)
         h.exit_reason = "SIGINT";
 
     tty_restore();
+    cga_dump(c, &h);                 /* -cga: keep the final graphics frame */
     print_stats(c, &h);
 
     if (writeback && h.disk_dirty) {
