@@ -1088,14 +1088,33 @@ _h13_sec:
     clc
     adc #$8000
     sta mPTR2
-    ldy #0
-_h13_cp:
-    lda [mPTR2],y
-    sta [mPTR],y
-    iny
-    iny
-    cpy #512
-    bcc _h13_cp
+    ; DMA the 512-byte sector ROM(mPTR2) -> WRAM(mPTR) via the $2180
+    ; WMDATA port. ~5x the old word loop; Y (guest IP) is untouched.
+    sep #$20
+    lda mPTR                 ; WMADD = dest linear (offset + $7E/$7F bank)
+    sta.l $002181
+    lda mPTR+1
+    sta.l $002182
+    lda mPTR+2
+    and #$01                 ; $7E->0, $7F->1
+    sta.l $002183
+    lda #$00
+    sta.l $004300            ; DMAP0: A->B, inc A, 1-byte to 1 reg
+    lda #$80
+    sta.l $004301            ; BBAD0 = $2180 (WMDATA)
+    rep #$20
+    lda mPTR2
+    sta.l $004302            ; A1T0 = source offset
+    sep #$20
+    lda mPTR2+2
+    sta.l $004304            ; A1B0 = source bank
+    rep #$20
+    lda #512
+    sta.l $004305            ; DAS0 = 512 bytes
+    sep #$20
+    lda #$01
+    sta.l $00420B            ; trigger ch0
+    rep #$20
     lda mPTR
     clc
     adc #512
