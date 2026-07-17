@@ -42,7 +42,7 @@ clean:
 # --- M6: DOS boot ROM
 dos: build/dosboot.sfc
 
-build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/pcdos200-disk1.img build/adisk.img build/hd.img build/spc_beep64.bin
+build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/pcdos200-disk1.img build/adisk.img build/hd.img build/spc_beep64.bin build/cgalut.bin
 	$(AS) -o build/dosboot.o dosboot.asm
 
 build/spc_beep64.bin: spc_beep.asm linkfile_spc
@@ -66,3 +66,6 @@ build/hd.img: tools/mkhd.py tools/autoexec.bat ../disks/gwbasic.exe ../disks/zor
 
 build/cgatest.com: tools/mkcgatest.py
 	python3 tools/mkcgatest.py build/cgatest.com
+
+build/cgalut.bin: tools/mkcgalut.py
+	python3 tools/mkcgalut.py build/cgalut.bin

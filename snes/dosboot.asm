@@ -83,7 +83,17 @@ nFG      dw                  ; sr_alloc scratch: fg color
 nBG      dw                  ; sr_alloc scratch: bg color
 cATTR    dw                  ; current teletype attribute (ANSI SGR)
 aNP      dw                  ; CSI parameter count
+cGFX     dw                  ; 0 = text, 1 = CGA graphics (mode 4/5/6)
+s3D8     dw                  ; port 3D8 shadow (mode select)
+s3D9     dw                  ; port 3D9 shadow: bit5 pal, bit4 bright, low bg
+cPALD    dw                  ; palette dirty -> NMI rewrites CGRAM 0-3
+gROW     dw                  ; gfx scanner round-robin tile row (0-24)
+gSTG     dw                  ; staged tile row + 1 awaiting VRAM DMA (0=none)
 .ENDE
+
+.DEFINE STG   $0C00          ; gfx staging buffer: one tile row, 640 bytes
+.DEFINE CGMAP $2800          ; BG3 64x32 tilemap (VRAM word addr)
+.DEFINE CGTIL $5000          ; BG3 2bpp tile data: 1000 tiles, 8000 words
 
 .BANK 0 SLOT 0
 .ORG 0
@@ -421,7 +431,15 @@ spk_out:                     ; X = port, A = value (low byte)
     beq _sk_ctl
     cpx #$0061
     beq _sk_gate
+    cpx #$03D8
+    beq _sk_38j
+    cpx #$03D9
+    beq _sk_39j
     rts
+_sk_38j:
+    jmp _sk_3d8
+_sk_39j:
+    jmp _sk_3d9
 _sk_ctl:
     stz sFLIP                ; control write resets the byte flip-flop
     rts
@@ -635,7 +653,7 @@ _h10_n2:
     rts
 _h10_n3:
     cmp #$0000
-    beq _h10_mode
+    beq _h10_mdj
     cmp #$0006
     beq _h10_scrj
     cmp #$0007
@@ -661,7 +679,21 @@ _h10_n5:
     beq _h10_wc
     cmp #$000A
     beq _h10_wca
+    cmp #$000B
+    beq _h10_paj
+    cmp #$000C
+    beq _h10_psj
+    cmp #$000D
+    beq _h10_pgj
     rts
+_h10_paj:
+    jmp _h10_pal
+_h10_psj:
+    jmp _h10_pset
+_h10_pgj:
+    jmp _h10_pget
+_h10_mdj:
+    jmp _h10_mode
 _h10_wc:                     ; AH=9: char AL with attribute BL
     jsr con_off
     tax
@@ -688,10 +720,30 @@ _h10_wca:                    ; AH=0A: char only, cell attribute kept
 _h10_scrj:
     jmp _h10_scr
 
-_h10_mode:                   ; AH=0 set mode: AL 0/1 = 40x25, else 80x25
+_h10_mode:                   ; AH=0 set mode: 0/1=40col 2/3=80col 4/5/6=CGA gfx
     lda gAX
-    and #$00FF
+    and #$007F               ; bit7 = keep the framebuffer
     sta cMODE
+    cmp #4
+    bcc _h10_mtxt
+    cmp #7
+    bcs _h10_mtxt
+    lda #40                  ; graphics (mode 6 renders as 4 until M10p6)
+    sta cWID
+    stz kPAN
+    jsr gfx_enter
+    lda gAX
+    and #$0080
+    bne _h10_mgk
+    jsr gfx_fbclr
+_h10_mgk:
+    rts
+_h10_mtxt:
+    lda cGFX
+    beq _h10_mt2
+    jsr gfx_exit
+_h10_mt2:
+    lda cMODE
     cmp #2
     bcs _h10_m80
     lda #40
@@ -1305,9 +1357,9 @@ _vb_tkw:
     lda #1
     sta cTickP               ; request a guest INT 8
     lda cTickL               ; mirror into guest BDA 40:6C (TP polls it)
-    sta.l $7E246C
+    sta.l $7E546C
     lda cTickH
-    sta.l $7E246E
+    sta.l $7E546E
 _vb_notick:
 .ENDIF
     lda cBEEP                ; timed BEL: gate the speaker off at zero
@@ -1320,6 +1372,57 @@ _vb_notick:
     sta.l $002142
     rep #$20
 _vb_nbeep:
+    lda cGFX
+    beq _vb_ngfx
+    sep #$20                 ; BG3HOFS = kPAN*8 (0 or 64: left/right window)
+    lda kPAN
+    asl a
+    asl a
+    asl a
+    sta $2111
+    stz $2111
+    rep #$20
+    lda gSTG                 ; staged tile row -> VRAM (ch1: ch0 is INT13's)
+    beq _vb_nstg
+    dec a
+    sta kT0                  ; row: VMADD = CGTIL + row*320
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*64
+    sta kT1
+    lda kT0
+    xba
+    and #$FF00               ; row*256
+    clc
+    adc kT1
+    clc
+    adc #CGTIL
+    sta $2116
+    sep #$20
+    lda.b #$01               ; DMA ch1: mode 1 -> $2118/19
+    sta $4310
+    lda.b #$18
+    sta $4311
+    stz $4314                ; source bank 0 (WRAM mirror)
+    rep #$20
+    lda #STG
+    sta $4312
+    lda #640
+    sta $4315
+    sep #$20
+    lda.b #$02
+    sta $420B
+    rep #$20
+    stz gSTG
+_vb_nstg:
+    lda cPALD
+    beq _vb_ngfx
+    jsr pal_apply
+    stz cPALD
+_vb_ngfx:
     ldy #24                  ; drain budget (queue now kbd-only)
 _vb_drain:
     lda cQT
@@ -1351,6 +1454,11 @@ _vb_jw:
     lda $4218
     sta cJoyN
     jsr kbd_frame
+    lda cGFX
+    beq _vb_txts
+    jsr gfx_scan             ; gfx: convert next tile row into staging
+    bra _vb_done
+_vb_txts:
     jsr scan_rows            ; LAST: if the repaint overruns vblank only
 _vb_done:
     rep #$30
@@ -1384,8 +1492,11 @@ Reset:
     jml _rst_fast            ; reset vectors land in bank $00: go fast
 _rst_fast:
     rep #$38
-    ldx #$1FFF
-    txs
+    ldx #$0FFF               ; native stack BELOW the CGA adapter RAM!
+    txs                      ; ($1000-$4FFF is framebuffer: a 16 KB clear
+                             ; at $1FFF ate a live return address once —
+                             ; cost a full debugging session. Staging ends
+                             ; $0E7F; worst native depth is ~40 bytes.)
     lda #$0000
     tcd
     sep #$20
@@ -1680,6 +1791,16 @@ _rst_fmtd:
     stz.w $4334
     stz.w $4344
     stz.w $4354              ; tables live in bank 0 WRAM
+    sep #$20
+    stz.w $4360              ; ch6: mode 0 -> $2105 (CGA gfx mode split)
+    lda.b #$05
+    sta.l $004361
+    lda.b #$01               ; ch7: mode 1 -> $212C+$212D (TM and TS both:
+    sta.l $004370            ; mode 5 shows the subscreen in odd columns)
+    lda.b #$2C
+    sta.l $004371
+    stz.w $4364
+    stz.w $4374              ; tables in bank 0 WRAM
     rep #$20
     lda #$0740
     sta.l $004322
@@ -1689,8 +1810,12 @@ _rst_fmtd:
     sta.l $004342
     lda #$0770
     sta.l $004352
+    lda #$0500
+    sta.l $004362
+    lda #$0510
+    sta.l $004372
     sep #$20
-    lda.b #$3C               ; HDMA on channels 2-5
+    lda.b #$3C               ; HDMA on channels 2-5 (ch6/7 join in gfx)
     sta.l $00420C
     rep #$20
 
@@ -1698,6 +1823,12 @@ _rst_fmtd:
     stz cNMI
     stz cQH
     stz cQT
+    stz cGFX                 ; CGA graphics state (WRAM is random at
+    stz gROW                 ; power-on — every var needs an init!)
+    stz gSTG
+    stz cPALD
+    stz s3D8
+    stz s3D9
     stz cROW
     stz cCOL
     stz cTOP
@@ -2675,20 +2806,535 @@ _kt_c2:
     stz.w $0759
     stz.w $0766
     stz.w $0776
-    rep #$20
-    rts
+    bra _kt_gfx
 _kt_hid:
     stz.w $0746
     stz.w $0756
     stz.w $0764
     stz.w $0774
+_kt_gfx:
+    ; ch6 ($2105 video mode, 1-byte data) + ch7 ($212C+$212D main+sub
+    ; screens, 2-byte data) tables: the CGA split (HDMA on while cGFX).
+    ; Regions: mode 1 BG3-only bitmap to line 200 (184 with kbd), then
+    ; mode-5 kbd (TM=TS=BG1|BG2, the hires pair) or a backdrop border.
+    lda.b #128
+    sta.w $0500
+    sta.w $0510
+    lda.b #$01
+    sta.w $0501
+    lda.b #$04
+    sta.w $0511
+    stz.w $0512              ; TS off in the bitmap region
+    lda kVIS
+    bne _kt_g2
+    lda.b #72
+    bra _kt_g3
+_kt_g2:
+    lda.b #56
+_kt_g3:
+    sta.w $0502
+    sta.w $0513
+    lda.b #$01
+    sta.w $0503
+    lda.b #$04
+    sta.w $0514
+    stz.w $0515
+    lda kVIS
+    bne _kt_g4
+    lda.b #24
+    sta.w $0504
+    sta.w $0516
+    lda.b #$05
+    sta.w $0505
+    stz.w $0517              ; border: no layers -> backdrop
+    stz.w $0518
+    bra _kt_g5
+_kt_g4:
+    lda.b #40
+    sta.w $0504
+    sta.w $0516
+    lda.b #$05               ; mode 5 for the on-screen keyboard
+    sta.w $0505
+    lda.b #$03               ; TM+TS: BG1+BG2
+    sta.w $0517
+    sta.w $0518
+_kt_g5:
+    stz.w $0506              ; end of both tables
+    stz.w $0519
     rep #$20
+    rts
+
+;----------------------------------------------------------------------
+; CGA graphics (M10): mode 4/5. The adapter RAM at VBUF doubles as the
+; live framebuffer; the NMI converts one 40-tile row per frame into
+; SNES 2bpp planar tiles (round-robin, full repaint every 25 frames).
+; PPU: HDMA ch6/7 split the frame into a mode-1 BG3 bitmap region and
+; the mode-5 text/keyboard region (tables built by kbd_tables).
+;----------------------------------------------------------------------
+
+_sk_3d9:                     ; CGA color select -> palette dirty
+    and #$00FF
+    sta s3D9
+    lda #1
+    sta cPALD
+    rts
+_sk_3d8:                     ; CGA mode select: bit1 = graphics (GW-BASIC
+    and #$00FF               ; and games switch modes here, not INT 10h)
+    sta s3D8
+    and #$0002
+    beq _sk_txt
+    lda cGFX
+    bne _sk_dn
+    lda #4
+    sta cMODE
+    lda #40
+    sta cWID
+    stz kPAN
+    jmp gfx_enter            ; no clear: programs clear B800 themselves
+_sk_txt:
+    lda cGFX
+    beq _sk_dn
+    jsr gfx_exit
+    lda #3
+    sta cMODE
+    lda #80
+    sta cWID
+    stz kPAN
+    jsr attr_reset
+    jmp con_clear
+_sk_dn:
+    rts
+
+gfx_fbclr:                   ; zero the 16 KB framebuffer (guest ctx)
+    ldx #$0000
+    lda #$0000
+_gfc:
+    sta.l VBUF,x
+    inx
+    inx
+    cpx #$4000
+    bcc _gfc
+    rts
+
+_h10_pal:                    ; AH=0B: BH=0 bg/border color, BH=1 palette
+    lda gBX
+    xba
+    and #$00FF
+    bne _hpa_sel
+    lda gBX
+    and #$001F
+    sta cT0
+    lda s3D9
+    and #$00E0
+    ora cT0
+    sta s3D9
+    bra _hpa_dn
+_hpa_sel:
+    lda gBX
+    and #$0001
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; -> bit 5
+    sta cT0
+    lda s3D9
+    and #$FFDF
+    ora cT0
+    sta s3D9
+_hpa_dn:
+    lda #1
+    sta cPALD
+    rts
+
+gfx_pofs:                    ; gCX=x gDX=y -> X = fb byte offset, cT1 = shift
+    lda gDX
+    lsr a                    ; y>>1, carry = y&1
+    sta cT0
+    lda #$0000
+    bcc _gpo_e
+    lda #$2000               ; odd scanlines: second bank
+_gpo_e:
+    sta aT0
+    lda cT0
+    asl a
+    asl a
+    asl a
+    asl a                    ; *16
+    sta cT0
+    asl a
+    asl a                    ; *64
+    clc
+    adc cT0                  ; (y>>1)*80
+    clc
+    adc aT0
+    sta aT0
+    lda gCX
+    lsr a
+    lsr a                    ; x>>2
+    clc
+    adc aT0
+    tax
+    lda gCX
+    and #$0003
+    asl a
+    sta cT0
+    lda #6
+    sec
+    sbc cT0                  ; shift = 6 - 2*(x&3)
+    sta cT1
+    rts
+
+_h10_pset:                   ; AH=0C: write pixel AL at (CX,DX); bit7 = XOR
+    lda cGFX
+    beq _hps_r
+    lda gCX
+    cmp #320
+    bcs _hps_r
+    lda gDX
+    cmp #200
+    bcs _hps_r
+    jsr gfx_pofs
+    lda gAX
+    and #$0003
+    sta cT0                  ; value at pixel position
+    lda #$0003
+    sta aT0                  ; mask
+_hps_sh:
+    lda cT1
+    beq _hps_go
+    dec cT1
+    asl cT0
+    asl aT0
+    bra _hps_sh
+_hps_go:
+    lda gAX
+    and #$0080
+    bne _hps_xor
+    lda aT0
+    eor #$FFFF
+    sta aT0
+    lda.l VBUF,x
+    and aT0
+    ora cT0
+    bra _hps_wr
+_hps_xor:
+    lda.l VBUF,x
+    eor cT0
+_hps_wr:
+    sep #$20
+    sta.l VBUF,x             ; write only the target byte
+    rep #$20
+_hps_r:
+    rts
+
+_h10_pget:                   ; AH=0D: read pixel (CX,DX) -> AL
+    lda cGFX
+    beq _hps_r
+    lda gCX
+    cmp #320
+    bcs _hps_r
+    lda gDX
+    cmp #200
+    bcs _hps_r
+    jsr gfx_pofs
+    lda.l VBUF,x
+    and #$00FF
+_hpg_sh:
+    ldx cT1
+    beq _hpg_go
+    dec cT1
+    lsr a
+    bra _hpg_sh
+_hpg_go:
+    and #$0003
+    sta cT0
+    lda gAX
+    and #$FF00
+    ora cT0
+    sta gAX
+    rts
+
+pal_apply:                   ; CGRAM 0-3 from s3D9 (forced blank or vblank!
+    phy                      ; NMI-off in guest ctx). kT3 is scratch.
+    sep #$20
+    lda.b #$00
+    sta.l $002121
+    rep #$20
+    lda s3D9
+    and #$000F               ; entry 0: background color
+    asl a
+    tax
+    lda.l cga_pal16,x
+    sep #$20
+    sta.l $002122
+    xba
+    sta.l $002122
+    rep #$20
+    ldy #1                   ; entries 1-3: idx = v*2 + pal + bright*8
+_pa_c:
+    lda s3D9
+    and #$0020
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    lsr a                    ; palette select -> 0/1
+    sta kT3
+    lda s3D9
+    and #$0010
+    lsr a                    ; bright -> 0/8
+    clc
+    adc kT3
+    sta kT3
+    tya
+    asl a                    ; v*2
+    clc
+    adc kT3
+    asl a                    ; word index
+    tax
+    lda.l cga_pal16,x
+    sep #$20
+    sta.l $002122
+    xba
+    sta.l $002122
+    rep #$20
+    iny
+    cpy #4
+    bcc _pa_c
+    ply
+    rts
+
+gfx_enter:                   ; guest ctx: switch the PPU to the gfx split.
+    phy                      ; NMI masked throughout (mid-setup NMI would
+    sep #$20                 ; race our VMADD/DMA registers).
+    lda.b #$00
+    sta.l $004200
+    lda.b #$8F
+    sta.l $002100            ; forced blank
+    lda.b #$80
+    sta.l $002115
+    rep #$20
+    lda #1
+    sta cGFX
+    stz gROW
+    stz gSTG
+    lda #$0030               ; default: bright cyan/magenta/white, black bg
+    sta s3D9
+    stz cPALD
+    jsr pal_apply
+    ; BG3 tilemap: (r,c) -> tile r*40+c; cols 0-31 in screen A at CGMAP,
+    ; cols 32-39 in screen B at CGMAP+$400 (cols 40-63 never visible)
+    lda #CGMAP
+    sta.l $002116
+    stz cT1                  ; r
+_ge_ra:
+    ldx #0                   ; c within screen A
+_ge_ca:
+    jsr _ge_tile
+    inx
+    cpx #32
+    bcc _ge_ca
+    inc cT1
+    lda cT1
+    cmp #32
+    bcc _ge_ra
+    stz cT1
+_ge_rb:
+    ldx #32                  ; c within screen B
+_ge_cb:
+    jsr _ge_tile
+    inx
+    cpx #64
+    bcc _ge_cb
+    inc cT1
+    lda cT1
+    cmp #32
+    bcc _ge_rb
+    ; zero the tile region: DMA ch0 fixed-source, 16000 bytes
+    lda #CGTIL
+    sta.l $002116
+    sep #$20
+    lda.b #$09               ; mode 1, fixed A-address
+    sta.l $004300
+    lda.b #$18
+    sta.l $004301
+    rep #$20
+    lda #zero_w
+    sta.l $004302
+    sep #$20
+    lda.b #:zero_w
+    sta.l $004304
+    rep #$20
+    lda #16000
+    sta.l $004305
+    sep #$20
+    lda.b #$01
+    sta.l $00420B
+    ; BG3 registers
+    lda.b #$29               ; map $2800, 64x32
+    sta.l $002109
+    lda.b #$05               ; chars $5000
+    sta.l $00210C
+    lda.b #$00
+    sta.l $002111            ; HOFS 0
+    sta.l $002111
+    lda.b #$FF
+    sta.l $002112            ; VOFS -1
+    lda.b #$03
+    sta.l $002112
+    rep #$20
+    jsr kbd_tables           ; rebuild HDMA tables (gfx split boundaries)
+    sep #$20
+    lda.b #$FC               ; HDMA: kbd ch2-5 + gfx split ch6/7
+    sta.l $00420C
+    lda.b #$0F
+    sta.l $002100            ; screen on
+    lda.b #$81
+    sta.l $004200            ; NMI + autojoy back on
+    rep #$20
+    ply
+    rts
+
+_ge_tile:                    ; cT1 = r, X = c: write one tilemap entry
+    lda cT1
+    cmp #25
+    bcs _get_z
+    cpx #40
+    bcs _get_z
+    asl a
+    asl a
+    asl a                    ; r*8
+    sta cT0
+    asl a
+    asl a                    ; r*32
+    clc
+    adc cT0                  ; r*40
+    sta cT0
+    txa
+    clc
+    adc cT0
+    bra _get_w
+_get_z:
+    lda #0
+_get_w:
+    sta.l $002118
+    rts
+
+gfx_exit:                    ; guest ctx: back to the mode-5 text console
+    phy
+    sep #$20
+    lda.b #$00
+    sta.l $004200
+    lda.b #$8F
+    sta.l $002100
+    lda.b #$3C               ; HDMA: kbd channels only
+    sta.l $00420C
+    lda.b #$05               ; mode 5 everywhere
+    sta.l $002105
+    lda.b #$03               ; TM+TS: BG1+BG2 (mode-5 hires pair)
+    sta.l $00212C
+    sta.l $00212D
+    lda.b #$00               ; CGRAM 0-2: backdrop black, pair0 black/green
+    sta.l $002121
+    sta.l $002122
+    sta.l $002122
+    sta.l $002122
+    sta.l $002122
+    lda.b #$E0
+    sta.l $002122
+    lda.b #$03
+    sta.l $002122
+    rep #$20
+    stz cGFX
+    stz gSTG
+    stz cPALD
+    jsr kbd_tables
+    sep #$20
+    lda.b #$0F
+    sta.l $002100
+    lda.b #$81
+    sta.l $004200
+    rep #$20
+    ply
+    rts
+
+; one tile line: read 2 CGA bytes (8 px), LUT to planar, store to staging.
+; kT1 = src index (row*320 + c*2), kT2 = staging offset (c*16), kT0/kT3
+; scratch. OFS folds the line's scanline-interleave displacement.
+.MACRO GLINE ARGS OFS, SOFS
+    ldx kT1
+    lda.l $7E0000+VBOFS+OFS,x
+    sta kT0
+    and #$00FF
+    asl a
+    tax
+    lda.l cgalut_hi,x
+    sta kT3
+    lda kT0
+    xba
+    and #$00FF
+    asl a
+    tax
+    lda.l cgalut_lo,x
+    ora kT3
+    ldx kT2
+    sta.w STG+SOFS,x
+.ENDM
+
+gfx_scan:                    ; NMI tail: convert tile row gROW -> staging
+    lda gROW
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*64
+    sta kT1
+    lda gROW
+    xba
+    and #$FF00               ; row*256
+    clc
+    adc kT1
+    sta kT1                  ; src index = row*320
+    stz kT2
+    lda #40
+    sta nCNT
+_gs_tile:
+    GLINE $0000, 0
+    GLINE $2000, 2
+    GLINE $0050, 4
+    GLINE $2050, 6
+    GLINE $00A0, 8
+    GLINE $20A0, 10
+    GLINE $00F0, 12
+    GLINE $20F0, 14
+    lda kT1
+    inc a
+    inc a
+    sta kT1
+    lda kT2
+    clc
+    adc #16
+    sta kT2
+    dec nCNT
+    beq _gs_rdone
+    jmp _gs_tile             ; loop body > bra range (8 unrolled GLINEs)
+_gs_rdone:
+    lda gROW
+    inc a
+    sta gSTG                 ; converted row + 1, awaiting DMA
+    cmp #25
+    bcc _gs_st               ; advance round-robin: 0..24
+    lda #0
+_gs_st:
+    sta gROW
     rts
 
 .INCLUDE "build/kbdlayout.asm"
 
 boot_banner:
-    .db "snes86: 8086 core up, 112KB guest RAM", $0D, $0A
+    .db "snes86: 8086 core up, 108KB guest RAM", $0D, $0A
     .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
 
 .ENDS
@@ -2704,6 +3350,19 @@ font_bg2:
     .INCBIN "build/font_bg2.bin"
 font_bg1:
     .INCBIN "build/font_bg1.bin"
+
+; CGA chunky->planar LUTs (tools/mkcgalut.py): HI[256] words place a CGA
+; byte's 4 pixels in the left tile half, LO[256] in the right; word =
+; plane0 low byte + plane1 high = one $2118/19 write. Then the CGA
+; 16-color palette in BGR555.
+cgalut_hi:
+    .INCBIN "build/cgalut.bin" SKIP 0 READ 512
+cgalut_lo:
+    .INCBIN "build/cgalut.bin" SKIP 512 READ 512
+cga_pal16:
+    .INCBIN "build/cgalut.bin" SKIP 1024 READ 32
+zero_w:
+    .dw 0
 
 .ENDS
 

@@ -31,8 +31,8 @@ else
   FAIL=1
 fi
 
-TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd"
-[ "$1" = "quick" ] && TESTS="t_boot t_zork"
+TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga"
+[ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
 
 for t in $TESTS; do
   r=$("$MESEN" --testrunner "$ROM" "$(pwd)/test/$t.lua" 2>/dev/null | grep '^RESULT' | head -1)
