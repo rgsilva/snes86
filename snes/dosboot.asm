@@ -1781,24 +1781,26 @@ dsnap:
 _rst_run:
     ldy gIP
     lda #64
-    sta tSKIP                ; slow-path gas (tSKIP is trace-only state,
-_rst_inner:                  ; free in this build). IRQ/HALT are polled
-    jsr step_lean            ; every 64 instructions instead of every one
-    dec tSKIP
-    bne _rst_inner
+    sta tSKIP                ; dispatch gas (tSKIP is trace-only state,
+    jmp step_lean            ; free in this build) — the core threads
+                             ; from op to op and calls back here:
+run_slow:                    ; gas exhausted (or HLT): service and refuel
+    sty gIP
+    lda #64
+    sta tSKIP
     lda cTickP
-    beq _rst_nirq
+    beq _rs_nirq
     lda fSTATIC              ; IF lives in the static flag bits
     and #$0200
-    beq _rst_nirq
+    beq _rs_nirq
     stz cTickP
-    ldy gIP
     lda #8                   ; 18.2 Hz timer tick -> guest IVT[8]
     jsr do_int
     sty gIP
-_rst_nirq:
+_rs_nirq:
     lda gHALT
-    beq _rst_run
+    bne _rst_halt
+    jmp step_lean
 _rst_halt:
     wai
     bra _rst_halt
