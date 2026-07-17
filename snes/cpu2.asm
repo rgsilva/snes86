@@ -141,7 +141,6 @@ opPF3: lda #1
 .MACRO PUSHSEG ARGS SRC
     lda SRC
     jsr push16v
-    sty gIP
     jmp step_next
 .ENDM
 op06: PUSHSEG gES
@@ -154,7 +153,6 @@ op1E: PUSHSEG gDS
     ldx #SEGOFF
     sta.b 0,x
     jsr upd_base_x
-    sty gIP
     jmp step_next
 .ENDM
 op07: POPSEG 16
@@ -171,7 +169,6 @@ op8C:                        ; MOV rm16, sreg
     tax
     lda.b 0,x
     jsr rm_write16
-    sty gIP
     jmp step_next
 
 op8E:                        ; MOV sreg, rm16
@@ -186,7 +183,6 @@ op8E:                        ; MOV sreg, rm16
     lda tmp2
     sta.b 0,x
     jsr upd_base_x
-    sty gIP
     jmp step_next
 
 op8F:                        ; POP rm16
@@ -203,7 +199,6 @@ op8F:                        ; POP rm16
     sta mPTR+1
     lda tmp2
     jsr rm_write16
-    sty gIP
     jmp step_next
 
 opC4:                        ; LES r16, m32
@@ -217,7 +212,6 @@ opC4:                        ; LES r16, m32
     sta gES
     ldx #16
     jsr upd_base_x
-    sty gIP
     jmp step_next
 
 opC5:                        ; LDS r16, m32
@@ -231,7 +225,6 @@ opC5:                        ; LDS r16, m32
     sta gDS
     ldx #22
     jsr upd_base_x
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -248,13 +241,11 @@ opE8:                        ; CALL rel16
     clc
     adc tmp0
     tay
-    sty gIP
     jmp step_next
 
 opC3:                        ; RET (C1 alias)
     jsr pop16v
     tay
-    sty gIP
     jmp step_next
 
 opC2:                        ; RET imm16 (C0 alias)
@@ -268,7 +259,6 @@ opC2:                        ; RET imm16 (C0 alias)
     clc
     adc tmp2
     sta gSP
-    sty gIP
     jmp step_next
 
 op9A:                        ; CALL far ptr16:16
@@ -288,7 +278,6 @@ op9A:                        ; CALL far ptr16:16
     sta gCS
     ldy tmp0
     jsr upd_bCS
-    sty gIP
     jmp step_next
 
 opEA:                        ; JMP far ptr16:16
@@ -300,7 +289,6 @@ opEA:                        ; JMP far ptr16:16
     sta gCS
     ldy tmp0
     jsr upd_bCS
-    sty gIP
     jmp step_next
 
 opCB:                        ; RETF (C9 alias)
@@ -309,7 +297,6 @@ opCB:                        ; RETF (C9 alias)
     jsr pop16v
     sta gCS
     jsr upd_bCS
-    sty gIP
     jmp step_next
 
 opCA:                        ; RETF imm16 (C8 alias)
@@ -326,7 +313,6 @@ opCA:                        ; RETF imm16 (C8 alias)
     clc
     adc tmp2
     sta gSP
-    sty gIP
     jmp step_next
 
 ; interrupt entry: A = vector, Y = return IP; exits with Y = handler IP
@@ -389,7 +375,6 @@ _di_guest:
 opCC:                        ; INT3
     lda #3
     jsr do_int
-    sty gIP
     jmp step_next
 
 opCD:                        ; INT imm8
@@ -397,7 +382,6 @@ opCD:                        ; INT imm8
     iny
     and #$00FF
     jsr do_int
-    sty gIP
     jmp step_next
 
 opCE:                        ; INTO
@@ -408,7 +392,6 @@ opCE:                        ; INTO
     lda #4
     jsr do_int
 _into_no:
-    sty gIP
     jmp step_next
 
 opCF:                        ; IRET
@@ -422,7 +405,6 @@ opCF:                        ; IRET
     ora #$F002
     sta fSTATIC
     stz lfKIND
-    sty gIP
     jmp step_next
 
 opE0:                        ; LOOPNZ rel8
@@ -440,7 +422,6 @@ opE0:                        ; LOOPNZ rel8
     adc tmp0
     tay
 _e0_no:
-    sty gIP
     jmp step_next
 
 opE1:                        ; LOOPZ rel8
@@ -458,7 +439,6 @@ opE1:                        ; LOOPZ rel8
     adc tmp0
     tay
 _e1_no:
-    sty gIP
     jmp step_next
 
 opE2:                        ; LOOP rel8
@@ -472,7 +452,6 @@ opE2:                        ; LOOP rel8
     adc tmp0
     tay
 _e2_no:
-    sty gIP
     jmp step_next
 
 opE3:                        ; JCXZ rel8
@@ -485,7 +464,6 @@ opE3:                        ; JCXZ rel8
     adc tmp0
     tay
 _e3_no:
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -498,7 +476,6 @@ opFE:
     beq _fe_inc
     cmp #2
     beq _fe_dec
-    sty gIP
     jmp step_next
 _fe_inc:
     jsr save_cf
@@ -512,7 +489,6 @@ _fe_inc:
     sta lfB
     lda #LF_ADD8
     sta lfKIND
-    sty gIP
     jmp step_next
 _fe_dec:
     jsr save_cf
@@ -526,7 +502,6 @@ _fe_dec:
     sta lfB
     lda #LF_SUB8
     sta lfKIND
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -551,7 +526,6 @@ g5_inc:
     sta lfB
     lda #LF_ADD16
     sta lfKIND
-    sty gIP
     jmp step_next
 
 g5_dec:
@@ -565,7 +539,6 @@ g5_dec:
     sta lfB
     lda #LF_SUB16
     sta lfKIND
-    sty gIP
     jmp step_next
 
 g5_call:
@@ -574,7 +547,6 @@ g5_call:
     tya
     jsr push16v
     ldy tmp2
-    sty gIP
     jmp step_next
 
 g5_callf:                    ; CALL far m16:16
@@ -592,13 +564,11 @@ g5_callf:                    ; CALL far m16:16
     sta gCS
     ldy tmp0
     jsr upd_bCS
-    sty gIP
     jmp step_next
 
 g5_jmp:
     jsr rm_read16
     tay
-    sty gIP
     jmp step_next
 
 g5_jmpf:
@@ -610,7 +580,6 @@ g5_jmpf:
     sta gCS
     ldy tmp0
     jsr upd_bCS
-    sty gIP
     jmp step_next
 
 g5_push:                     ; PUSH rm16 (8086: PUSH SP pushes new SP)
@@ -628,7 +597,6 @@ g5_push:                     ; PUSH rm16 (8086: PUSH SP pushes new SP)
 _g5p_go:
     lda tmp2
     jsr push16v
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -638,7 +606,6 @@ _g5p_go:
     lda pREP
     bne _rw\@
     jsr ONCE
-    sty gIP
     jmp step_next
 _rw\@:
     lda gCX
@@ -649,7 +616,6 @@ _rl\@:
     lda gCX
     bne _rl\@
 _rd\@:
-    sty gIP
     jmp step_next
 .ENDM
 
@@ -664,7 +630,6 @@ op_AD: REPWRAP lods16_once
     lda pREP
     bne _zw\@
     jsr ONCE
-    sty gIP
     jmp step_next
 _zw\@:
     lda gCX
@@ -685,7 +650,6 @@ _ze\@:
     bne _zd\@
     bra _zl\@
 _zd\@:
-    sty gIP
     jmp step_next
 .ENDM
 
@@ -919,7 +883,6 @@ grp2_8:
 _g28_rot_st:
     sta fSTATIC
 _g28_nop:
-    sty gIP
     jmp step_next
 _g28_shift:                  ; SHL/SHR/SAR: SZP too, AF cleared
     lda fSTATIC
@@ -935,7 +898,6 @@ _g28_shift:                  ; SHL/SHR/SAR: SZP too, AF cleared
     ora #F_OF
 _g28_sh_st:
     sta fSTATIC
-    sty gIP
     jmp step_next
 _g28_setmo:
     lda sCNT
@@ -946,7 +908,6 @@ _g28_setmo:
     sta lfR
     lda #LF_LOG8
     sta lfKIND
-    sty gIP
     jmp step_next
 
 grp2_16:
@@ -978,7 +939,6 @@ grp2_16:
 _g216_rot_st:
     sta fSTATIC
 _g216_nop:
-    sty gIP
     jmp step_next
 _g216_shift:
     lda fSTATIC
@@ -994,7 +954,6 @@ _g216_shift:
     ora #F_OF
 _g216_sh_st:
     sta fSTATIC
-    sty gIP
     jmp step_next
 _g216_setmo:
     lda sCNT
@@ -1005,7 +964,6 @@ _g216_setmo:
     sta lfR
     lda #LF_LOG16
     sta lfKIND
-    sty gIP
     jmp step_next
 
 g2tab8:
@@ -1367,7 +1325,6 @@ g3_test8:
     and #$00FF
     sta lfB
     jsr alu_and8
-    sty gIP
     jmp step_next
 
 g3_test16:
@@ -1378,21 +1335,18 @@ g3_test16:
     iny
     sta lfB
     jsr alu_and16
-    sty gIP
     jmp step_next
 
 g3_not8:
     jsr rm_read8
     eor #$00FF
     jsr rm_write8
-    sty gIP
     jmp step_next
 
 g3_not16:
     jsr rm_read16
     eor #$FFFF
     jsr rm_write16
-    sty gIP
     jmp step_next
 
 g3_neg8:
@@ -1402,7 +1356,6 @@ g3_neg8:
     jsr alu_sub8
     lda lfR
     jsr rm_write8
-    sty gIP
     jmp step_next
 
 g3_neg16:
@@ -1412,7 +1365,6 @@ g3_neg16:
     jsr alu_sub16
     lda lfR
     jsr rm_write16
-    sty gIP
     jmp step_next
 
 ; unsigned 16x16 multiply: mA * mB -> mHI:mLO (clobbers mB)
@@ -1460,7 +1412,6 @@ g3_mul8:
     sta gAX
     and #$FF00
     jsr mulflags
-    sty gIP
     jmp step_next
 
 g3_mul16:
@@ -1474,7 +1425,6 @@ g3_mul16:
     lda mHI
     sta gDX
     jsr mulflags
-    sty gIP
     jmp step_next
 
 sext8:                       ; A = byte -> sign-extended word
@@ -1499,7 +1449,6 @@ g3_imul8:
     jsr sext8                ; A = sext of AL(result)
     eor mLO
     jsr mulflags
-    sty gIP
     jmp step_next
 
 g3_imul16:
@@ -1536,12 +1485,10 @@ _im16_b:
     lda gDX
     eor #$FFFF
     jsr mulflags
-    sty gIP
     jmp step_next
 _im16_p:
     lda gDX
     jsr mulflags
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -1853,7 +1800,6 @@ g3_div16:
     sta gAX
     lda dA
     sta gDX
-    sty gIP
     jmp step_next
 
 g3_idiv16:
@@ -1885,7 +1831,6 @@ _id16_n:
     sta gAX
     lda dA
     sta gDX
-    sty gIP
     jmp step_next
 
 g3_div8:
@@ -1912,7 +1857,6 @@ g3_div8:
     sep #$20
     sta gAX+1
     rep #$20
-    sty gIP
     jmp step_next
 
 g3_idiv8:
@@ -1951,13 +1895,11 @@ _id8_n:
     sep #$20
     sta gAX+1
     rep #$20
-    sty gIP
     jmp step_next
 
 _dv_err:
     lda #0
     jsr do_int
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -2061,7 +2003,6 @@ _daa_fin:
     jsr szp8_f
     lda tmp2
     sta fSTATIC
-    sty gIP
     jmp step_next
 
 op2F:                        ; DAS
@@ -2180,7 +2121,6 @@ _das_fin:
     jsr szp8_f
     lda tmp2
     sta fSTATIC
-    sty gIP
     jmp step_next
 
 op37:                        ; AAA
@@ -2257,7 +2197,6 @@ _aaa_nz:
 _aaa_st:
     lda tmp2
     sta fSTATIC
-    sty gIP
     jmp step_next
 
 op3F:                        ; AAS
@@ -2354,7 +2293,6 @@ _aas_noaf:
 _aas_st:
     lda tmp2
     sta fSTATIC
-    sty gIP
     jmp step_next
 
 opD4:                        ; AAM imm8 — divides AL via CORD
@@ -2382,7 +2320,6 @@ opD4:                        ; AAM imm8 — divides AL via CORD
     sta lfR
     lda #LF_LOG8             ; SZP from AL, CF/AF/OF = 0
     sta lfKIND
-    sty gIP
     jmp step_next
 _aam_err:
     stz lfR
@@ -2390,7 +2327,6 @@ _aam_err:
     sta lfKIND
     lda #0
     jsr do_int
-    sty gIP
     jmp step_next
 
 opD5:                        ; AAD imm8: AL = AH*imm + AL (add8 flags)
@@ -2417,7 +2353,6 @@ opD5:                        ; AAD imm8: AL = AH*imm + AL (add8 flags)
     sep #$20
     stz gAX+1
     rep #$20
-    sty gIP
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -2431,13 +2366,11 @@ op98:                        ; CBW
     lda #$FF
     sta gAX+1
     rep #$20
-    sty gIP
     jmp step_next
 _cbw_p:
     sep #$20
     stz gAX+1
     rep #$20
-    sty gIP
     jmp step_next
 
 op99:                        ; CWD
@@ -2446,22 +2379,18 @@ op99:                        ; CWD
     beq _cwd_p
     lda #$FFFF
     sta gDX
-    sty gIP
     jmp step_next
 _cwd_p:
     stz gDX
-    sty gIP
     jmp step_next
 
 op9B:                        ; WAIT
-    sty gIP
     jmp step_next
 
 op9C:                        ; PUSHF
     jsr flags_norm
     lda fSTATIC
     jsr push16v
-    sty gIP
     jmp step_next
 
 op9D:                        ; POPF
@@ -2470,7 +2399,6 @@ op9D:                        ; POPF
     ora #$F002
     sta fSTATIC
     stz lfKIND
-    sty gIP
     jmp step_next
 
 op9E:                        ; SAHF
@@ -2485,7 +2413,6 @@ op9E:                        ; SAHF
     and #$0FD5
     ora #$F002
     sta fSTATIC
-    sty gIP
     jmp step_next
 
 op9F:                        ; LAHF
@@ -2494,7 +2421,6 @@ op9F:                        ; LAHF
     lda fSTATIC
     sta gAX+1
     rep #$20
-    sty gIP
     jmp step_next
 
 opD6:                        ; SALC (undocumented)
@@ -2503,14 +2429,12 @@ opD6:                        ; SALC (undocumented)
     sep #$20
     stz gAX
     rep #$20
-    sty gIP
     jmp step_next
 _salc_1:
     sep #$20
     lda #$FF
     sta gAX
     rep #$20
-    sty gIP
     jmp step_next
 
 opD7:                        ; XLAT
@@ -2524,12 +2448,10 @@ opD7:                        ; XLAT
     lda [mPTR]
     sta gAX
     rep #$20
-    sty gIP
     jmp step_next
 
 opESC:                       ; D8-DF: decode ModRM, do nothing
     jsr decode_modrm
-    sty gIP
     jmp step_next
 
 ; IN/OUT: no real devices. Exception: the CGA/MDA status ports
@@ -2577,7 +2499,6 @@ opE4:                        ; IN AL, imm8
     sep #$20
     sta gAX
     rep #$20
-    sty gIP
     jmp step_next
 opE5:                        ; IN AX, imm8
     lda [bCS],y
@@ -2585,7 +2506,6 @@ opE5:                        ; IN AX, imm8
     and #$00FF
     jsr io_in16
     sta gAX
-    sty gIP
     jmp step_next
 opE6:                        ; OUT imm8, AL
     lda [bCS],y
@@ -2611,13 +2531,11 @@ opEC:                        ; IN AL, DX
     sep #$20
     sta gAX
     rep #$20
-    sty gIP
     jmp step_next
 opED:
     lda gDX
     jsr io_in16
     sta gAX
-    sty gIP
     jmp step_next
 opEE:                        ; OUT DX, AL
     sty gIP
