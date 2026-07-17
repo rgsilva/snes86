@@ -225,7 +225,8 @@ subdirs = [
     ("BENCH", [("SIEVE.PAS", sieve),
                ("SIEVE.COM", sieve_com),
                ("BENCH.PAS", bench)]),
-    ("GAMES", [("SNIPES.EXE", snipes), ("ZORK1.COM", zork_com)] +
+    ("GAMES", [("SNIPES.EXE", snipes), ("ZORK1.COM", zork_com),
+               ("ROGUE.EXE", rd("rogue", "rogue", "10ROGUE.EXE"))] +
                [(cn, cd) for cn, cd, _, _ in inf_games]),
 ]
 
