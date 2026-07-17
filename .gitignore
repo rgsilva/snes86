@@ -9,3 +9,4 @@ disks/*.7z
 *.sfc
 *.sym
 .DS_Store
+releases/
