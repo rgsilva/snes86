@@ -150,6 +150,8 @@ fmp = read_img(os.path.join(DISKS, "multiplan2.img"))
 ws_com = open(os.path.join(DISKS, "ws_installed.com"), "rb").read()
 mp_com = open(os.path.join(DISKS, "mp_com_compaq.bin"), "rb").read()
 zork_com = open(os.path.join(DISKS, "zork1_snes.com"), "rb").read()
+sok_com = open(os.path.join(DISKS, "sokoban.com"), "rb").read()
+sok_pas = open(os.path.join(DISKS, "sokoban.pas"), "rb").read()
 zork_dat = open(os.path.join(DISKS, "zork1", "data", "zork1.dat"), "rb").read()
 setup_inf = open(os.path.join(DISKS, "zork1", "setup.inf"), "rb").read()
 
@@ -236,6 +238,7 @@ subdirs = [
                ("SIEVE.COM", sieve_com),
                ("BENCH.PAS", bench)]),
     ("GAMES", [("SNIPES.EXE", snipes), ("ZORK1.COM", zork_com),
+               ("SOKOBAN.COM", sok_com), ("SOKOBAN.PAS", sok_pas),
                ("ROGUE.EXE", rd("rogue", "rogue", "10ROGUE.EXE"))] +
                [(cn, cd) for cn, cd, _, _ in inf_games]),
 ]
