@@ -96,7 +96,23 @@ s9CD     dw                  ; INT9: inter-scancode hold-off in FRAMES
                              ; (NMI decrements): a real key is held ~100ms;
                              ; back-to-back make/break would let a slow
                              ; poll loop see only the break
+bPIT     dw                  ; beep: DSP P value (raw pitch)
+bGON     dw                  ; beep: gate on/off
+bDIRTY   dw                  ; beep: NMI must (re)send to the SPC
+mFH      dw                  ; MIDI FIFO head (producer, byte off in $0540)
+mFT      dw                  ; MIDI FIFO tail (NMI sequencer)
+mDLY     dw                  ; frames until the event at mFT ($FFFF idle)
+mSEQ     dw                  ; SPC command sequence counter (1-15)
+mPKn     dw                  ; packet assembly byte counter (0-3)
+mAOF     dw                  ; all-notes-off request
+mEVN     dw                  ; events-per-frame guard
+mVNX     dw                  ; voice-steal round robin
+mVCE     dw                  ; voice chosen for the current note-on
 .ENDE
+
+; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
+; $0530, vNote[8] at $0538 ($FF = voice free), FIFO $0540-$06FF (112
+; four-byte packets: [delta-frames][status][d1][d2]).
 
 .DEFINE STG   $0C00          ; gfx staging buffer: one tile row, 640 bytes
 .DEFINE CGMAP $2800          ; BG3 64x32 tilemap (VRAM word addr)
@@ -460,11 +476,19 @@ spk_out:                     ; X = port, A = value (low byte)
     beq _sk_38j
     cpx #$03D9
     beq _sk_39j
+    cpx #$0330
+    beq _sk_mdj
+    cpx #$0331
+    beq _sk_mcj
     rts
 _sk_38j:
     jmp _sk_3d8
 _sk_39j:
     jmp _sk_3d9
+_sk_mdj:
+    jmp midi_data
+_sk_mcj:
+    jmp midi_ctl
 _sk_ctl:
     stz sFLIP                ; control write resets the byte flip-flop
     rts
@@ -492,10 +516,9 @@ _sk_gate:
     cmp #$0003
     beq _sk_on
     stz sGATE
-    sep #$20
-    lda #$00
-    sta.l $002142            ; silence
-    rep #$20
+    stz bGON                 ; NMI sends the key-off (single SPC sender)
+    lda #1
+    sta bDIRTY
     rts
 _sk_on:
     lda sGATE
@@ -536,25 +559,19 @@ _sk_nx:
 _sk_mx:
     lda #$3FFF
 _sk_snd:
-    sep #$20
-    sta.l $002140            ; pitch lo
-    xba
-    sta.l $002141            ; pitch hi
-    lda #$01
-    sta.l $002142            ; play
-    rep #$20
+    sta bPIT                 ; NMI raw-KONs voice 7 with this pitch
+    lda #1
+    sta bGON
+    sta bDIRTY
 _sk_r:
     rts
 
 beep_bel:                    ; BEL: ~886 Hz for 12 frames
-    sep #$20
-    lda #$17
-    sta.l $002140
-    lda #$07
-    sta.l $002141
-    lda #$01
-    sta.l $002142
-    rep #$20
+    lda #$0717
+    sta bPIT
+    lda #1
+    sta bGON
+    sta bDIRTY
     lda #12
     sta cBEEP
     rts
@@ -595,7 +612,7 @@ _au_k:
     cmp cT0
     bne _au_k
     inx
-    cpx #240
+    cpx #1024
     bcc _au_l
     rep #$20
     lda #$0210
@@ -603,21 +620,22 @@ _au_k:
     sep #$20
     lda #$00
     sta.l $002141
-    lda #241                 ; last counter + 2: go
+    lda #1                   ; last counter + 2 (mod 256): go
     sta.l $002140
     ldx #200                 ; let the IPL take the jump...
 _au_j:
     dex
     bne _au_j
     lda #$00                 ; ...then scrub the mailbox: the driver
-    sta.l $002140            ; must find port2 = 0 (silence), not the
-    sta.l $002141            ; stale transfer address
-    sta.l $002142
+    sta.l $002140            ; holds until port3 reads 0, and the IPL
+    sta.l $002141            ; jump left the entry address in ports 2/3
+    sta.l $002142            ; (unscrubbed port3 = a session of debugging)
+    sta.l $002143
     rep #$20
     rts
 
 spc_blob:
-.INCBIN "build/spc_beep64.bin" SKIP $0200 READ 240
+.INCBIN "build/spc_midi64.bin" SKIP $0200 READ 1024
 
 bdisk_start:                 ; B: format template (bank 0: bank 1 is full)
 .INCBIN "build/bdisk.bin"
@@ -1518,11 +1536,11 @@ _vb_notick:
     dec a
     sta cBEEP
     bne _vb_nbeep
-    sep #$20
-    lda #$00
-    sta.l $002142
-    rep #$20
+    stz bGON
+    lda #1
+    sta bDIRTY
 _vb_nbeep:
+    jsr midi_frame           ; beep flags + the 60Hz MIDI sequencer
     lda cGFX
     beq _vb_ngfx
     sep #$20                 ; BG3HOFS = kPAN*8 (0 or 64: left/right window)
@@ -1990,6 +2008,30 @@ _rst_fmtd:
     stz s9H
     stz s9T
     stz s9CD
+    stz bPIT                 ; beep + MIDI card state
+    stz bGON
+    stz bDIRTY
+    stz mFH
+    stz mFT
+    stz mSEQ
+    stz mPKn
+    stz mAOF
+    stz mVNX
+    stz mVCE
+    lda #$FFFF
+    sta mDLY
+    ldx #0                   ; chprog[16] = 0, vChan/vNote: voices free
+_rst_mv:
+    stz.w $0520,x
+    inx
+    inx
+    cpx #$0018
+    bcc _rst_mv
+    lda #$FFFF
+    sta.w $0538
+    sta.w $053A
+    sta.w $053C
+    sta.w $053E
     stz cROW
     stz cCOL
     stz cTOP
@@ -3099,6 +3141,314 @@ _sk_txt:
     jsr attr_reset
     jmp con_clear
 _sk_dn:
+    rts
+
+;----------------------------------------------------------------------
+; SNES-MIDI interface (M14). The guest streams 4-byte packets
+; ([delta-frames][status][d1][d2]) to port $330; port $331 read = free
+; packet slots, write = reset+silence. The NMI is the 60 Hz sequencer
+; clock and the ONLY SPC sender (guest beep paths set bPIT/bGON/bDIRTY
+; flags — no mailbox reentrancy by construction). SPC protocol in
+; spc_midi.asm: F4-F6 = args, F7 = (seq<<4)|op, SPC echoes F7 to ack.
+;----------------------------------------------------------------------
+
+spc_cmd:                     ; NMI ctx. A = op, kT0/kT1/kT2 -> F4/F5/F6
+    pha
+    sep #$20
+    lda kT0
+    sta.l $002140
+    lda kT1
+    sta.l $002141
+    lda kT2
+    sta.l $002142
+    rep #$20
+    lda mSEQ
+    inc a
+    and #$000F
+    bne _sc_sq
+    lda #1
+_sc_sq:
+    sta mSEQ
+    asl a
+    asl a
+    asl a
+    asl a
+    sta kT3
+    pla
+    ora kT3
+    sta kT3                  ; final command byte = ack value
+    sep #$20
+    sta.l $002143
+    rep #$20
+    ldx #220                 ; bounded ack wait (~SPC loop latency)
+_sc_w:
+    sep #$20
+    lda.l $002143
+    rep #$20
+    and #$00FF
+    cmp kT3
+    beq _sc_ok
+    dex
+    bne _sc_w
+_sc_ok:
+    rts
+
+gm_map:                      ; GM program>>3 -> instrument 0-5
+    .db 0, 3, 1, 0, 0, 2, 2, 2, 1, 1, 1, 4, 3, 0, 0, 0
+
+midi_frame:                  ; NMI: beep flags, then the sequencer
+    lda bDIRTY
+    beq _mf_seq
+    stz bDIRTY
+    lda bGON
+    beq _mf_boff
+    lda bPIT
+    sta kT0                  ; P lo (spc_cmd stores low bytes)
+    xba
+    sta kT1                  ; P hi
+    lda #4                   ; raw KON, voice 7
+    jsr spc_cmd
+    bra _mf_seq
+_mf_boff:
+    lda #7
+    sta kT0
+    lda #2                   ; KOF voice 7
+    jsr spc_cmd
+_mf_seq:
+    lda mAOF
+    beq _mf_t
+    stz mAOF
+    lda #3                   ; all notes off
+    jsr spc_cmd
+_mf_t:
+    lda mDLY
+    beq _mf_fire             ; due this frame
+    cmp #$FFFF
+    beq _mf_arm              ; idle: look for work
+    dec mDLY
+    rts
+_mf_arm:
+    lda mFT
+    cmp mFH
+    beq _mf_done             ; FIFO empty
+    ldx mFT
+    lda.w $0540,x
+    and #$00FF               ; the packet's delta
+    sta mDLY
+    bne _mf_done             ; wait it out
+_mf_fire:
+    lda #8                   ; guard: at most 8 events per frame
+    sta mEVN
+_mf_ev:
+    jsr midi_event
+    lda mFT                  ; consume the packet
+    clc
+    adc #4
+    cmp #448
+    bcc _mf_adv
+    lda #0
+_mf_adv:
+    sta mFT
+    cmp mFH
+    beq _mf_idle
+    ldx mFT
+    lda.w $0540,x
+    and #$00FF
+    sta mDLY
+    bne _mf_done             ; next event later
+    dec mEVN
+    bne _mf_ev               ; chained zero-delta events
+    rts                      ; guard hit: resume next frame (mDLY = 0)
+_mf_idle:
+    lda #$FFFF
+    sta mDLY
+_mf_done:
+    rts
+
+midi_event:                  ; process the packet at $0540+mFT
+    ldx mFT
+    lda.w $0541,x            ; status
+    and #$00FF
+    cmp #$0090
+    bcc _me_off              ; $8x = note off
+    cmp #$00A0
+    bcc _me_on               ; $9x
+    cmp #$00C0
+    bcc _me_rts              ; $Ax/$Bx ignored
+    cmp #$00D0
+    bcc _me_prog             ; $Cx
+    lda #1                   ; anything else from the player = all off
+    sta mAOF
+_me_rts:
+    rts
+_me_prog:                    ; chprog[chan] = d1
+    and #$000F
+    tax
+    lda mFT
+    clc
+    adc #2                   ; d1 offset
+    phx
+    tax
+    lda.w $0540,x
+    plx
+    sep #$20
+    sta.w $0520,x
+    rep #$20
+    rts
+_me_off:
+    jsr _me_findv            ; A = voice or $FFFF
+    bmi _me_rts
+    tax
+    sep #$20
+    lda #$FF
+    sta.w $0538,x            ; free the voice
+    rep #$20
+    txa
+    sta kT0
+    lda #2                   ; KOF
+    jmp spc_cmd
+_me_on:
+    ldx mFT
+    lda.w $0543,x            ; d2 = velocity
+    and #$00FF
+    beq _me_off              ; vel 0 = note off
+    sta kT2
+    ; ---- pick a voice: first free, else round-robin steal
+    ldx #0
+_me_fv:
+    lda.w $0538,x
+    and #$00FF
+    cmp #$00FF
+    beq _me_have
+    inx
+    cpx #8
+    bcc _me_fv
+    lda mVNX                 ; steal
+    inc a
+    and #$0007
+    sta mVNX
+    tax
+_me_have:
+    stx mVCE                 ; the chosen voice
+    ldx mFT
+    lda.w $0541,x
+    and #$000F
+    sta kT3                  ; channel
+    lda.w $0542,x            ; note
+    and #$00FF
+    sta kT0                  ; -> SPC F4
+    ldx mVCE
+    sep #$20
+    sta.w $0538,x            ; vNote = note
+    lda kT3
+    sta.w $0530,x            ; vChan
+    rep #$20
+    ; ---- instrument: percussion channel 9, else gm_map[program>>3]
+    lda kT3
+    cmp #9
+    bne _me_gm
+    lda #5
+    bra _me_inst
+_me_gm:
+    ldx kT3
+    lda.w $0520,x            ; chprog (bytes; read 16-bit, mask)
+    and #$00FF
+    lsr a
+    lsr a
+    lsr a
+    tax
+    lda.l gm_map,x
+    and #$00FF
+_me_inst:
+    asl a
+    asl a
+    asl a
+    asl a                    ; inst<<4
+    ora mVCE
+    sta kT1                  ; (inst<<4) | voice
+    lda #1                   ; KON
+    jmp spc_cmd
+
+_me_findv:                   ; match chan+note of the packet -> voice
+    ldx mFT
+    lda.w $0541,x
+    and #$000F
+    sta kT3                  ; chan
+    lda.w $0542,x
+    and #$00FF
+    sta kT0                  ; note
+    ldx #0
+_me_sv:
+    lda.w $0538,x
+    and #$00FF
+    cmp kT0
+    bne _me_nx
+    lda.w $0530,x
+    and #$00FF
+    cmp kT3
+    bne _me_nx
+    txa
+    rts
+_me_nx:
+    inx
+    cpx #8
+    bcc _me_sv
+    lda #$FFFF
+    rts
+
+midi_data:                   ; port 330 write: assemble packets into FIFO
+    and #$00FF
+    pha
+    lda mFH
+    clc
+    adc mPKn
+    tax
+    pla
+    sep #$20
+    sta.w $0540,x
+    rep #$20
+    lda mPKn
+    inc a
+    sta mPKn
+    cmp #4
+    bcc _md_r
+    stz mPKn
+    lda mFH                  ; publish the packet
+    clc
+    adc #4
+    cmp #448
+    bcc _md_w
+    lda #0
+_md_w:
+    sta mFH
+_md_r:
+    rts
+
+midi_ctl:                    ; port 331 write: reset the card + silence
+    stz mFH
+    stz mFT
+    stz mPKn
+    lda #$FFFF
+    sta mDLY
+    lda #1
+    sta mAOF
+    rts
+
+midi_stat:                   ; port 331 read: free packet slots (guest ctx)
+    lda mFH
+    sec
+    sbc mFT
+    bcs _ms_u
+    clc
+    adc #448
+_ms_u:
+    sta cT0                  ; used bytes
+    lda #444
+    sec
+    sbc cT0
+    lsr a
+    lsr a                    ; free packets (0-111)
+    and #$00FF
     rts
 
 gfx_fbclr:                   ; zero the 16 KB framebuffer (guest ctx)

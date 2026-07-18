@@ -151,6 +151,14 @@ ws_com = open(os.path.join(DISKS, "ws_installed.com"), "rb").read()
 mp_com = open(os.path.join(DISKS, "mp_com_compaq.bin"), "rb").read()
 zork_com = open(os.path.join(DISKS, "zork1_snes.com"), "rb").read()
 sok_com = open(os.path.join(DISKS, "sokoban.com"), "rb").read()
+mid_com = open(os.path.join(DISKS, "midplay.com"), "rb").read()
+mc_com = open(os.path.join(DISKS, "midconv.com"), "rb").read()
+mc_pas = open(os.path.join(DISKS, "midconv.pas"), "rb").read()
+snm_canyon = open(os.path.join(DISKS, "canyon.snm"), "rb").read()
+snm_doom = open(os.path.join(DISKS, "level1.snm"), "rb").read()
+mid_pas = open(os.path.join(DISKS, "midplay.pas"), "rb").read()
+mid_canyon = open(os.path.join(DISKS, "canyon.mid"), "rb").read()
+mid_doom = open(os.path.join(DISKS, "level1.mid"), "rb").read()
 sok_pas = open(os.path.join(DISKS, "sokoban.pas"), "rb").read()
 zork_dat = open(os.path.join(DISKS, "zork1", "data", "zork1.dat"), "rb").read()
 setup_inf = open(os.path.join(DISKS, "zork1", "setup.inf"), "rb").read()
@@ -220,6 +228,10 @@ rootfiles = [
 ] + [(dn, dd) for _, _, dn, dd in inf_games]
 subdirs = [
     ("BASIC", [("GWBASIC.EXE", gwbasic)]),
+    ("MIDI", [("MIDPLAY.COM", mid_com), ("MIDPLAY.PAS", mid_pas),
+              ("MIDCONV.COM", mc_com), ("MIDCONV.PAS", mc_pas),
+              ("CANYON.MID", mid_canyon), ("LEVEL1.MID", mid_doom),
+              ("CANYON.SNM", snm_canyon), ("LEVEL1.SNM", snm_doom)]),
     ("PASCAL", [("TURBO.COM", ftp["TURBO.COM"]),
                 ("TURBO.MSG", ftp["TURBO.MSG"]),
                 ("HELLO.PAS", hello),

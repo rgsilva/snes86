@@ -2668,9 +2668,15 @@ io_in8:                      ; A = port(16b) -> A = byte (0-extended)
     beq _io_kbd
     cmp #$0061
     beq _io_p61
+    cmp #$0331
+    beq _io_mst
 .ENDIF
     lda #$00FF
     rts
+.IFDEF DOSBIOS
+_io_mst:
+    jmp midi_stat            ; free packet slots (SNES-MIDI interface)
+.ENDIF
 .IFDEF DOSBIOS
 _io_status:
     inc ioTOG

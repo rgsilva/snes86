@@ -42,11 +42,18 @@ clean:
 # --- M6: DOS boot ROM
 dos: build/dosboot.sfc
 
-build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/pcdos200-disk1.img build/adisk.img build/hd.img build/spc_beep64.bin build/cgalut.bin build/aluflat.asm
+build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/pcdos200-disk1.img build/adisk.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
 	$(AS) -o build/dosboot.o dosboot.asm
 
 build/aluflat.asm: tools/mkaluflat.py
 	python3 tools/mkaluflat.py build/aluflat.asm
+
+build/spc_midi64.bin: spc_midi.asm linkfile_spc_midi build/midi_tables.asm
+	$(AS_SPC) -o build/spc_midi.o spc_midi.asm
+	$(LD) -d -s linkfile_spc_midi build/spc_midi64.bin
+
+build/midi_tables.asm: tools/mkmiditab.py
+	python3 tools/mkmiditab.py build/midi_tables.asm
 
 build/spc_beep64.bin: spc_beep.asm linkfile_spc
 	$(AS_SPC) -o build/spc_beep.o spc_beep.asm
@@ -57,7 +64,7 @@ build/dosboot.sfc: build/dosboot.o linkfile_dos
 
 fs: build/dosboot_fs.sfc
 
-build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd.img build/spc_beep64.bin build/cgalut.bin build/aluflat.asm
+build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
 	$(AS) -o build/dosboot_fs.o dosboot_fs.asm
 
 build/dosboot_fs.sfc: build/dosboot_fs.o linkfile_fs

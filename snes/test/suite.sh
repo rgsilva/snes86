@@ -31,7 +31,7 @@ else
   FAIL=1
 fi
 
-TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga"
+TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_midi"
 [ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
 
 for t in $TESTS; do

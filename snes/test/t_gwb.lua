@@ -43,7 +43,7 @@ emu.addEventCallback(function()
   if frame == 7200 then inject("CLS\r") end
   if frame == 8200 then inject("BEEP\r") end
   if frame > 8200 and frame < 9800 and frame % 10 == 0 then
-    if emu.read(0, emu.memType.spcMemory) == 1 then beeped = true end
+    if emu.read(0, emu.memType.spcMemory) ~= 0 then beeped = true end
   end
   if frame == 10000 then inject("PRINT CHR$(201);CHR$(205)\r") end
   if frame > 10000 and frame % 20 == 0 and bufbyte2(201, 205) then
