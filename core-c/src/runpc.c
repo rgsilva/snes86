@@ -59,6 +59,10 @@ typedef struct {
     /* CGA graphics: -cga dumps the B800 bitmap as PPM on exit/mode-away */
     const char *cga_out;
     uint8_t cga_3d9;         /* port 3D9 shadow: bit5 pal, bit4 bright, low bg */
+    /* INT9 raw scancodes: booters/games (FS1, Snipes) never call INT16 */
+    uint8_t s60;             /* port 60h latch */
+    uint8_t s9q[4];          /* pending make/break codes */
+    int s9n, s9i;
     struct timeval t0;
 } Harness;
 
@@ -74,6 +78,8 @@ static uint8_t io_in8(X86 *c, uint16_t port)
         unsigned long long s = g_h ? g_h->steps : 0;
         return (uint8_t)(((s >> 5) & 1) | (((s >> 11) & 1) << 3));
     }
+    if (port == 0x60 && g_h) return g_h->s60;    /* keyboard scancode latch */
+    if (port == 0x61) return 0;                  /* 8255 port B */
     return 0xFF;
 }
 static int g_trace = 0;   /* -T: freeze INT 1Ah ticks for lockstep traces */
@@ -848,6 +854,30 @@ int main(int argc, char **argv)
             c->mem[0x46D] = (uint8_t)(tk >> 8);
             c->mem[0x46E] = (uint8_t)(tk >> 16);
             c->mem[0x46F] = (uint8_t)(tk >> 24);
+        }
+        if ((h.steps & 0x3FFF) == 0) {
+            /* INT9 scancode pump: when the guest hooks INT 9 (IVT no
+             * longer our 0000:04F0 stub), stdin chars become make+break
+             * scancodes latched at port 60h and delivered as IRQ1.
+             * (INT16-polite programs keep the bios_kbd path instead.) */
+            uint32_t v9;
+            memcpy(&v9, &c->mem[9 * 4], 4);
+            if (v9 != 0x000004F0u) {
+                if (h.s9i >= h.s9n && kb_poll(&h)) {
+                    uint8_t sc = scancode((uint8_t)h.peek);
+                    h.peek = -1;
+                    if (sc) {
+                        h.s9q[0] = sc;
+                        h.s9q[1] = (uint8_t)(sc | 0x80);
+                        h.s9n = 2;
+                        h.s9i = 0;
+                    }
+                }
+                if (h.s9i < h.s9n && (c->flags & 0x0200)) {
+                    h.s60 = h.s9q[h.s9i++];
+                    x86_irq(c, 9);
+                }
+            }
         }
         if (trace && h.steps <= (unsigned)trace)
             fprintf(stderr, "T %04X %04X %04X %04X %04X %04X %04X %04X "

@@ -89,6 +89,13 @@ s3D9     dw                  ; port 3D9 shadow: bit5 pal, bit4 bright, low bg
 cPALD    dw                  ; palette dirty -> NMI rewrites CGRAM 0-3
 gROW     dw                  ; gfx scanner round-robin tile row (0-24)
 gSTG     dw                  ; staged tile row + 1 awaiting VRAM DMA (0=none)
+s60      dw                  ; INT9: port 60h scancode latch
+s9H      dw                  ; INT9: scancode queue head (byte off in $0600)
+s9T      dw                  ; INT9: scancode queue tail
+s9CD     dw                  ; INT9: inter-scancode hold-off in FRAMES
+                             ; (NMI decrements): a real key is held ~100ms;
+                             ; back-to-back make/break would let a slow
+                             ; poll loop see only the break
 .ENDE
 
 .DEFINE STG   $0C00          ; gfx staging buffer: one tile row, 640 bytes
@@ -1370,7 +1377,7 @@ _h13_vbad:
 ;----------------------------------------------------------------------
 ; keyboard inject: START types "dir" + Enter (called from NMI)
 ;----------------------------------------------------------------------
-kb_push:                     ; A = (scan<<8)|ascii
+kb_push:                     ; A = (scan<<8)|ascii -> INT16 ring + INT9 queue
     ldx cKbT
     sta.w $0700,x            ; 32-entry ring in low WRAM
     txa
@@ -1378,6 +1385,28 @@ kb_push:                     ; A = (scan<<8)|ascii
     adc #2
     and #$003E
     sta cKbT
+    lda.w $0700,x            ; recover the entry, take the scancode
+    xba
+    and #$00FF
+    beq _kp_n9               ; no scancode: INT16-only synthetic key
+    sta s60                  ; latch for raw port-60h pollers
+    ldx s9H
+    sta.w $0600,x            ; make code
+    ora #$0080
+    pha
+    txa
+    clc
+    adc #2
+    and #$001E
+    tax
+    pla
+    sta.w $0600,x            ; break code
+    txa
+    clc
+    adc #2
+    and #$001E
+    sta s9H
+_kp_n9:
     rts
 
 ;----------------------------------------------------------------------
@@ -1400,6 +1429,11 @@ _vb_fast:
     sta $2115
     rep #$20
     inc cNMI
+    lda s9CD                 ; INT9 inter-key hold-off, in real frames
+    beq _vb_ncd              ; (run_slow passes are useless as a clock:
+    dec a                    ; REP-heavy guests make them ~2/frame)
+    sta s9CD
+_vb_ncd:
 .IFNDEF TRACE
     ; 18.2065 Hz tick from 60.1 Hz NMI: add 0.30303 in 16.16 fixed point
     lda cTickA
@@ -1886,6 +1920,10 @@ _rst_fmtd:
     stz cPALD
     stz s3D8
     stz s3D9
+    stz s60                  ; INT9 scancode latch + queue
+    stz s9H
+    stz s9T
+    stz s9CD
     stz cROW
     stz cCOL
     stz cTOP
@@ -2008,6 +2046,41 @@ run_slow:                    ; gas exhausted (or HLT): service and refuel
     jsr do_int
     sty gIP
 _rs_nirq:
+    lda s9CD                 ; hold-off pending (the NMI counts it down)
+    bne _rs_n9
+    lda s9T                  ; pending scancode -> IRQ1 when the guest
+    cmp s9H                  ; hooked INT9 (FS1, Snipes: raw keyboard)
+    beq _rs_n9
+    lda fSTATIC
+    and #$0200
+    beq _rs_n9
+    lda.l $7E5024            ; IVT[9] offset: still our 0000:04F0 stub?
+    cmp #$04F0
+    bne _rs_9go
+    lda.l $7E5026            ; IVT[9] segment
+    bne _rs_9go
+    lda s9T                  ; unhooked: drop (the INT16 ring has the key)
+    inc a
+    inc a
+    and #$001E
+    sta s9T
+    bra _rs_n9
+_rs_9go:
+    ldx s9T
+    lda.w $0600,x
+    and #$00FF
+    sta s60                  ; the handler INs this from port 60h
+    lda s9T
+    inc a
+    inc a
+    and #$001E
+    sta s9T
+    lda #8                   ; frames of key-held time before the next code
+    sta s9CD
+    lda #9
+    jsr do_int
+    sty gIP
+_rs_n9:
     lda gHALT
     bne _rst_halt
     jmp step_lean

@@ -2664,6 +2664,10 @@ io_in8:                      ; A = port(16b) -> A = byte (0-extended)
     beq _io_status
     cmp #$03BA
     beq _io_status
+    cmp #$0060
+    beq _io_kbd
+    cmp #$0061
+    beq _io_p61
 .ENDIF
     lda #$00FF
     rts
@@ -2672,6 +2676,13 @@ _io_status:
     inc ioTOG
     lda ioTOG
     and #$000F               ; bit0=Hretrace, bit3=Vretrace both cycle
+    rts
+_io_kbd:                     ; port 60h: last scancode (INT9/raw readers)
+    lda.w s60                ; .w! a forward ENUM ref assembles as DIRECT
+    and #$00FF               ; PAGE otherwise (reads core DP scratch $BA)
+    rts
+_io_p61:                     ; 8255 port B
+    lda #$0000
     rts
 .ENDIF
 
