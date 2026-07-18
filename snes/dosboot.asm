@@ -1668,6 +1668,17 @@ _rst_fast:
                              ; $0E7F; worst native depth is ~40 bytes.)
     lda #$0000
     tcd
+    ; -- zero all of bank-0 low WRAM ($0000-$1FFF) up front. Mesen's
+    ; power-on RAM is RANDOM; every uninitialized display var, HDMA
+    ; table byte or scratch would otherwise be seed-dependent garbage
+    ; (green DOS console vs black, unstable CGA colors run-to-run). The
+    ; stack is empty here (no jsr yet), so wiping page $0F is safe.
+    ldx #$1FFE
+_rst_wz:
+    stz.w $0000,x
+    dex
+    dex
+    bpl _rst_wz
     sep #$20
     lda.b #$00
     pha
@@ -1750,6 +1761,12 @@ _rst_fast:
     ; CGRAM 113/114 (yellow bg, black fg). Pairs 1-3, 5-6 are allocated
     ; dynamically from CGA attribute bytes (2bpp pal 4 aliases 4bpp
     ; pal 1 in CGRAM, so pair 4 is unusable).
+    stz $2121                ; clear ALL 256 CGRAM entries first — only a
+    ldx #512                 ; few are set below; the rest were random at
+_cg_clr:                     ; power-on and leaked into CGA/gfx colors
+    stz $2122
+    dex
+    bne _cg_clr
     stz $2121
     stz $2122
     stz $2122                ; backdrop black
