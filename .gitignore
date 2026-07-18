@@ -12,3 +12,8 @@ disks/*.7z
 releases/
 disks/*.zip
 disks/sokoban/
+disks/elite/
+disks/starglider/
+disks/hack103/
+disks/hack36/
+disks/snake_im/
