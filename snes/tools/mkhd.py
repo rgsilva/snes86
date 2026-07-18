@@ -214,8 +214,15 @@ hello_com = open(os.path.join(DISKS, "hello.com"), "rb").read()
 sieve_com = open(os.path.join(DISKS, "sieve.com"), "rb").read()
 snipes = open(os.path.join(DISKS, "snipes", "SNIPES.EXE"), "rb").read()
 
+# quick MIDI test shortcuts (root is on the PATH, so "CA"/"L1" work
+# from anywhere; absolute .SNM paths so cwd doesn't matter)
+CA_BAT = b"MIDPLAY C:\\MIDI\\CANYON.SNM\r\n"
+L1_BAT = b"MIDPLAY C:\\MIDI\\LEVEL1.SNM\r\n"
+
 rootfiles = [
     ("AUTOEXEC.BAT", AUTOEXEC),
+    ("CA.BAT", CA_BAT),
+    ("L1.BAT", L1_BAT),
     ("WS.COM", ws_com),
     ("WSOVLY1.OVR", fws["WSOVLY1.OVR"]),
     ("WSMSGS.OVR", fws["WSMSGS.OVR"]),
