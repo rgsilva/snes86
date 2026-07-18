@@ -10,3 +10,5 @@ disks/*.7z
 *.sym
 .DS_Store
 releases/
+disks/*.zip
+disks/sokoban/

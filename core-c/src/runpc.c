@@ -412,6 +412,11 @@ static int bios_disk(X86 *c, Harness *h)
         int head  = (uint8_t)(c->r[X86_DX] >> 8);
         uint8_t *img; long total; int spt, heads, cyls;
 
+        if (traceio() && drive < 2)
+            fprintf(stderr, "INT13 %s d%d C%d H%d S%d x%d -> %04X:%04X\n",
+                    ah == 2 ? "rd" : "wr", drive, cyl, head, sec, cnt,
+                    c->sr[X86_ES], c->r[X86_BX]);
+
         if (drive == 0x80 && h->hd) {            /* fixed disk, read-only */
             if (ah == 0x03) { sah(c, 0x03); sal(c, 0); set_cf(c, 1); return 1; }
             img = h->hd; total = h->hdsz / 512;

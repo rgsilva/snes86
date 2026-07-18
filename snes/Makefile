@@ -52,6 +52,14 @@ build/spc_beep64.bin: spc_beep.asm linkfile_spc
 build/dosboot.sfc: build/dosboot.o linkfile_dos
 	$(LD) -d -s -v -c linkfile_dos build/dosboot.sfc
 
+fs: build/dosboot_fs.sfc
+
+build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd.img build/spc_beep64.bin build/cgalut.bin
+	$(AS) -o build/dosboot_fs.o dosboot_fs.asm
+
+build/dosboot_fs.sfc: build/dosboot_fs.o linkfile_fs
+	$(LD) -d -s -v -c linkfile_fs build/dosboot_fs.sfc
+
 build/bdisk.bin: tools/mkbdisk.py
 	python3 tools/mkbdisk.py build
 

@@ -1087,6 +1087,34 @@ _h13_read:
     bne _h13_flp
     jmp _h13_hd              ; C: fixed disk: own geometry
 _h13_flp:
+.IFDEF FSBOOT
+    ; FS1 booter floppy: 40 cyl / 1 head / 8 spt. LBA = cyl*8 + sec-1
+    lda gDX
+    and #$FF00
+    bne _h13_badj            ; head 0 only
+    lda gDX
+    and #$00FF
+    cmp #2
+    bcs _h13_badj
+    lda gCX
+    and #$003F
+    beq _h13_badj
+    cmp #9
+    bcs _h13_badj
+    dec a
+    sta cT0                  ; sec-1
+    lda gCX
+    xba
+    and #$00FF               ; cyl
+    cmp #40
+    bcs _h13_badj
+    asl a
+    asl a
+    asl a                    ; cyl*8
+    clc
+    adc cT0
+    sta cT0                  ; LBA
+.ELSE
     ; floppy validation: DL<2, DH<2 (B: also needs DH=0), 1<=sec<=9, cyl<40
     lda gDX
     and #$FE00
@@ -1124,6 +1152,7 @@ _h13_flp:
     clc
     adc cT0
     sta cT0                  ; LBA
+.ENDIF
     ldx #24
     lda gBX
     jsr mk_ptr               ; mPTR = ES:BX
@@ -3491,8 +3520,38 @@ zero_w:
 .ENDS
 
 ;----------------------------------------------------------------------
-; PC DOS 2.00 disk image, 184320 bytes across banks 2-7
+; A: floppy image across banks 2-13. Normal build: the 360KB PC DOS
+; disk. FSBOOT build: the MS Flight Simulator 1.0 self-booting 160KB
+; disk (5 banks; FS1 replaces DOS entirely — our BIOS boots its boot
+; sector like any other).
 ;----------------------------------------------------------------------
+.IFDEF FSBOOT
+.BANK 2 SLOT 0
+.ORG 0
+.SECTION "Disk2" FORCE
+.INCBIN "../disks/fs1.img" SKIP 0 READ 32768
+.ENDS
+.BANK 3 SLOT 0
+.ORG 0
+.SECTION "Disk3" FORCE
+.INCBIN "../disks/fs1.img" SKIP 32768 READ 32768
+.ENDS
+.BANK 4 SLOT 0
+.ORG 0
+.SECTION "Disk4" FORCE
+.INCBIN "../disks/fs1.img" SKIP 65536 READ 32768
+.ENDS
+.BANK 5 SLOT 0
+.ORG 0
+.SECTION "Disk5" FORCE
+.INCBIN "../disks/fs1.img" SKIP 98304 READ 32768
+.ENDS
+.BANK 6 SLOT 0
+.ORG 0
+.SECTION "Disk6" FORCE
+.INCBIN "../disks/fs1.img" SKIP 131072 READ 32768
+.ENDS
+.ELSE
 .BANK 2 SLOT 0
 .ORG 0
 .SECTION "Disk2" FORCE
@@ -3553,6 +3612,7 @@ zero_w:
 .SECTION "Disk13" FORCE
 .INCBIN "build/adisk.img" SKIP 360448 READ 8192
 .ENDS
+.ENDIF
 .BANK 14 SLOT 0
 .ORG 0
 .SECTION "HDisk14" FORCE
