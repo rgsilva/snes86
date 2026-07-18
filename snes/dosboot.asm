@@ -3624,11 +3624,18 @@ pal_apply:                   ; CGRAM 0-3 from s3D9 (forced blank or vblank!
     lda.b #$00
     sta.l $002121
     rep #$20
-    lda s3D9
-    and #$000F               ; entry 0: background color
+    lda s3D8                 ; entry 0 (background): mode 6 (640x200) is
+    and #$0010               ; mono — background is ALWAYS black there, and
+    bne _pa_bg0              ; 3D9's low nibble is the FOREGROUND color, not
+    lda s3D9                 ; the bg. (FS sets it 15 = white -> white bg.)
+    and #$000F
     asl a
     tax
     lda.l cga_pal16,x
+    bra _pa_bgw
+_pa_bg0:
+    lda #$0000               ; mode 6: black background
+_pa_bgw:
     sep #$20
     sta.l $002122
     xba

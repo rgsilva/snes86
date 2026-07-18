@@ -238,10 +238,17 @@ _p_wr:
     mov $F2, a
     mov a, y
     mov $F3, a
-    ; ---- volume from velocity
+    ; ---- volume from velocity (drums are full-scale noise = far louder
+    ; than the tonal BRR voices; attenuate inst 5 so it doesn't explode)
     mov a, $06
     lsr a                        ; 0-63
     mov $08, a
+    mov a, $05
+    cmp a, #$05
+    bne _vol_wr
+    lsr $08                      ; drum: quarter volume (vel>>3)
+    lsr $08
+_vol_wr:
     mov a, $09
     mov $F2, a                   ; vN vol L (reg 0)
     mov a, $08
