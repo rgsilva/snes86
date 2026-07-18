@@ -48,9 +48,14 @@ emu.addEventCallback(function()
     local c1 = emu.readWord(2, emu.memType.snesCgRam)           -- cyan
     local c2 = emu.readWord(4, emu.memType.snesCgRam)           -- magenta
     local c3 = emu.readWord(6, emu.memType.snesCgRam)           -- light gray
+    -- glyph blitter: "OK" at row 22 col 1; fb even-line-2 of the 'O'
+    -- cell = (22*4+1)*80 + 1*2 = 7122; a control cell keeps the AA fill
+    local go = emu.read(0x7E1000 + 7122, emu.memType.snesMemory)
+    local gb = emu.read(0x7E1000 + 7122 + 8, emu.memType.snesMemory)
     gok = (v0 == 0xFF00) and (v1 == 0x00FF) and
           (c0 == 0x5400) and (c1 == 0x56A0) and
-          (c2 == 0x5415) and (c3 == 0x56B5)
+          (c2 == 0x5415) and (c3 == 0x56B5) and
+          (go ~= 0xAA) and (go ~= 0) and (gb == 0xAA)
     shot("cga_snes.png")
     print(string.format("t_cga v0=%04X v1=%04X cg=%04X,%04X,%04X,%04X",
                         v0, v1, c0, c1, c2, c3))

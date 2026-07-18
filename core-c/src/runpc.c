@@ -82,7 +82,45 @@ static void on_sigint(int sig) { (void)sig; g_stop = 1; }
 /* ------------------------------------------------------------------ */
 /* CGA graphics (modes 4/5 = 320x200x4, 6 = 640x200x2)                 */
 
+#include "cgafont.h"
+
 static int gfx_mode(int m) { return m == 4 || m == 5 || m == 6; }
+
+/* graphics-mode text: the BIOS draws glyphs into the bitmap */
+static void cga_glyph(X86 *c, Harness *h, int row, int col, uint8_t ch,
+                      uint8_t attr)
+{
+    const unsigned char *g = &cgafont[ch * 8];
+    int xr = attr & 0x80, colr = attr & 3;
+    if (row > 24 || row < 0) return;
+    for (int l = 0; l < 8; l++) {
+        int y = row * 8 + l;
+        uint8_t *ln = &c->mem[0xB8000 + (y & 1) * 0x2000 + (y >> 1) * 80];
+        if (h->vmode == 6) {                     /* 1bpp, 80 columns */
+            if (col > 79) return;
+            if (xr) ln[col] ^= g[l];
+            else    ln[col]  = g[l];
+        } else {                                 /* 2bpp, 40 columns */
+            uint8_t b0 = 0, b1 = 0;
+            if (col > 39) return;
+            for (int i = 0; i < 4; i++) {
+                if (g[l] & (0x80 >> i)) b0 |= (uint8_t)(colr << (6 - 2 * i));
+                if (g[l] & (0x08 >> i)) b1 |= (uint8_t)(colr << (6 - 2 * i));
+            }
+            if (xr) { ln[col * 2] ^= b0; ln[col * 2 + 1] ^= b1; }
+            else    { ln[col * 2]  = b0; ln[col * 2 + 1]  = b1; }
+        }
+    }
+}
+
+static void cga_scroll(X86 *c)
+{
+    for (int b = 0; b < 2; b++) {                /* 8 px = 4 lines/bank */
+        uint8_t *bank = &c->mem[0xB8000 + b * 0x2000];
+        memmove(bank, bank + 4 * 80, 96 * 80);
+        memset(bank + 96 * 80, 0, 4 * 80);
+    }
+}
 
 static const uint8_t cga_rgb[16][3] = {
     {0,0,0},       {0,0,170},    {0,170,0},    {0,170,170},
@@ -266,6 +304,10 @@ static int bios_video(X86 *c, Harness *h)
         break;
     case 0x09: case 0x0A: {                      /* write char (xN) */
         int n = c->r[X86_CX] ? c->r[X86_CX] : 1;
+        if (gfx_mode(h->vmode))                  /* gfx: BL = color */
+            for (int i = 0; i < n; i++)
+                cga_glyph(c, h, h->row, h->col + i, ral(c),
+                          (uint8_t)c->r[X86_BX]);
         for (int i = 0; i < n; i++)
             putchar(ral(c));
         break;
@@ -307,6 +349,24 @@ static int bios_video(X86 *c, Harness *h)
         break;
     }
     case 0x0E:                                   /* teletype */
+        if (gfx_mode(h->vmode)) {
+            uint8_t ch = ral(c);
+            if (ch == '\r') {
+                h->col = 0;
+            } else if (ch == '\n') {
+                if (++h->row > 24) { h->row = 24; cga_scroll(c); }
+            } else if (ch == 8) {
+                if (h->col) h->col--;
+            } else if (ch != 7) {
+                cga_glyph(c, h, h->row, h->col, ch, (uint8_t)c->r[X86_BX]);
+                if (++h->col >= h->cols) {
+                    h->col = 0;
+                    if (++h->row > 24) { h->row = 24; cga_scroll(c); }
+                }
+            }
+            putchar(ral(c));                     /* host console mirror */
+            break;
+        }
         tty_putc(h, ral(c));
         break;
     case 0x0F:                                   /* get mode */

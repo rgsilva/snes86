@@ -44,6 +44,15 @@ e(b"\x42")                  # inc dx
 e(b"\x83\xFA\x64")          # cmp dx,100
 rel = loop_at - (len(c) + 2)
 e(bytes((0x72, rel & 0xFF)))  # jb loop
+# graphics-mode text: "OK" in color 1 at row 22 col 1 (BIOS blitter)
+e(b"\xB4\x02\x30\xFF")      # mov ah,2; xor bh,bh
+e(b"\xBA\x01\x16")          # mov dx,1601h  ; row 22, col 1
+e(b"\xCD\x10")              # int 10h
+e(b"\xBB\x01\x00")          # mov bx,0001   ; BL = color 1
+e(b"\xB4\x0E\xB0\x4F")      # mov ah,0Eh; mov al,'O'
+e(b"\xCD\x10")              # int 10h
+e(b"\xB4\x0E\xB0\x4B")      # mov ah,0Eh; mov al,'K'
+e(b"\xCD\x10")              # int 10h
 # wait for a key, restore text mode, exit
 e(b"\xB4\x00\xCD\x16")      # mov ah,0; int 16h
 e(b"\xB8\x03\x00\xCD\x10")  # mov ax,0003; int 10h

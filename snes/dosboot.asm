@@ -184,6 +184,8 @@ _cp_nbs:
     bne _cp_nbel
     jmp beep_bel             ; BEL rings the S-SMP
 _cp_nbel:
+    ldx cGFX
+    bne _cp_gfx
     sta cT0
     jsr con_off
     tax
@@ -192,6 +194,7 @@ _cp_nbel:
     and #$FF00
     ora cT0
     sta.l VBUF,x          ; char + current attribute
+_cp_adv:
     lda cCOL
     inc a
     sta cCOL
@@ -201,6 +204,17 @@ _cp_nbel:
     jmp con_nl
 _cp_ret:
     rts
+_cp_gfx:                     ; graphics: blit the glyph, BL(&3) = color
+    pha
+    lda gBX
+    and #$0003
+    bne _cp_gc
+    lda #3                   ; teletype with BL=0 would be invisible
+_cp_gc:
+    sta aT1
+    pla
+    jsr gfx_glyph
+    bra _cp_adv
 
 ; ---- minimal ANSI/CSI parser (the '96 Infocom interpreter emits these):
 ; ESC[r;cH cursor, ESC[2J clear, ESC[K clear-eol, ESC[..m attrs (ignored)
@@ -380,10 +394,14 @@ _ar_l:
 con_nl:
     lda cROW
     cmp #24
-    bcs _nl_scroll
+    bcs _nl_full
     inc a
     sta cROW
     rts
+_nl_full:
+    lda cGFX
+    beq _nl_scroll
+    jmp gfx_nlscr            ; graphics: shift the bitmap up 8 scanlines
 _nl_scroll:                  ; scroll the buffer, not the tilemap
     phy                      ; Y is the guest IP — MVN clobbers X/Y!
     phx
@@ -694,7 +712,11 @@ _h10_pgj:
     jmp _h10_pget
 _h10_mdj:
     jmp _h10_mode
+_h10_scrj:
+    jmp _h10_scr
 _h10_wc:                     ; AH=9: char AL with attribute BL
+    ldx cGFX
+    bne _h10_gwc
     jsr con_off
     tax
     lda gBX
@@ -707,6 +729,8 @@ _h10_wc:                     ; AH=9: char AL with attribute BL
     sta.l VBUF,x
     rts
 _h10_wca:                    ; AH=0A: char only, cell attribute kept
+    ldx cGFX
+    bne _h10_gwc
     jsr con_off
     tax
     lda.l VBUF,x
@@ -717,8 +741,12 @@ _h10_wca:                    ; AH=0A: char only, cell attribute kept
     ora cT0
     sta.l VBUF,x
     rts
-_h10_scrj:
-    jmp _h10_scr
+_h10_gwc:                    ; gfx: draw AL, BL = literal color (no 0->3)
+    lda gBX
+    and #$0003
+    sta aT1
+    lda gAX
+    jmp gfx_glyph
 
 _h10_mode:                   ; AH=0 set mode: 0/1=40col 2/3=80col 4/5/6=CGA gfx
     lda gAX
@@ -3259,6 +3287,100 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     ply
     rts
 
+gfx_glyph:                   ; A = char, aT1 = color 0-3, at cROW/cCOL.
+    phy                      ; Draws 8x8 into the bitmap (guest ctx).
+    and #$00FF
+    asl a
+    asl a
+    asl a
+    sta aT0                  ; font byte index = char*8
+    lda cROW
+    asl a
+    asl a                    ; row*4
+    sta cT0
+    asl a
+    asl a                    ; row*16
+    clc
+    adc cT0                  ; row*20
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*320 (line-pair pitch x4 pairs)
+    clc
+    adc cCOL
+    clc
+    adc cCOL
+    sta cT1                  ; fb offset of the cell's even-line 0
+    lda #4
+    sta cT2n                 ; 4 line pairs
+_gg_pair:
+    jsr _gg_expand           ; even line
+    ldx cT1
+    lda aT2
+    sta.l VBUF,x
+    jsr _gg_expand           ; odd line (second bank)
+    lda cT1
+    clc
+    adc #$2000
+    tax
+    lda aT2
+    sta.l VBUF,x
+    lda cT1
+    clc
+    adc #80
+    sta cT1
+    dec cT2n
+    bne _gg_pair
+    ply
+    rts
+_gg_expand:                  ; font[aT0++] -> aT2 = two CGA bytes (color
+    ldx aT0                  ; aT1 on set bits, 0 on clear)
+    lda.l cgafont,x
+    and #$00FF
+    xba                      ; font bits into 15-8: 16-bit asl carries
+    sta cT0                  ; the glyph's MSB first
+    inc aT0
+    ldx #8
+    lda #0
+_gg_bit:
+    asl a
+    asl a
+    asl cT0                  ; MSB first
+    bcc _gg_bn
+    ora aT1
+_gg_bn:
+    dex
+    bne _gg_bit
+    xba                      ; low byte = left CGA byte (little-endian)
+    sta aT2
+    rts
+
+gfx_nlscr:                   ; graphics newline at row 24: scroll the
+    phy                      ; bitmap up 8 scanlines, clear the bottom
+    phx
+    phb
+    lda #7679
+    ldx #VBOFS+320
+    ldy #VBOFS
+    .db $54, $7E, $7E        ; even-line bank
+    lda #7679
+    ldx #VBOFS+$2000+320
+    ldy #VBOFS+$2000
+    .db $54, $7E, $7E        ; odd-line bank
+    plb
+    ldx #$0000
+    lda #$0000
+_nlg_c:
+    sta.l VBUF+7680,x
+    sta.l VBUF+$2000+7680,x
+    inx
+    inx
+    cpx #320
+    bcc _nlg_c
+    plx
+    ply
+    rts
+
 ; one tile line: read 2 CGA bytes (8 px), LUT to planar, store to staging.
 ; kT1 = src index (row*320 + c*2), kT2 = staging offset (c*16), kT0/kT3
 ; scratch. OFS folds the line's scanline-interleave displacement.
@@ -3361,6 +3483,8 @@ cgalut_lo:
     .INCBIN "build/cgalut.bin" SKIP 512 READ 512
 cga_pal16:
     .INCBIN "build/cgalut.bin" SKIP 1024 READ 32
+cgafont:                     ; raw 1bpp CP437 font (mkfont.py), MSB=left
+    .INCBIN "build/cgafont.bin"
 zero_w:
     .dw 0
 
