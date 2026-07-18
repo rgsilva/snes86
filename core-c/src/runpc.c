@@ -525,9 +525,50 @@ static int kb_poll(Harness *h)
     return 1;
 }
 
+static int int9_hooked(X86 *c)
+{
+    uint32_t v;
+    memcpy(&v, &c->mem[9 * 4], 4);
+    return v != 0x000004F0u;
+}
+
+static uint16_t bda_kb_pop(X86 *c, int consume)
+{
+    /* the real BIOS keyboard ring at 40:1E (head 40:1A, tail 40:1C):
+     * a guest INT9 handler that speaks the BIOS protocol stores
+     * translated keys here and expects INT16 to serve them */
+    uint16_t hd, tl, v;
+    memcpy(&hd, &c->mem[0x41A], 2);
+    memcpy(&tl, &c->mem[0x41C], 2);
+    if (hd == tl || hd < 0x1E || hd >= 0x3E) return 0;
+    memcpy(&v, &c->mem[0x400 + hd], 2);
+    if (consume) {
+        hd += 2;
+        if (hd >= 0x3E) hd = 0x1E;
+        memcpy(&c->mem[0x41A], &hd, 2);
+    }
+    return v ? v : 0xFFFF;
+}
+
 static int bios_kbd(X86 *c, Harness *h)
 {
     uint8_t ah = rah(c);
+    if (ah == 0x00 || ah == 0x01) {
+        uint16_t v = bda_kb_pop(c, ah == 0x00);
+        if (v) {
+            if (v == 0xFFFF) v = 0;
+            c->r[X86_AX] = v;
+            if (ah == 0x01) set_zf(c, 0);
+            return 1;
+        }
+    }
+    /* a guest INT9 hook replaces the BIOS handler: our stdin ring
+     * starves and INT16 reports empty — stdin belongs to the IRQ1 pump */
+    if (int9_hooked(c) && (ah == 0x00 || ah == 0x01)) {
+        if (ah == 0x01) set_zf(c, 1);
+        else c->r[X86_AX] = 0;
+        return 1;
+    }
     switch (ah) {
     case 0x00:                                   /* read key (blocking) */
         if (!kb_poll(h)) {
@@ -682,6 +723,10 @@ static void guest_bios_setup(X86 *c, Harness *h)
     c->mem[0x411] = EQUIPMENT >> 8;
     c->mem[0x413] = (uint8_t)h->mem_kb;          /* memory size KB */
     c->mem[0x414] = (uint8_t)(h->mem_kb >> 8);
+    c->mem[0x41A] = 0x1E;                        /* BIOS kb ring empty: */
+    c->mem[0x41C] = 0x1E;                        /* head = tail = 40:1E */
+    c->mem[0x480] = 0x1E;                        /* buffer start/end (for */
+    c->mem[0x482] = 0x3E;                        /* protocol-polite hooks) */
     c->mem[0x449] = 0x03;                        /* current video mode */
     c->mem[0x44A] = 80;                          /* columns */
     c->mem[0x44C] = 0x00; c->mem[0x44D] = 0x10;  /* page size 4096 */

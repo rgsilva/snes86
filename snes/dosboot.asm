@@ -976,12 +976,52 @@ _h1a_set:
 _h1a_ret:
     rts
 
+; BIOS keyboard ring in the guest BDA (head 40:1A, tail 40:1C, data
+; 40:1E-3D): a guest INT9 handler speaking the BIOS protocol stores
+; translated keys there and expects INT16 to serve them. Returns key in
+; A + carry SET, or carry CLEAR if empty. X = consume flag (0 = peek).
+bda_pop:
+    lda.l $7E541A            ; head
+    cmp.l $7E541C            ; tail
+    beq _bp_no
+    cmp #$001E
+    bcc _bp_no
+    cmp #$003E
+    bcs _bp_no
+    phy
+    tay
+    txa
+    beq _bp_pk
+    tya                      ; consume: head += 2 (wrap 3E -> 1E)
+    inc a
+    inc a
+    cmp #$003E
+    bcc _bp_wr
+    lda #$001E
+_bp_wr:
+    sta.l $7E541A
+_bp_pk:
+    tyx
+    lda.l $7E5400,x          ; the key word
+    ply
+    sec
+    rts
+_bp_no:
+    clc
+    rts
+
 hle_int16:
     lda gAX
     xba
     and #$00FF
     bne _h16_n0
     ; AH=0: pop key (DOS 2.0 polls AH=1 first, so this never blocks)
+    ldx #1
+    jsr bda_pop
+    bcc _h16_ours0
+    sta gAX
+    rts
+_h16_ours0:
     lda cKbH
     cmp cKbT
     beq _h16_empty0
@@ -1002,6 +1042,15 @@ _h16_n0:
     cmp #$0001
     bne _h16_n1
     jsr flags_norm
+    ldx #0                   ; peek the BIOS BDA ring first
+    jsr bda_pop
+    bcc _h16_ours1
+    sta gAX
+    lda fSTATIC
+    and #$FFBF               ; ZF=0: key available
+    sta fSTATIC
+    rts
+_h16_ours1:
     lda cKbH
     cmp cKbT
     beq _h16_zf1
@@ -1378,6 +1427,13 @@ _h13_vbad:
 ; keyboard inject: START types "dir" + Enter (called from NMI)
 ;----------------------------------------------------------------------
 kb_push:                     ; A = (scan<<8)|ascii -> INT16 ring + INT9 queue
+    pha
+    lda.l $7E5024            ; guest INT9 hook replaces the BIOS handler:
+    cmp #$04F0               ; the INT16 ring starves while hooked, keys
+    bne _kp_hkd              ; flow as raw scancodes only
+    lda.l $7E5026
+    bne _kp_hkd
+    pla
     ldx cKbT
     sta.w $0700,x            ; 32-entry ring in low WRAM
     txa
@@ -1386,6 +1442,10 @@ kb_push:                     ; A = (scan<<8)|ascii -> INT16 ring + INT9 queue
     and #$003E
     sta cKbT
     lda.w $0700,x            ; recover the entry, take the scancode
+    bra _kp_q
+_kp_hkd:
+    pla
+_kp_q:
     xba
     and #$00FF
     beq _kp_n9               ; no scancode: INT16-only synthetic key
@@ -1785,6 +1845,12 @@ _rst_ivt:
     sta.l $7E5410
     lda #108
     sta.l $7E5413
+    lda #$001E               ; BIOS kb ring in the BDA: head = tail = 1E
+    sta.l $7E541A            ; (served by INT16 when a guest INT9 hook
+    sta.l $7E541C            ; stores keys BIOS-protocol style)
+    sta.l $7E5480
+    lda #$003E
+    sta.l $7E5482
 
     ; -- boot sector: image offset 0 (bank 2) -> linear 0x7C00
     ldx #$0000
