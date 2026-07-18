@@ -46,6 +46,7 @@ entry:
     mov $00, a
     mov $01, a
     mov $07, a
+    mov $0A, a                   ; KOF shadow (per-voice pending key-offs)
     mov $F2, #$6C
     mov $F3, #$20                ; FLG: echo off, noise clock 0 for now
     mov $F2, #$0C
@@ -100,16 +101,21 @@ do_kof:
     mov x, a
     mov a, !bitmask+x
     mov $08, a
-    mov $F2, #$5C
-    mov $F3, a                   ; KOF the voice
+    or a, $0A                    ; ADD to the KOF shadow — writing just this
+    mov $0A, a                   ; voice's bit would clear the others' pending
+    mov $F2, #$5C                ; key-offs and un-release fading voices
+    mov $F3, a
+    mov a, $08
     eor a, #$FF
     and a, $00
     mov $00, a
     bra ack
 
 do_alloff:
+    mov a, #$FF
+    mov $0A, a                   ; shadow: everything off
     mov $F2, #$5C
-    mov $F3, #$FF
+    mov $F3, a
     mov a, #$00
     mov $00, a
     bra ack
@@ -134,8 +140,11 @@ do_raw:                          ; beep: voice 7, square, raw pitch
     mov a, $00
     and a, #$80
     bne _raw_on                  ; already keyed: pitch update only
+    mov a, $0A
+    and a, #$7F                  ; clear only voice 7's KOF shadow bit
+    mov $0A, a
     mov $F2, #$5C
-    mov $F3, #$00
+    mov $F3, a
     mov $F2, #$4C
     mov $F3, #$80                ; KON v7
 _raw_on:
@@ -261,13 +270,17 @@ _vol_wr:
     mov $F2, a
     mov a, $08
     mov $F3, a
-    ; ---- key on
+    ; ---- key on: clear ONLY this voice's KOF shadow, then KON (leave
+    ; every other voice's release phase untouched)
     mov a, $03
     mov x, a
     mov a, !bitmask+x
     mov $08, a
+    eor a, #$FF
+    and a, $0A
+    mov $0A, a
     mov $F2, #$5C
-    mov $F3, #$00                ; clear pending KOF
+    mov $F3, a
     mov $F2, #$4C
     mov a, $08
     mov $F3, a                   ; KON
