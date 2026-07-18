@@ -67,7 +67,8 @@ entry:
     mov $F2, #$5C
     mov $F3, #$00                ; clear KOF
     mov $F2, #$6C
-    mov $F3, #$38                ; FLG: noise clock $18-ish for drums
+    mov $F3, #$2C                ; FLG: lower noise clock = duller, less
+                                 ; crashy drum (echo-off bit5 kept)
 hold:
     mov a, $F7                   ; wait out stale handshake values
     bne hold
@@ -246,7 +247,9 @@ _p_wr:
     mov a, $05
     cmp a, #$05
     bne _vol_wr
-    lsr $08                      ; drum: quarter volume (vel>>3)
+    lsr $08                      ; drum: 1/16 volume (vel>>5) — noise is
+    lsr $08                      ; harsh + fires hundreds of times; keep it
+    lsr $08                      ; well under the melody
     lsr $08
 _vol_wr:
     mov a, $09
@@ -279,7 +282,8 @@ inst_tab:
     .db 2, $8E, $E8, 0           ; 2 saw sustain (strings/brass)
     .db 3, $AF, $6C, 1           ; 3 sine pluck
     .db 2, $86, $E9, 0           ; 4 pad    (saw, slow attack)
-    .db 0, $BF, $0F, 0           ; 5 drum   (noise, instant + fast decay)
+    .db 0, $DF, $00, 0           ; 5 drum   (noise, instant attack, fast
+                                 ; decay to silence — a short tick, no ring)
 
 .INCLUDE "build/midi_tables.asm"
 
