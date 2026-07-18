@@ -82,7 +82,9 @@ loop:
     mov y, a
     and a, #$0F                  ; op
     cmp a, #$01
-    beq do_kon
+    bne _d_n1
+    jmp !do_kon                  ; (do_kon grew past 8-bit branch range)
+_d_n1:
     cmp a, #$02
     beq do_kof
     cmp a, #$03

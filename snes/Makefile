@@ -1,6 +1,7 @@
-PVBIN := ../../pvsneslib/devkitsnes/bin
-AS    := $(PVBIN)/wla-65816
-LD    := $(PVBIN)/wlalink
+PVBIN  := ../../pvsneslib/devkitsnes/bin
+AS     := $(PVBIN)/wla-65816
+AS_SPC := $(PVBIN)/wla-spc700
+LD     := $(PVBIN)/wlalink
 
 all: build/console.sfc
 
