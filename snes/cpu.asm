@@ -269,7 +269,14 @@ _ea_fin_ds:                  ; A = offset, DS segment (overridable)
     bne _ea_fin_go
     ldx #33                  ; bDS
 _ea_fin_go:
-    jsr mk_ptr
+    clc                      ; mk_ptr inlined: this runs on two thirds
+    adc.b 0,x                ; of all instructions
+    sta mPTR
+    sep #$20
+    lda.b 2,x
+    adc #0
+    sta mPTR+2
+    rep #$20
     stz mISREG
     rts
 _ea_fin_ss:                  ; A = offset, SS segment (overridable)
@@ -972,18 +979,11 @@ _faxi16_done:
 ; ALU dispatch stubs: 00-3D block
 ;----------------------------------------------------------------------
 
-op00: ldx #0
-      stx aluIDX
-      jmp form_rmr8
-op01: ldx #0
-      stx aluIDX
-      jmp form_rmr16
-op02: ldx #0
-      stx aluIDX
-      jmp form_rrm8
-op03: ldx #0
-      stx aluIDX
-      jmp form_rrm16
+; modrm ALU forms are flattened (tools/mkaluflat.py -> build/
+; aluflat.asm): decode + operand + executor + writeback inlined,
+; no aluIDX/table dispatch. imm forms below keep the table path.
+.INCLUDE "build/aluflat.asm"
+
 op04: ldx #0
       stx aluIDX
       jmp form_ali8
@@ -991,18 +991,6 @@ op05: ldx #0
       stx aluIDX
       jmp form_axi16
 
-op08: ldx #2
-      stx aluIDX
-      jmp form_rmr8
-op09: ldx #2
-      stx aluIDX
-      jmp form_rmr16
-op0A: ldx #2
-      stx aluIDX
-      jmp form_rrm8
-op0B: ldx #2
-      stx aluIDX
-      jmp form_rrm16
 op0C: ldx #2
       stx aluIDX
       jmp form_ali8
@@ -1010,18 +998,6 @@ op0D: ldx #2
       stx aluIDX
       jmp form_axi16
 
-op10: ldx #4
-      stx aluIDX
-      jmp form_rmr8
-op11: ldx #4
-      stx aluIDX
-      jmp form_rmr16
-op12: ldx #4
-      stx aluIDX
-      jmp form_rrm8
-op13: ldx #4
-      stx aluIDX
-      jmp form_rrm16
 op14: ldx #4
       stx aluIDX
       jmp form_ali8
@@ -1029,18 +1005,6 @@ op15: ldx #4
       stx aluIDX
       jmp form_axi16
 
-op18: ldx #6
-      stx aluIDX
-      jmp form_rmr8
-op19: ldx #6
-      stx aluIDX
-      jmp form_rmr16
-op1A: ldx #6
-      stx aluIDX
-      jmp form_rrm8
-op1B: ldx #6
-      stx aluIDX
-      jmp form_rrm16
 op1C: ldx #6
       stx aluIDX
       jmp form_ali8
@@ -1048,18 +1012,6 @@ op1D: ldx #6
       stx aluIDX
       jmp form_axi16
 
-op20: ldx #8
-      stx aluIDX
-      jmp form_rmr8
-op21: ldx #8
-      stx aluIDX
-      jmp form_rmr16
-op22: ldx #8
-      stx aluIDX
-      jmp form_rrm8
-op23: ldx #8
-      stx aluIDX
-      jmp form_rrm16
 op24: ldx #8
       stx aluIDX
       jmp form_ali8
@@ -1067,18 +1019,6 @@ op25: ldx #8
       stx aluIDX
       jmp form_axi16
 
-op28: ldx #10
-      stx aluIDX
-      jmp form_rmr8
-op29: ldx #10
-      stx aluIDX
-      jmp form_rmr16
-op2A: ldx #10
-      stx aluIDX
-      jmp form_rrm8
-op2B: ldx #10
-      stx aluIDX
-      jmp form_rrm16
 op2C: ldx #10
       stx aluIDX
       jmp form_ali8
@@ -1086,18 +1026,6 @@ op2D: ldx #10
       stx aluIDX
       jmp form_axi16
 
-op30: ldx #12
-      stx aluIDX
-      jmp form_rmr8
-op31: ldx #12
-      stx aluIDX
-      jmp form_rmr16
-op32: ldx #12
-      stx aluIDX
-      jmp form_rrm8
-op33: ldx #12
-      stx aluIDX
-      jmp form_rrm16
 op34: ldx #12
       stx aluIDX
       jmp form_ali8
@@ -1105,18 +1033,6 @@ op35: ldx #12
       stx aluIDX
       jmp form_axi16
 
-op38: ldx #14
-      stx aluIDX
-      jmp form_rmr8
-op39: ldx #14
-      stx aluIDX
-      jmp form_rmr16
-op3A: ldx #14
-      stx aluIDX
-      jmp form_rrm8
-op3B: ldx #14
-      stx aluIDX
-      jmp form_rrm16
 op3C: ldx #14
       stx aluIDX
       jmp form_ali8
@@ -1312,25 +1228,48 @@ op97:
 ;----------------------------------------------------------------------
 ; MOV
 ;----------------------------------------------------------------------
-op88:                        ; MOV rm8, r8
+op88:                        ; MOV rm8, r8 (rm layer inlined: hot path)
     jsr decode_modrm
     jsr fixup8
     ldx mREG
     lda.b 0,x
-    jsr rm_write8
+    ldx mISREG
+    bne _m88r
+    sep #$20
+    sta [mPTR]
+    rep #$20
+    jmp step_next
+_m88r:
+    ldx mRM
+    sep #$20
+    sta.b 0,x
+    rep #$20
     jmp step_next
 
 op89:                        ; MOV rm16, r16
     jsr decode_modrm
     ldx mREG
     lda.b 0,x
-    jsr rm_write16
+    ldx mISREG
+    bne _m89r
+    sta [mPTR]
+    jmp step_next
+_m89r:
+    ldx mRM
+    sta.b 0,x
     jmp step_next
 
 op8A:                        ; MOV r8, rm8
     jsr decode_modrm
     jsr fixup8
-    jsr rm_read8
+    lda mISREG
+    bne _m8Ar
+    lda [mPTR]
+    bra _m8Ac
+_m8Ar:
+    ldx mRM
+    lda.b 0,x
+_m8Ac:
     ldx mREG
     sep #$20
     sta.b 0,x
@@ -1339,7 +1278,15 @@ op8A:                        ; MOV r8, rm8
 
 op8B:                        ; MOV r16, rm16
     jsr decode_modrm
-    jsr rm_read16
+    lda mISREG
+    bne _m8Br
+    lda [mPTR]
+    ldx mREG
+    sta.b 0,x
+    jmp step_next
+_m8Br:
+    ldx mRM
+    lda.b 0,x
     ldx mREG
     sta.b 0,x
     jmp step_next
