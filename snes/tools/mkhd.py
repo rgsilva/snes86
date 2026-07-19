@@ -212,7 +212,6 @@ inf_games = [
 gwbasic = open(os.path.join(DISKS, "gwbasic.exe"), "rb").read()
 hello_com = open(os.path.join(DISKS, "hello.com"), "rb").read()
 sieve_com = open(os.path.join(DISKS, "sieve.com"), "rb").read()
-snipes = open(os.path.join(DISKS, "snipes", "SNIPES.EXE"), "rb").read()
 # M15 (BIGMEM 172 KB) revivals: these need >108 KB to load
 elite_exe = rd("elite", "elite", "elite.exe")
 elite_trn = rd("elite", "elite", "elitetrn.com")
@@ -260,7 +259,7 @@ subdirs = [
                ("SIEVE.PAS", sieve),
                ("SIEVE.COM", sieve_com),
                ("BENCH.PAS", bench)]),
-    ("GAMES", [("SNIPES.EXE", snipes), ("ZORK1.COM", zork_com),
+    ("GAMES", [("ZORK1.COM", zork_com),
                ("SOKOBAN.COM", sok_com), ("SOKOBAN.PAS", sok_pas),
                ("ROGUE.EXE", rd("rogue", "rogue", "10ROGUE.EXE")),
                ("ELITE.EXE", elite_exe), ("ELITETRN.COM", elite_trn),
