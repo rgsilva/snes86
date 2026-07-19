@@ -21,8 +21,12 @@ push16v:                     ; push A onto the guest stack (no gIP commit)
     ldx #30                  ; bSS
     jsr mk_ptr
     lda tmp1
+.IFDEF BIGMEM
+    jmp wr16m
+.ELSE
     sta [mPTR]
     rts
+.ENDIF
 
 pop16v:                      ; A <- popped word
     ldx #30
@@ -32,8 +36,12 @@ pop16v:                      ; A <- popped word
     inc a
     inc a
     sta gSP
+.IFDEF BIGMEM
+    jmp rd16m
+.ELSE
     lda [mPTR]
     rts
+.ENDIF
 
 seg_src_x:                   ; X = DP offset of source base (override or DS)
     ldx ovSEG
@@ -885,11 +893,21 @@ movs16_once:
     jsr seg_src_x
     lda gSI
     jsr mk_ptr
+.IFDEF BIGMEM
+    jsr rd16m                ; source word (seam-safe), then dest via mPTR
+    pha
+    ldx #24
+    lda gDI
+    jsr mk_ptr
+    pla
+    jsr wr16m
+.ELSE
     ldx #24
     lda gDI
     jsr mk_ptr2
     lda [mPTR]
     sta [mPTR2]
+.ENDIF
     jsr str_si16
     jmp str_di16
 
@@ -908,7 +926,11 @@ stos16_once:
     lda gDI
     jsr mk_ptr
     lda gAX
+.IFDEF BIGMEM
+    jsr wr16m
+.ELSE
     sta [mPTR]
+.ENDIF
     jmp str_di16
 
 lods8_once:
@@ -925,7 +947,11 @@ lods16_once:
     jsr seg_src_x
     lda gSI
     jsr mk_ptr
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta gAX
     jmp str_si16
 
@@ -950,12 +976,20 @@ cmps16_once:
     jsr seg_src_x
     lda gSI
     jsr mk_ptr
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta lfA
     ldx #24
     lda gDI
     jsr mk_ptr
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta lfB
     jsr alu_sub16
     jsr str_si16
@@ -980,7 +1014,11 @@ scas16_once:
     ldx #24
     lda gDI
     jsr mk_ptr
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta lfB
     jsr alu_sub16
     jmp str_di16

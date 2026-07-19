@@ -120,6 +120,8 @@ dMSB     dw
 dB2      dw
 dQ       dw
 dINT     dw
+smSAV    dw                  ; BIGMEM: seam-split save of mPTR low16
+smBNK    dw                  ; BIGMEM: seam-split save of mPTR bank + byte
 .ENDE
 
 ;======================================================================
@@ -471,6 +473,142 @@ _np2_71:
     rep #$20
 _np2_leave:
     rts
+
+; --- seam-safe 16-bit access. A word straddles a region seam only when
+; mPTR is the last backed byte of its region: $7F:FFFF (WRAM top),
+; $70:7FFF (page 0 top) or $71:7FFF (page 1 top). Every other address is
+; contiguous, so the common case is a single [mPTR]. On a seam the two
+; bytes are done separately, each in its own region; mPTR is preserved so
+; a read-modify-write (rm_read16 then rm_write16) still targets the word.
+; advance from a seam byte to the next region's byte 0:
+;   $7F:FFFF -> $70:0000   $70:7FFF -> $71:0000   $71:7FFF -> $70:0000 (top)
+
+rd16m:                        ; A(16) <- word at mPTR, seam-safe
+    lda mPTR
+    cmp #$7FFF
+    beq _rd_cp
+    cmp #$FFFF
+    beq _rd_cw
+    lda [mPTR]
+    rts
+_rd_cw:
+    sep #$20
+    lda mPTR+2
+    cmp #$7F
+    rep #$20
+    beq _rd_split
+    lda [mPTR]
+    rts
+_rd_cp:
+    sep #$20
+    lda mPTR+2
+    cmp #$70
+    beq _rd_yp
+    cmp #$71
+    beq _rd_yp
+    rep #$20
+    lda [mPTR]
+    rts
+_rd_yp:
+    rep #$20
+_rd_split:
+    lda mPTR
+    sta smSAV                 ; save mPTR low16
+    sep #$20
+    lda mPTR+2
+    sta smBNK                 ; save bank
+    lda [mPTR]                ; low data byte
+    sta smBNK+1               ; park it
+    jsr _sm_adv               ; mPTR -> next region : 0000
+    lda [mPTR]                ; high data byte -> A low
+    xba                       ; -> A high
+    lda smBNK+1               ; A low = low data byte
+    rep #$20                  ; A = (high<<8)|low
+    pha
+    jsr _sm_rst
+    pla
+    rts
+
+wr16m:                        ; write A(16) to mPTR, seam-safe
+    pha
+    lda mPTR
+    cmp #$7FFF
+    beq _wr_cp
+    cmp #$FFFF
+    beq _wr_cw
+    pla
+    sta [mPTR]
+    rts
+_wr_cw:
+    sep #$20
+    lda mPTR+2
+    cmp #$7F
+    rep #$20
+    beq _wr_split
+    pla
+    sta [mPTR]
+    rts
+_wr_cp:
+    sep #$20
+    lda mPTR+2
+    cmp #$70
+    beq _wr_yp
+    cmp #$71
+    beq _wr_yp
+    rep #$20
+    pla
+    sta [mPTR]
+    rts
+_wr_yp:
+    rep #$20
+_wr_split:
+    lda mPTR
+    sta smSAV
+    sep #$20
+    lda mPTR+2
+    sta smBNK
+    rep #$20
+    pla                       ; value
+    sep #$20
+    sta [mPTR]                ; low byte -> seam byte
+    xba
+    sta smBNK+1               ; park value high byte
+    jsr _sm_adv               ; mPTR -> next region : 0000
+    lda smBNK+1
+    sta [mPTR]                ; high byte -> next region
+    jsr _sm_rst
+    rts
+
+; advance mPTR from a seam byte to the next region's byte 0. A/8-bit in.
+_sm_adv:
+    lda smBNK
+    cmp #$7F
+    bne _sma1
+    lda #$70                  ; WRAM top -> page 0
+    bra _smset
+_sma1:
+    cmp #$70
+    bne _sma2
+    lda #$71                  ; page 0 top -> page 1
+    bra _smset
+_sma2:
+    lda #$70                  ; page 1 top -> page 0 (wrap, ~never)
+_smset:
+    sta mPTR+2
+    rep #$20
+    stz mPTR
+    sep #$20
+    rts
+; restore mPTR from the seam save. enters 8-bit A, exits 16-bit.
+_sm_rst:
+    rep #$20
+    lda smSAV
+    sta mPTR
+    sep #$20
+    lda smBNK
+    sta mPTR+2
+    rep #$20
+    rts
 .ENDIF
 
 ; --- mod=0
@@ -654,8 +792,12 @@ regoff8w:
 rm_read16:
     lda mISREG
     bne _rr16_reg
+.IFDEF BIGMEM
+    jmp rd16m
+.ELSE
     lda [mPTR]
     rts
+.ENDIF
 _rr16_reg:
     ldx mRM
     lda.b 0,x
@@ -664,8 +806,12 @@ _rr16_reg:
 rm_write16:                  ; A = value
     ldx mISREG
     bne _rw16_reg
+.IFDEF BIGMEM
+    jmp wr16m
+.ELSE
     sta [mPTR]
     rts
+.ENDIF
 _rw16_reg:
     ldx mRM
     sta.b 0,x
