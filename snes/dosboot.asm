@@ -170,6 +170,16 @@ con_off:                     ; A = buffer offset of (cROW, cCOL)
     asl a
     clc
     adc cT1                  ; row*160
+    pha                      ; halve for 40-col (real CGA stride)
+    lda cWID
+    cmp #80
+    beq _co_d
+    pla
+    lsr a
+    bra _co_s
+_co_d:
+    pla
+_co_s:
     sta cT1
     lda cCOL
     asl a
@@ -425,10 +435,14 @@ _nl_full:
     lda cGFX
     beq _nl_scroll
     jmp gfx_nlscr            ; graphics: shift the bitmap up 8 scanlines
-_nl_scroll:                  ; scroll the buffer, not the tilemap
+_nl_scroll:                  ; scroll the buffer up one row (stride-aware)
     phy                      ; Y is the guest IP — MVN clobbers X/Y!
     phx
     phb
+    lda cWID
+    cmp #80
+    bne _nl_s40
+    ; 80-col: move rows 1-24 (24*160-1 bytes) up, clear last row (160 bytes)
     lda #3839
     ldx #VBOFS+160
     ldy #VBOFS
@@ -442,6 +456,23 @@ _nl_c:
     inx
     cpx #160
     bcc _nl_c
+    plx
+    ply
+    rts
+_nl_s40:                     ; 40-col: 80-byte rows -> move 24*80-1, clear 80
+    lda #1919
+    ldx #VBOFS+80
+    ldy #VBOFS
+    .db $54, $7E, $7E        ; mvn $7E,$7E
+    plb
+    ldx #$0000
+    lda #$0720
+_nl_c4:
+    sta.l VBUF+1920,x
+    inx
+    inx
+    cpx #80
+    bcc _nl_c4
     plx
     ply
     rts
@@ -942,9 +973,9 @@ _h10_bl:
     bne _h10_bl
     rts
 
-mul160:                      ; A = rows -> A = rows*160
-    asl a
-    asl a
+mul160:                      ; A = rows -> rows * (cWID*2): 160 in 80-col text,
+    asl a                    ; 80 in 40-col (real CGA row stride). Preserves X
+    asl a                    ; (_h10_blank holds an addr in X across this call).
     asl a
     asl a
     asl a                    ; *32
@@ -952,7 +983,16 @@ mul160:                      ; A = rows -> A = rows*160
     asl a
     asl a                    ; *128
     clc
-    adc aT2
+    adc aT2                  ; *160
+    pha
+    lda cWID
+    cmp #80
+    beq _m160_d
+    pla
+    lsr a                    ; 40-col: *80
+    rts
+_m160_d:
+    pla
     rts
 
 row_addr:                    ; A = row -> in-bank ($7E) addr VBOFS + row*160
@@ -2338,7 +2378,9 @@ _sr_nxj:
     jmp _sr_next
 _sr_go:
     sta kT1                  ; screen row
-    ; src offset = scanROW*160 + kPAN*2
+    ; src offset = scanROW*(cWID*2) + kPAN*2  (160-byte rows in 80-col text,
+    ; 80-byte rows in 40-col — real CGA stride, so direct-B800 40-col
+    ; programs like Starglider aren't interleaved into the 80-col buffer)
     lda scanROW
     asl a
     asl a
@@ -2349,7 +2391,17 @@ _sr_go:
     asl a
     asl a
     clc
-    adc kT0
+    adc kT0                  ; scanROW*160
+    pha
+    lda cWID
+    cmp #80
+    beq _sr_st
+    pla
+    lsr a                    ; 40-col: scanROW*80
+    bra _sr_sd
+_sr_st:
+    pla
+_sr_sd:
     sta kT0
     lda kPAN
     asl a
