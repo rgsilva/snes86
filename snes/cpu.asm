@@ -143,6 +143,9 @@ step_lean:                   ; hot entry: Y = IP, maintained by handlers
     stz ovSEG                ; (every handler ends sty gIP with Y intact,
     stz pREP                 ; so the run loop skips the reload+halt check)
 step_fetch:
+.IFDEF BIGMEM
+    jsr fetch_rebase         ; keep bCS+Y in a backed region across seams
+.ENDIF
     lda [bCS],y
     iny
     and #$00FF
@@ -163,6 +166,9 @@ step_next:
     beq _sn_slow
     stz ovSEG
     stz pREP
+.IFDEF BIGMEM
+    jsr fetch_rebase         ; keep bCS+Y in a backed region across seams
+.ENDIF
     lda [bCS],y
     iny
     and #$00FF
@@ -518,11 +524,11 @@ _rd_split:
     lda mPTR+2
     sta smBNK                 ; save bank
     lda [mPTR]                ; low data byte
-    sta smBNK+1               ; park it
+    pha                       ; park it on the stack (8-bit push)
     jsr _sm_adv               ; mPTR -> next region : 0000
-    lda [mPTR]                ; high data byte -> A low
+    lda [mPTR]                ; high data byte
     xba                       ; -> A high
-    lda smBNK+1               ; A low = low data byte
+    pla                       ; A low = low data byte
     rep #$20                  ; A = (high<<8)|low
     pha
     jsr _sm_rst
@@ -568,14 +574,14 @@ _wr_split:
     lda mPTR+2
     sta smBNK
     rep #$20
-    pla                       ; value
+    pla                       ; value (16-bit, balances entry pha)
     sep #$20
     sta [mPTR]                ; low byte -> seam byte
     xba
-    sta smBNK+1               ; park value high byte
+    pha                       ; park value high byte (8-bit push)
     jsr _sm_adv               ; mPTR -> next region : 0000
-    lda smBNK+1
-    sta [mPTR]                ; high byte -> next region
+    pla                       ; value high byte
+    sta [mPTR]                ; -> next region
     jsr _sm_rst
     rts
 
@@ -607,6 +613,80 @@ _sm_rst:
     sep #$20
     lda smBNK
     sta mPTR+2
+    rep #$20
+    rts
+
+; fold the fetch pointer smSAV(low16)/smBNK(bank) to a canonical region,
+; same map as norm_ptr. Used by fetch_rebase.
+norm_fp:
+    sep #$20
+    lda smBNK
+    cmp #$80
+    beq _fp_w80
+    cmp #$70
+    beq _fp_70
+    cmp #$71
+    beq _fp_71
+    rep #$20
+    rts
+_fp_w80:
+    rep #$20
+    lda smSAV
+    cmp #$8000
+    bcc _fp_p0
+_fp_p1:
+    sec
+    sbc #$8000
+    sta smSAV
+    sep #$20
+    lda #$71
+    sta smBNK
+    rep #$20
+    rts
+_fp_p0:
+    sep #$20
+    lda #$70
+    sta smBNK
+    rep #$20
+    rts
+_fp_70:
+    rep #$20
+    lda smSAV
+    cmp #$8000
+    bcc _fp_leave
+    bra _fp_p1
+_fp_71:
+    rep #$20
+_fp_leave:
+    rts
+
+; Keep bCS+Y inside a backed region so the opcode/immediate fetches
+; (lda [bCS],y at 53 sites) never read the ROM half of an SRAM bank when
+; sequential execution walks a code segment across a seam. Runs once per
+; instruction. Folds the fetch pointer (bCS+Y) to its real region and
+; rebases bCS = folded - Y, so bCS+Y is unchanged when already in region
+; (a no-op for WRAM code) and corrected when it has crossed. Y preserved.
+; (bCS is the code base, used only for fetch and the rare CS: override.)
+fetch_rebase:
+    tya
+    clc
+    adc bCS
+    sta smSAV
+    sep #$20
+    lda bCS+2
+    adc #0
+    sta smBNK
+    rep #$20
+    jsr norm_fp
+    sty tmp0
+    lda smSAV
+    sec
+    sbc tmp0
+    sta bCS
+    sep #$20
+    lda smBNK
+    sbc #0
+    sta bCS+2
     rep #$20
     rts
 .ENDIF
