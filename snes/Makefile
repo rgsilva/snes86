@@ -65,6 +65,13 @@ build/dosboot.sfc: build/dosboot.o linkfile_dos
 
 fs: build/dosboot_fs.sfc
 
+# SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
+# Run: Mesen --testrunner build/sramtest.sfc test/sram.lua
+sramtest: build/sramtest.sfc
+build/sramtest.sfc: sramtest.asm linkfile_sramtest
+	$(AS) -o build/sramtest.o sramtest.asm
+	$(LD) -d -s linkfile_sramtest build/sramtest.sfc
+
 build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
 	$(AS) -o build/dosboot_fs.o dosboot_fs.asm
 
