@@ -106,6 +106,9 @@ _ub_norm:
     sep #$20
     sta.b 2,x
     rep #$20
+.IFDEF BIGMEM
+    jmp norm_base_x          ; fold a 108-172 KB base ($80) into SRAM
+.ENDIF
     rts
 
 upd_bCS:
@@ -630,6 +633,9 @@ _rd\@:
 _mf\@:
     lda gCX
     beq _md\@
+.IFDEF BIGMEM
+    jmp _mb\@                ; 172 KB: per-element re-normalises each ptr so
+.ENDIF                       ; the copy folds correctly across WRAM/SRAM seams
     lda fSTATIC
     and #F_DF
     bne _mb\@                ; backward: rare, keep per-element
@@ -738,6 +744,9 @@ _mb\@:
 _sf\@:
     lda gCX
     beq _sd\@
+.IFDEF BIGMEM
+    jmp _sb\@                ; 172 KB: per-element, seam-correct (see REPMOVF)
+.ENDIF
     lda fSTATIC
     and #F_DF
     bne _sb\@

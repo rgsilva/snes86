@@ -11,13 +11,21 @@
 
 .SNESHEADER
   ID "SNES"
+.IFDEF BIGMEM
+  NAME "SNES86 PC-DOS 172K   "
+.ELSE
   NAME "SNES86 PC-DOS BOOT   "
+.ENDIF
   ;    "123456789012345678901"
   FASTROM
   LOROM
   CARTRIDGETYPE $02             ; ROM + RAM + battery
   ROMSIZE $0C                   ; 4 MB
+.IFDEF BIGMEM
+  SRAMSIZE $07                  ; 128 KB header -> 64 KB usable = guest hi RAM
+.ELSE
   SRAMSIZE $05                  ; 32 KB, the B: disk
+.ENDIF
   COUNTRY $01
   LICENSEECODE $00
   VERSION $00

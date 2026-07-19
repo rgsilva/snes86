@@ -29,6 +29,11 @@
 .DEFINE VBOFS $1000          ; CGA adapter RAM, 16 KB at $7E:1000-$7E:4FFF
 .DEFINE VBUF  $7E1000        ; B000-BFFF segs map here (text page = offset 0;
                              ; text+graphics share it, like real CGA card RAM)
+.IFDEF BIGMEM
+.DEFINE GUESTKB 172          ; M15: 108 KB WRAM + 64 KB cart SRAM
+.ELSE
+.DEFINE GUESTKB 108
+.ENDIF
 
 ; lazy-flag kinds (word values, double as norm_tab jump index)
 .MACRO STEP_END
@@ -277,6 +282,9 @@ _ea_fin_go:
     adc #0
     sta mPTR+2
     rep #$20
+.IFDEF BIGMEM
+    jsr norm_ptr             ; fold the SRAM overflow (172 KB guest)
+.ENDIF
     stz mISREG
     rts
 _ea_fin_ss:                  ; A = offset, SS segment (overridable)
@@ -296,6 +304,9 @@ mk_ptr:
     adc #0
     sta mPTR+2
     rep #$20
+.IFDEF BIGMEM
+    jmp norm_ptr
+.ENDIF
     rts
 
 mk_ptr2:
@@ -307,7 +318,160 @@ mk_ptr2:
     adc #0
     sta mPTR2+2
     rep #$20
+.IFDEF BIGMEM
+    jmp norm_ptr2
+.ENDIF
     rts
+
+.IFDEF BIGMEM
+; 172 KB guest (M15): linear 0-108 KB lives in $7E5000-$7FFFFF as usual;
+; 108-172 KB is the cart's 64 KB SRAM, banks $70 (page 0) + $71 (page 1),
+; each 32 KB ($xx:0000-$xx:7FFF; the $8000-$FFFF half of those banks is
+; ROM and must never be touched by a guest access).
+;
+; Two-level scheme so all 53 instruction-fetch sites stay `lda [bCS],y`
+; with no per-fetch cost:
+;   - norm_base_x folds a freshly-built segment base (a single point, so
+;     it lands in exactly one region) at seg-load time. A base >= 108 KB
+;     comes out of upd_base_x as bank $80/$81 and is rewritten to $70/$71.
+;     Fetch/stack/EA then start from a base that already points at real
+;     WRAM or SRAM.
+;   - norm_ptr folds base+offset. Because the base is already normalised,
+;     the sum can leave its region in any direction: a WRAM base can spill
+;     up into $80 (-> SRAM), a $70 base can spill past $70:7FFF into page 1,
+;     a $71 base can spill past $71:7FFF and must wrap to page 0. It maps
+;     every case to a canonical $70/$71/$7E/$7F pointer. (An access that
+;     itself straddles a 32 KB seam still only normalises its start byte —
+;     that is the M15b seam-split work; whole-operand-in-region is fine.)
+
+; Region banks after a valid fold: $7E/$7F = WRAM; $70 = SRAM page 0
+; ($70:0000-7FFF); $71 = SRAM page 1 ($71:0000-7FFF). The $8000-$FFFF
+; half of $70/$71 is ROM. A NAIVE pointer $7E5000+linear reaches SRAM
+; only in bank $80 exactly: $80:0000 = linear $1B000 (SRAM start),
+; $80:FFFF = linear $2AFFF (SRAM end). Bank $81+ is past 172 KB and
+; UNBACKED — it must be left naive (points at ROM, reads harmlessly and
+; drops writes) rather than folded, or high segments like F000 (BIOS)
+; would alias into SRAM.
+
+; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x). A base
+; is one point: only bank $80 is the SRAM window; $7E/$7F (WRAM) and $81+
+; (unbacked) pass through unchanged.
+norm_base_x:
+    sep #$20
+    lda.b 2,x
+    cmp #$80
+    bne _nbx_ok             ; not $80: WRAM ($7E/$7F) or unbacked ($81+)
+    rep #$20
+    lda.b 0,x
+    cmp #$8000
+    bcc _nbx_p0
+    sec
+    sbc #$8000
+    sta.b 0,x               ; page 1: offset -= $8000, bank $71
+    sep #$20
+    lda #$71
+    sta.b 2,x
+    rep #$20
+    rts
+_nbx_p0:
+    sep #$20
+    lda #$70                ; page 0: bank $70, offset kept
+    sta.b 2,x
+    rep #$20
+    rts
+_nbx_ok:
+    rep #$20
+    rts
+
+; fold a full base+offset pointer in mPTR to a canonical region pointer.
+; The base is already normalised, so the sum leaves a region as: WRAM ->
+; $80 (SRAM window), $70 -> $71 (page 0 spills into page 1), $71 -> ROM
+; (page 1 spills past the top, left unbacked). Whole-operand-in-region.
+norm_ptr:
+    sep #$20
+    lda mPTR+2
+    cmp #$80
+    beq _np_w80             ; bank $80: SRAM window / WRAM overflow
+    cmp #$70
+    beq _np_70              ; bank $70: page 0 (may spill to page 1)
+    cmp #$71
+    beq _np_71              ; bank $71: page 1 (may spill to unbacked ROM)
+    rep #$20               ; $7E/$7F WRAM or unbacked: leave as-is
+    rts
+_np_w80:
+    rep #$20
+    lda mPTR
+    cmp #$8000
+    bcc _np_p0
+_np_p1:                     ; offset >= $8000 -> page 1
+    sec
+    sbc #$8000
+    sta mPTR
+    sep #$20
+    lda #$71
+    sta mPTR+2
+    rep #$20
+    rts
+_np_p0:                     ; offset < $8000 -> page 0
+    sep #$20
+    lda #$70
+    sta mPTR+2
+    rep #$20
+    rts
+_np_70:
+    rep #$20
+    lda mPTR
+    cmp #$8000
+    bcc _np_leave           ; page 0, in range
+    bra _np_p1              ; spilled past page 0 -> page 1
+_np_71:                     ; page 1 in range, or spilled to ROM: leave either
+    rep #$20
+_np_leave:
+    rts
+
+; same fold for the second pointer (string destination).
+norm_ptr2:
+    sep #$20
+    lda mPTR2+2
+    cmp #$80
+    beq _np2_w80
+    cmp #$70
+    beq _np2_70
+    cmp #$71
+    beq _np2_71
+    rep #$20
+    rts
+_np2_w80:
+    rep #$20
+    lda mPTR2
+    cmp #$8000
+    bcc _np2_p0
+_np2_p1:
+    sec
+    sbc #$8000
+    sta mPTR2
+    sep #$20
+    lda #$71
+    sta mPTR2+2
+    rep #$20
+    rts
+_np2_p0:
+    sep #$20
+    lda #$70
+    sta mPTR2+2
+    rep #$20
+    rts
+_np2_70:
+    rep #$20
+    lda mPTR2
+    cmp #$8000
+    bcc _np2_leave
+    bra _np2_p1
+_np2_71:
+    rep #$20
+_np2_leave:
+    rts
+.ENDIF
 
 ; --- mod=0
 _ea00_0:                     ; [BX+SI]

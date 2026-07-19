@@ -967,7 +967,7 @@ hle_int11:
     rts
 
 hle_int12:
-    lda #108                 ; KB of guest RAM
+    lda #GUESTKB             ; KB of guest RAM (172 in the BIGMEM variant)
     sta gAX
     rts
 
@@ -1274,6 +1274,10 @@ _h13_sec:
     clc
     adc #$8000
     sta mPTR2
+.IFDEF BIGMEM
+    jsr bigmem_seccopy       ; SRAM isn't reachable by the WRAM DMA; copy
+    jmp _h13_nc              ; the sector byte-wise, seam-aware (also
+.ENDIF                       ; advances mPTR across region boundaries)
     ; DMA the 512-byte sector ROM(mPTR2) -> WRAM(mPTR) via the $2180
     ; WMDATA port. ~5x the old word loop; Y (guest IP) is untouched.
     sep #$20
@@ -1313,9 +1317,72 @@ _h13_nc:
     inc cT0
     dec cT1
     lda cT1
-    bne _h13_sec
+    beq _h13_secd
+    jmp _h13_sec
+_h13_secd:
     ply
     jmp _h13_ok
+
+.IFDEF BIGMEM
+; --- BIGMEM: copy 512 bytes ROM(mPTR2) -> guest(mPTR), one byte at a
+; time, remapping mPTR at each region seam ($7F:FFFF->$70:0000 WRAM->
+; SRAM page 0, $70:7FFF->$71:0000 page 0->page 1). The dest may be
+; WRAM, SRAM, or straddle a seam. mPTR ends past the sector; mPTR2 is
+; recomputed by the caller so trashing it is fine.
+bigmem_seccopy:
+    ldx #512
+_bsc:
+    sep #$20
+    lda [mPTR2]
+    sta [mPTR]
+    rep #$20
+    inc mPTR2                ; source: +1 byte (no ROM-bank cross in a sector)
+    jsr gadv_ptr             ; dest: +1 byte, seam-aware
+    dex
+    bne _bsc
+    rts
+
+; advance mPTR by one guest byte, folding region boundaries into the
+; real WRAM/SRAM banks (A/X/Y preserved except A).
+gadv_ptr:
+    rep #$20
+    inc mPTR
+    beq _ga_wrap             ; low16 $FFFF -> 0: bank changed (WRAM top)
+    lda mPTR
+    cmp #$8000
+    beq _ga_8000             ; possible SRAM page boundary
+    rts
+_ga_wrap:
+    sep #$20
+    inc mPTR+2
+    lda mPTR+2
+    cmp #$80                 ; $7F -> $80: WRAM end -> SRAM page 0
+    bne _ga_wd
+    lda #$70
+    sta mPTR+2
+_ga_wd:
+    rep #$20
+    rts
+_ga_8000:
+    sep #$20
+    lda mPTR+2
+    cmp #$70                 ; page 0 end -> page 1 start
+    beq _ga_71
+    cmp #$71                 ; page 1 end -> wrap page 0 (past 172 KB)
+    bne _ga_8d
+    lda #$70
+    bra _ga_8w
+_ga_71:
+    lda #$71
+_ga_8w:
+    sta mPTR+2
+    rep #$20
+    stz mPTR
+    rts
+_ga_8d:
+    rep #$20
+    rts
+.ENDIF
 
     ; ---- C: fixed disk (DL=80h): 107 cyl x 4 heads x 17 spt, ROM banks
     ; $8E-$FF via the fast mirrors, read-only. LBA fits 16 bits (<=7275).
@@ -1855,6 +1922,17 @@ _rst_z2:
     inx
     inx
     bne _rst_z2
+.IFDEF BIGMEM
+    ; -- guest high RAM (108-172 KB) is the 64 KB cart SRAM, banks $70/$71
+    ldx #$0000
+_rst_zs:
+    sta.l $700000,x
+    sta.l $710000,x
+    inx
+    inx
+    cpx #$8000
+    bcc _rst_zs
+.ENDIF
 
     ; -- IVT: all 256 vectors -> 0000:04F0 (IRET stub in BDA scratch,
     ; safe from the boot sector's directory read at 0x500-0x6FF)
@@ -1878,7 +1956,7 @@ _rst_ivt:
     ; -- BIOS data area: equipment + memory size
     lda #$0061
     sta.l $7E5410
-    lda #108
+    lda #GUESTKB
     sta.l $7E5413
     lda #$001E               ; BIOS kb ring in the BDA: head = tail = 1E
     sta.l $7E541A            ; (served by INT16 when a guest INT9 hook
@@ -1930,9 +2008,11 @@ _rst_bs:
     sta bDS+2
     rep #$20
 
+.IFNDEF BIGMEM
     ; -- B: SRAM disk ($70:0000, 32 KB, battery-backed). Format from the
     ; ROM template ONLY if the boot signature is missing — a formatted
     ; disk means the battery kept the user's files: preserve them.
+    ; (In the BIGMEM variant the SRAM is guest high RAM, not B:.)
     lda.l $7001FE
     cmp #$AA55
     bne _rst_dofmt
@@ -1950,6 +2030,7 @@ _rst_fmt:
     cpx #4608
     bcc _rst_fmt
 _rst_fmtd:
+.ENDIF
 
     ; -- on-screen keyboard: draw into its tilemaps, set up the HDMA
     ; raster split (terminal scrolls above, keyboard fixed below)
