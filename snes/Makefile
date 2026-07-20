@@ -42,7 +42,7 @@ clean:
 
 # --- DOS boot ROM.  `make dosboot` = the PUBLIC build: MS-DOS 2.0 (MIT) + a
 # free C: (tools/mkhd_free.py; no copyrighted software).  `make dev` is the
-# same machine with the full local C: app library.  See BUILDING.md.
+# same machine with the full local C: app library.  See docs/BUILDING.md.
 dosboot: build/dosboot.sfc
 
 build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
