@@ -39,8 +39,8 @@ All captured from snes86 running in Mesen.
 </tr>
 </table>
 
-> 🎬 The MIDI synth is best *heard*: a short clip of the demo tune playing lives
-> in [`assets/`](assets/) when available — see [The SNES is your sound card](#the-snes-is-your-sound-card).
+> 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
+> tune playing in [The SNES is your sound card](#the-snes-is-your-sound-card) below.
 
 ## Tested software
 
@@ -66,6 +66,12 @@ If you get something interesting running, we'd love to hear about it.
 
 snes86's headline trick beyond "it boots DOS": it turns the SNES's SPC-700 audio chip
 into an 8-voice General MIDI synthesizer, and exposes a small MIDI card to the guest.
+
+<p align="center">
+  <video src="https://github.com/rgsilva/snes86/raw/main/docs/assets/mididemo.mp4" controls width="480"></video>
+  <br><sub>The demo tune played through the SPC-700 — Beethoven's "Ode to Joy", sequenced as a
+  CC0 MIDI. If the player doesn't load, <a href="assets/mididemo.mp4">download the clip</a> (~0.4 MB).</sub>
+</p>
 
 - MIDPLAY streams music to the synth. Point it at a converted song:
   `MIDPLAY C:\MIDI\DEMO.SNM`.

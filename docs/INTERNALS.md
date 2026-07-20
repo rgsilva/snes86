@@ -84,21 +84,49 @@ dispatches BIOS calls natively.
 
 ### The SNES is your sound card
 
-snes86 exposes a small MIDI card to the guest and implements a full 8-voice
-General MIDI synth on the SPC-700 (`snes/spc_midi.asm`).
+The SNES has no MIDI hardware. Its audio is a whole separate computer — a Sony SPC-700
+driving an 8-voice sample-playback DSP — and the main CPU can only reach it through four
+one-byte mailbox registers at `$2140–$2143`. Getting DOS music software to play meant
+bridging that gap in three places: get a synth program *into* the sound chip, teach it
+General MIDI, and hand the guest something that looks like a MIDI card.
 
-- The guest writes 4-byte packets `[delta-frames][status][data1][data2]` to I/O
-  port `$330`. Port `$331` reads the number of free packet slots and writes a
-  reset/silence. The packets queue into a FIFO in WRAM.
-- The NMI is the 60 Hz sequencer: each frame it drains delta-timed events and
-  forwards note-on/off/program-change to the SPC-700 over the APU mailbox
-  (`$2140–$2143`). The SPC runs a GM-mapped synth with BRR waveforms (square, tri,
-  saw, sine, noise for drums).
-- The guest side is MIDPLAY (streams a pre-converted `.SNM` packet file) and
-  MIDCONV (converts a Standard MIDI File to `.SNM` — the real-math parse is too
-  slow to do live, so it runs once at conversion time). Both ship with Turbo Pascal
-  source. The PC speaker (`INT`s to the PIT / port 61h) is routed to the same synth,
-  so `BEL` beeps too.
+Uploading the synth. At power-on the SPC-700 runs only a small stock IPL ROM, so the
+65C816 has to load our code into it first (`apu_upload` in `dosboot.asm`). That is the
+SPC boot handshake: wait for the IPL's `$AA` "ready" byte, send a destination address
+and a start command, then stream the program a byte at a time, each byte acknowledged by
+echoing a rolling index back through `$2140`. snes86 uploads the assembled synth
+(`spc_midi.asm` → `spc_midi64.bin`) to SPC address `$0200` and jumps to it. If the APU
+never answers, the machine just runs silent — sound is best-effort and never holds up
+the boot.
+
+The synth. Once it's running (`spc_midi.asm`), the SPC program sets up the DSP — master
+volume, a directory of BRR waveforms (square, triangle, saw, sine) and a noise channel
+for drums — and then spins on a single mailbox byte. A command is packed as
+`(seq << 4) | op` in port 3, with arguments in ports 0–2: op selects key-on, key-off,
+all-notes-off, or a raw pitch. Key-on maps a General MIDI program to one of six
+instruments (a sample plus an ADSR envelope), sets the chosen voice's pitch and volume,
+and echoes the command byte back to acknowledge it. Eight DSP voices give eight-note
+polyphony.
+
+The card and the sequencer. To the guest, snes86 presents a small MIDI card at I/O port
+`$330`: software streams four-byte packets `[delta-frames][status][data1][data2]` to it
+and reads port `$331` for the number of free slots, so it can pace itself and never
+overrun the buffer (writing `$331` resets and silences everything). Packets land in a
+112-slot ring FIFO in WRAM. The piece that ties it together is that the NMI — vblank, 60
+times a second — is both the clock and the *only* code that ever touches the mailbox.
+Each frame the sequencer counts down each packet's frame-delta, fires the events that are
+due (capped at eight per frame to keep the NMI short), turns MIDI note-on/off and
+program-change into SPC key-on/off with voice allocation, and sends them across. Because
+only the NMI drives the mailbox there is no reentrancy to defend against — even the PC
+speaker path just sets a flag that the same NMI turns into a raw-pitch note on voice 7,
+so `BEL` beeps come out of the synth too.
+
+Why there's a conversion step. Turning a Standard MIDI File into those per-frame deltas
+needs real tempo arithmetic (MIDI ticks and microseconds-per-quarter-note folded into
+60ths of a second) — too slow to do live on the emulated 8086. So MIDCONV does it once,
+offline, emitting a `.SNM` file that is exactly the packet stream the card wants; MIDPLAY
+then just streams packets while watching the free-slot count, and the SNES itself parses
+nothing. Both tools ship with Turbo Pascal source in `C:\MIDI`.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the MIDI feature from a user's view.
 
