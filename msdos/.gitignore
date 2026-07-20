@@ -1,0 +1,16 @@
+# build artifacts
+io.obj
+io.exe
+io.map
+io.lst
+IO.SYS
+boot.bin
+bootparams.inc
+build.img
+msdos.img
+SYSINIT.err
+# host toolchain (built from source into the scratch dir; symlinked in)
+jwasm
+jwlink
+# not used by the build (self-hosted link uses LINK.EXE + EXE2BIN.EXE)
+MASM.EXE
