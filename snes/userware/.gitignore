@@ -1,0 +1,6 @@
+# ignore everything the user drops here...
+*
+# ...except these
+!.gitignore
+!.gitkeep
+!README.md

@@ -90,6 +90,20 @@ build/dosboot_msdos.o: dosboot_msdos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.as
 build/dosboot_msdos.sfc: build/dosboot_msdos.o linkfile_msdos
 	$(LD) -d -s -v -c linkfile_msdos build/dosboot_msdos.sfc
 
+# --- M16 Step 2: PUBLIC RELEASE (MS-DOS + a free C: — no copyrighted software).
+# C: carries only our own tools (with Turbo Pascal source) + a generated CC0
+# demo + anything in userware/. Builds from committed files only.
+release: build/dosboot_release.sfc
+
+build/hd_free.img: tools/mkhd_free.py build/cgatest.com ../disks/midplay.com ../disks/midconv.com ../disks/sokoban.com ../disks/hello.com ../disks/sieve.com ../disks/midplay.pas ../disks/midconv.pas ../disks/sokoban.pas ../disks/HELLO.pas $(wildcard userware/*)
+	python3 tools/mkhd_free.py build
+
+build/dosboot_release.o: dosboot_release.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
+	$(AS) -o build/dosboot_release.o dosboot_release.asm
+
+build/dosboot_release.sfc: build/dosboot_release.o linkfile_release
+	$(LD) -d -s -v -c linkfile_release build/dosboot_release.sfc
+
 # SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
 # Run: Mesen --testrunner build/sramtest.sfc test/sram.lua
 sramtest: build/sramtest.sfc
