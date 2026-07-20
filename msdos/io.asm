@@ -268,81 +268,121 @@ TW1:	MOV	AL,DS:[SI]	; note: caller buffer was ES:DI, now swapped
 	JMP	EXIT
 
 ;----------------------------------------------------------------------
-; DISK — INT 13h floppy read/write, logical sector -> CHS
+; DISK — 3 block units mapped to the snes86 HLE INT 13h drives:
+;   unit 0 = A: floppy   (INT13 DL=0,   9 spt / 2 heads, 360 KB, media FD)
+;   unit 1 = B: SRAM     (INT13 DL=1,   9 spt / 2 heads,        media FC)
+;   unit 2 = C: hard disk(INT13 DL=80h, 17 spt / 4 heads, media F8; the DOS
+;            partition starts at absolute LBA 17, so add that offset)
+; DOS gets partition-relative logical sectors; we add UOFF and convert to
+; CHS with the per-unit geometry, then INT 13h.
 ;----------------------------------------------------------------------
-SPT	EQU	9		; sectors/track (360 KB)
-NHEADS	EQU	2
+UDRV	DB	0, 1, 80H		; INT 13h drive number per unit
+USPT	DB	9, 9, 17		; sectors per track
+UHEAD	DB	2, 2, 4			; heads
+UOFF	DW	0, 0, 17		; hidden sectors (partition start)
 
-; BPB for a 360 KB 5.25" floppy (matches our A: image)
-FLOPPY_BPB:
-	DW	512		; bytes per sector
-	DB	2		; sectors per cluster
-	DW	1		; reserved sectors
-	DB	2		; number of FATs
-	DW	112		; root directory entries
-	DW	720		; total sectors
-	DB	0FDH		; media descriptor
-	DW	2		; sectors per FAT
-BPB_TAB DW	FLOPPY_BPB	; array of BPB pointers (1 unit)
+; DOS 2.0 BPBs: bytes/sec, spc, reserved, FATs, root, total, media, secs/FAT
+BPB_A	DW 512
+	DB 2
+	DW 1
+	DB 2
+	DW 112
+	DW 720
+	DB 0FDH
+	DW 2
+BPB_B	DW 512
+	DB 1
+	DW 1
+	DB 2
+	DW 64
+	DW 360
+	DB 0FCH
+	DW 2
+BPB_C	DW 512
+	DB 4
+	DW 1
+	DB 2
+	DW 256
+	DW 7259
+	DB 0F8H
+	DW 6
+UBPB	DW BPB_A, BPB_B, BPB_C		; per-unit BPB pointer array
 
 MEDIAC:	LDS	BX,CS:[PTRSAV]
 	MOV	BYTE PTR [BX+14],1	; media-status flag = not changed
-	MOV	AX,0100H		; AL=0 ok, AH=done set below
+	MOV	AX,0100H
 	JMP	EXIT
 
-GET_BPB: LDS	BX,CS:[PTRSAV]
-	MOV	BYTE PTR [BX+13],0FDH	; media byte
-	MOV	WORD PTR [BX+18],OFFSET FLOPPY_BPB
+GET_BPB: ; AL = unit -> return that unit's BPB pointer + media byte
+	XOR	AH,AH
+	SHL	AX,1
+	MOV	BX,AX
+	MOV	SI,CS:[UBPB+BX]		; SI = BPB offset for the unit
+	MOV	AL,CS:[SI+10]		; media byte lives at BPB+10
+	LDS	BX,CS:[PTRSAV]
+	MOV	[BX+13],AL
+	MOV	WORD PTR [BX+18],SI
 	MOV	[BX+20],CS
+	MOV	AL,0
 	JMP	EXIT
 
 DSK_INIT: LDS	BX,CS:[PTRSAV]
-	MOV	BYTE PTR [BX+13],1	; number of block units
-	MOV	WORD PTR [BX+14],OFFSET IO_END	; break address (end of resident)
+	MOV	BYTE PTR [BX+13],3	; 3 block units (A:, B:, C:)
+	MOV	WORD PTR [BX+14],OFFSET IO_END	; break address
 	MOV	[BX+16],CS
-	MOV	WORD PTR [BX+18],OFFSET BPB_TAB	; BPB pointer array
+	MOV	WORD PTR [BX+18],OFFSET UBPB	; BPB pointer array
 	MOV	[BX+20],CS
 	JMP	EXIT
 
-; DSK_RED/DSK_WRT entry (from ENTRY): AL=unit, AH=media, CX=sector count,
-; DX=start logical sector, ES:DI=transfer address.
-DSK_RED: MOV	BYTE PTR CS:[RWOP],2	; INT13 read
+; DSK_RED/DSK_WRT entry: AL=unit, CX=sector count, DX=start logical sector,
+; ES:DI=transfer address.
+DSK_RED: MOV	BYTE PTR CS:[RWOP],2
 	JMP	SHORT DSK_COM
-DSK_WRT: MOV	BYTE PTR CS:[RWOP],3	; INT13 write
+DSK_WRT: MOV	BYTE PTR CS:[RWOP],3
 DSK_COM:
 	MOV	CS:[RWCNT],CX
-	MOV	CS:[RWLBA],DX
 	MOV	CS:[RWSEG],ES
 	MOV	CS:[RWOFF],DI
+	MOV	BL,AL			; BX = unit
+	XOR	BH,BH
+	MOV	AL,CS:[UDRV+BX]
+	MOV	CS:[RWDRV],AL
+	MOV	AL,CS:[USPT+BX]
+	MOV	CS:[RWSPT],AL
+	MOV	AL,CS:[UHEAD+BX]
+	MOV	CS:[RWHD],AL
+	SHL	BX,1			; unit*2 for the word offset table
+	MOV	AX,CS:[UOFF+BX]
+	ADD	AX,DX			; absolute LBA = hidden + logical
+	MOV	CS:[RWLBA],AX
 DSK_LOOP:
 	MOV	CX,CS:[RWCNT]
 	JCXZ	DSK_DONE
-	; logical LBA -> CHS: sector = LBA mod SPT + 1, tmp = LBA / SPT
 	MOV	AX,CS:[RWLBA]
 	XOR	DX,DX
-	MOV	BX,SPT
-	DIV	BX		; AX=LBA/SPT, DX=sector index
+	XOR	BX,BX
+	MOV	BL,CS:[RWSPT]
+	DIV	BX			; AX=LBA/spt, DX=sector index
 	MOV	CL,DL
-	INC	CL		; CL = sector (1-based)
-	; head = tmp mod NHEADS, cyl = tmp / NHEADS
+	INC	CL			; CL = sector (1-based)
 	XOR	DX,DX
-	MOV	BX,NHEADS
-	DIV	BX		; AX=cyl, DX=head
-	MOV	CH,AL		; CH = cylinder low 8 bits
-	MOV	DH,DL		; DH = head
-	MOV	DL,0		; DL = drive 0 (A:)
+	XOR	BX,BX
+	MOV	BL,CS:[RWHD]
+	DIV	BX			; AX=cyl, DX=head
+	MOV	CH,AL			; CH = cylinder
+	MOV	DH,DL			; DH = head
+	MOV	DL,CS:[RWDRV]		; DL = INT13 drive
 	MOV	AH,CS:[RWOP]
-	MOV	AL,1		; one sector
+	MOV	AL,1
 	MOV	ES,CS:[RWSEG]
 	MOV	BX,CS:[RWOFF]
 	INT	13H
 	JC	DSK_ERR
-	; advance
 	INC	WORD PTR CS:[RWLBA]
 	DEC	WORD PTR CS:[RWCNT]
 	ADD	WORD PTR CS:[RWOFF],512
 	JNC	DSK_LOOP
-	MOV	AX,CS:[RWSEG]	; offset wrapped: bump segment
+	MOV	AX,CS:[RWSEG]
 	ADD	AX,1000H
 	MOV	CS:[RWSEG],AX
 	JMP	DSK_LOOP
@@ -350,13 +390,15 @@ DSK_DONE:
 	MOV	AL,0
 	JMP	EXIT
 DSK_ERR:
-	; report count actually transferred = 0, general error
 	LDS	BX,CS:[PTRSAV]
 	MOV	[BX.CCOUNT],0
 	MOV	AL,12
 	JMP	ERR_EXIT
 
 RWOP	DB	0
+RWDRV	DB	0
+RWSPT	DB	0
+RWHD	DB	0
 RWCNT	DW	0
 RWLBA	DW	0
 RWSEG	DW	0

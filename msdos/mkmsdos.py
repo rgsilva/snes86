@@ -34,8 +34,14 @@ def main():
     dos = open(os.path.join(HERE, "MSDOS.SYS"), "rb").read()
     cmd = open(os.path.join(HERE, "COMMAND.COM"), "rb").read()
 
+    # AUTOEXEC.BAT: its mere presence skips the DOS 2.0 date/time prompt;
+    # it also sets the PATH to the C: app library and drops to C:.
+    autoexec = (b"PATH C:\\;C:\\DOS;C:\\PASCAL;C:\\BENCH;C:\\GAMES;"
+                b"C:\\BASIC;C:\\MIDI\r\nPROMPT $P$G\r\nC:\r\n")
+
     files = [("IO.SYS", io, 0x27), ("MSDOS.SYS", dos, 0x27),
-             ("COMMAND.COM", cmd, 0x00)]
+             ("COMMAND.COM", cmd, 0x00),
+             ("AUTOEXEC.BAT", autoexec, 0x00)]
 
     # allocate clusters sequentially from 2
     img = bytearray(TOTAL * 512)
