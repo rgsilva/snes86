@@ -27,9 +27,20 @@ All captured from snes86 running in Mesen.
 </tr>
 <tr>
 <td align="center"><img src="assets/multiplan.png" width="400"><br><sub>Multiplan</sub></td>
+<td align="center"><img src="assets/zork.png" width="400"><br><sub>Zork I — Infocom interactive fiction</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the dungeon (needs BIGMEM)</sub></td>
+<td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1 (<code>make fs</code>)</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="assets/si.png" width="400"><br><sub>Norton SI — Computing Index 0.0 vs the IBM/XT</sub></td>
 <td align="center"><img src="assets/midi.png" width="400"><br><sub>MIDPLAY — the SNES as a MIDI synth</sub></td>
 </tr>
 </table>
+
+> 🎬 The MIDI synth is best *heard*: a short clip of the demo tune playing lives
+> in [`assets/`](assets/) when available — see [The SNES is your sound card](#the-snes-is-your-sound-card).
 
 ## Tested software
 
