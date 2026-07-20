@@ -42,7 +42,7 @@ All captured from snes86 running in Mesen.
 <td align="center"><img src="assets/sokoban.png" width="400"><br><sub>Sokoban — our own CGA game, with source</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the dungeon (needs BIGMEM)</sub></td>
+<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the roguelike that named the genre (needs BIGMEM)</sub></td>
 <td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1 (<code>make fs</code>)</sub></td>
 </tr>
 <tr>
