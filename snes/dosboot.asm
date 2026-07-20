@@ -4132,10 +4132,10 @@ _gs_st:
 
 boot_banner:
     .db "snes86: 8086 core up, 108KB guest RAM", $0D, $0A
-.IFDEF MSDOSA
-    .db "booting MS-DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
-.ELSE
+.IFDEF PCDOS
     .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
+.ELSE
+    .db "booting MS-DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
 .ENDIF
 
 .ENDS
@@ -4202,10 +4202,10 @@ zero_w:
 .INCBIN "../disks/fs1.img" SKIP 131072 READ 32768
 .ENDS
 .ELSE
-.IFDEF MSDOSA
-.DEFINE AIMG "build/msdos_a.img"
-.ELSE
+.IFDEF PCDOS
 .DEFINE AIMG "build/adisk.img"
+.ELSE
+.DEFINE AIMG "build/msdos_a.img"
 .ENDIF
 .BANK 2 SLOT 0
 .ORG 0
@@ -4268,10 +4268,10 @@ zero_w:
 .INCBIN AIMG SKIP 360448 READ 8192
 .ENDS
 .ENDIF
-.IFDEF HDFREE
-.DEFINE HDIMG "build/hd_free.img"
-.ELSE
+.IFDEF DEVHD
 .DEFINE HDIMG "build/hd.img"
+.ELSE
+.DEFINE HDIMG "build/hd_free.img"
 .ENDIF
 .BANK 14 SLOT 0
 .ORG 0

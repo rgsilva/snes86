@@ -38,12 +38,14 @@ test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test clean
+.PHONY: all run test clean dosboot dev big fs
 
-# --- M6: DOS boot ROM
-dos: build/dosboot.sfc
+# --- DOS boot ROM.  `make dosboot` = the PUBLIC build: MS-DOS 2.0 (MIT) + a
+# free C: (tools/mkhd_free.py; no copyrighted software).  `make dev` is the
+# same machine with the full local C: app library.  See BUILDING.md.
+dosboot: build/dosboot.sfc
 
-build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/pcdos200-disk1.img build/adisk.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
+build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
 	$(AS) -o build/dosboot.o dosboot.asm
 
 build/aluflat.asm: tools/mkaluflat.py
@@ -67,42 +69,34 @@ fs: build/dosboot_fs.sfc
 
 big: build/dosboot_big.sfc
 
-build/dosboot_big.o: dosboot_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/adisk.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
+build/dosboot_big.o: dosboot_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
 	$(AS) -o build/dosboot_big.o dosboot_big.asm
 
 build/dosboot_big.sfc: build/dosboot_big.o linkfile_big
 	$(LD) -d -s -v -c linkfile_big build/dosboot_big.sfc
 
-# --- M16: MS-DOS 2.0 variant (MIT). A: is the MS-DOS boot floppy built by
-# msdos/mkmsdos.py; C: is the same app library. build_io.sh needs ./jwasm +
-# ../core-c/build/runpc (see BUILDING). Same as `dos` but with MSDOSA defined.
-msdos: build/dosboot_msdos.sfc
-
+# --- MS-DOS boot floppy (A:).  build_io.sh links our IO.SYS with the MIT
+# SYSINIT under our own runpc; needs ./jwasm + ../core-c/build/runpc (BUILDING).
 ../msdos/msdos.img: ../msdos/io.asm ../msdos/boot.asm ../msdos/mkmsdos.py ../msdos/MSDOS.SYS ../msdos/COMMAND.COM
 	cd ../msdos && ./build_io.sh
 
 build/msdos_a.img: ../msdos/msdos.img
 	cp ../msdos/msdos.img build/msdos_a.img
 
-build/dosboot_msdos.o: dosboot_msdos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
-	$(AS) -o build/dosboot_msdos.o dosboot_msdos.asm
-
-build/dosboot_msdos.sfc: build/dosboot_msdos.o linkfile_msdos
-	$(LD) -d -s -v -c linkfile_msdos build/dosboot_msdos.sfc
-
-# --- M16 Step 2: PUBLIC RELEASE (MS-DOS + a free C: — no copyrighted software).
-# C: carries only our own tools (with Turbo Pascal source) + a generated CC0
-# demo + anything in userware/. Builds from committed files only.
-release: build/dosboot_release.sfc
-
+# --- free C: (public): our tools + Turbo Pascal source + a generated CC0 demo
+# + anything in userware/.  Built from committed files only.
 build/hd_free.img: tools/mkhd_free.py build/cgatest.com ../disks/midplay.com ../disks/midconv.com ../disks/sokoban.com ../disks/hello.com ../disks/sieve.com ../disks/midplay.pas ../disks/midconv.pas ../disks/sokoban.pas ../disks/HELLO.pas $(wildcard userware/*)
 	python3 tools/mkhd_free.py build
 
-build/dosboot_release.o: dosboot_release.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
-	$(AS) -o build/dosboot_release.o dosboot_release.asm
+# --- DEVELOPER build: MS-DOS + the FULL local C: app library (tools/mkhd.py,
+# which pulls in copyrighted software present only on the dev machine).
+dev: build/dosboot_dev.sfc
 
-build/dosboot_release.sfc: build/dosboot_release.o linkfile_release
-	$(LD) -d -s -v -c linkfile_release build/dosboot_release.sfc
+build/dosboot_dev.o: dosboot_dev.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
+	$(AS) -o build/dosboot_dev.o dosboot_dev.asm
+
+build/dosboot_dev.sfc: build/dosboot_dev.o linkfile_dev
+	$(LD) -d -s -v -c linkfile_dev build/dosboot_dev.sfc
 
 # SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
 # Run: Mesen --testrunner build/sramtest.sfc test/sram.lua

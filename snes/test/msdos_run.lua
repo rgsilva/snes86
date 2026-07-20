@@ -1,6 +1,6 @@
 -- Drive one C: app under MS-DOS: boot -> wait for C:\> -> type CMD -> dump.
 -- CMD is read from the env var MSDOS_CMD (default "VER").
-local CMD = "VER"   -- edit this per app (os.getenv is sandboxed in Mesen)
+local CMD = "DIR"   -- edit this per app (os.getenv is sandboxed in Mesen)
 local frame, t, injF, phase = 0, 0, 0, 0
 local function inject(keys)
   for i = 1, #keys do

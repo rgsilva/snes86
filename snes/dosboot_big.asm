@@ -3,4 +3,5 @@
 ; guest high RAM instead of B:. Revives Elite (99 KB) + Starglider
 ; (95 KB). Build: make big -> build/dosboot_big.sfc
 .DEFINE BIGMEM
+.DEFINE DEVHD
 .INCLUDE "dosboot.asm"
