@@ -1,81 +1,109 @@
-# snes86 — 8086 PC emulator for the SNES
+# snes86
 
-Boot a real x86 OS on a stock SNES by emulating an 8086 in 65C816 assembly.
-See `docs/PROJECT.md` for the full project brief, constraints and milestones.
+**Run an IBM PC — MS-DOS and all — on a stock, unmodified SNES.**
+
+snes86 is an 8086 PC emulator written from scratch in 65C816 assembly. It boots
+real MS-DOS 2.0 from a ROM "disk", renders CGA/MDA text and graphics, turns the
+SNES sound chip into a MIDI synth, and runs period DOS software. It ships as a
+single flashable `.sfc` — no special cartridge chip, no expansion hardware, just
+a Super Nintendo.
+
+<!-- screenshot / gif goes here -->
+
+## Wait, what?
+
+A Super Nintendo's CPU is a 16-bit 65C816 running around 3.5 MHz. snes86 makes it
+impersonate an Intel 8086:
+
+- a **threaded-dispatch 8086 interpreter** with a lazy-flags model — the guest
+  register file lives in the 65C816 direct page, and 8086 FLAGS are only
+  materialized when something actually reads them;
+- an **HLE BIOS** — video, disk, keyboard and timer interrupts (INT 10h/11h/12h/
+  13h/16h/1Ah) are serviced natively in 65C816 instead of by guest ROM code;
+- a **24-bit guest memory model** mapped into SNES WRAM, giving DOS ~108 KB;
+- booting **MIT-licensed MS-DOS 2.0**, via an `IO.SYS` we wrote from scratch
+  (Microsoft's release ships none for the IBM PC).
+
+See **[INTERNALS.md](INTERNALS.md)** for how it all actually works — including the
+C reference core, the `runpc` host emulator, and the CPU parity harness that keeps
+the two implementations honest.
+
+## How do we know it's correct?
+
+The same 8086 core exists twice: once in portable C (`core-c/`) and once in 65C816
+assembly (`snes/cpu.asm`). Both are held to the same standard:
+
+- The C core passes **3,007,000 / 3,007,000** of the
+  [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088) vectors —
+  all 323 opcode files, including undocumented opcodes, the REP-IDIV sign quirk,
+  microcode-exact divide-error flags, and the 8088 DAA/AAA hardware quirks.
+- The 65C816 core is diffed against the C core in **lockstep**: `test/parity.sh`
+  runs random 8086 instruction streams through both and compares all 14 guest
+  registers after *every* instruction. 12–20+ seeds × up to 2000 instructions:
+  zero divergence.
+
+## Try it
+
+Flash `snes/build/dosboot.sfc` to a flashcart, or load it in an accurate emulator
+such as [Mesen](https://www.mesen.ca/). You boot straight to `C:\>`.
+
+The public ROM ships **only free software**: our own snes86 tools (with Turbo
+Pascal source) — a MIDI player, a Sokoban game, benchmarks — plus a generated
+demo tune. To run your own DOS programs, drop them in `snes/userware/` and rebuild
+(see **[BUILDING.md](BUILDING.md)**).
+
+## Build
+
+```sh
+cd snes && make dosboot      # -> build/dosboot.sfc   (the public ROM)
+```
+
+Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are
+in **[BUILDING.md](BUILDING.md)**.
+
+## Docs
+
+| doc | what |
+|---|---|
+| **[INTERNALS.md](INTERNALS.md)** | how an 8086 runs on a 65C816; the HLE BIOS; runpc; CPU parity testing |
+| **[BUILDING.md](BUILDING.md)** | build the ROM + add your own software |
+| **[COMPATIBILITY.md](COMPATIBILITY.md)** | what runs, and the SNES-as-MIDI-synth feature |
+| **[FUTURE.md](FUTURE.md)** | where this could go next |
+| [docs/PROJECT.md](docs/PROJECT.md) | the original design brief + constraints |
 
 ## Layout
 
 ```
-core-c/          M3: reference 8086 core in portable C (runs on the host).
-                 Correctness oracle for the later 65816 port; validated
-                 against the SingleStepTests 8088 v2 hardware-captured
-                 vectors, then used to boot DOS on the desktop (runpc).
-  src/           x86.h / x86.c — the core; runpc.c — HLE-BIOS DOS harness
-  tests/         vector runner (Python + ctypes) and downloaded vectors
-snes/            M1: mode-5 64x28 text console as a standalone SNES ROM
-                 (WLA-DX asm). `make` builds build/console.sfc; `make run`
-                 opens it in Mesen; test/run_test.sh does a headless
-                 screenshot check. START types "dir" (canned listing —
-                 real DOS output arrives at M6).
-disks/           guest disk images (gitignored)
-docs/            project brief, design notes
+snes/            the SNES ROM: 8086 core (cpu.asm/cpu2.asm), HLE BIOS + machine
+                 (dosboot.asm), SPC-700 MIDI synth (spc_midi.asm), build tools.
+                 `make dosboot` -> build/dosboot.sfc
+core-c/          reference 8086 core in portable C; the correctness oracle and
+                 the `runpc` host PC emulator (also builds our IO.SYS).
+msdos/           the free MS-DOS 2.0 build: our IO.SYS, boot sector, disk builder,
+                 self-hosted link toolchain.
+disks/           guest disk images + our tools' sources (large blobs gitignored).
+docs/            design brief + notes.
 ```
 
 ## Status
 
-- **core-c passes 3,007,000/3,007,000 tests** (all 323 files) of the
-  SingleStepTests 8088 v2 suite, including undocumented opcodes (SETMO,
-  SALC, aliases), the REP-IDIV sign quirk, microcode-exact divide-error
-  flags, and the 8088 DAA/AAA hardware quirks.
-- **PC DOS 2.00 boots to a working `A>` prompt** under `runpc` (the HLE
-  BIOS harness): DIR, VER, CHKDSK all work. With 96 KB guest RAM (the
-  stock-SNES budget) CHKDSK reports 73,616 bytes free.
-- **M3.5 measured: 63,162 guest instructions** from boot sector to the
-  first DOS prompt, reading 129 disk sectors. SNES projection @3.58 MHz
-  (100-300 native instructions per guest instruction, disk I/O via DMA
-  block copies): **DOS prompt in roughly 10-30 seconds.**
-- **M1 done: the SNES console ROM works** (verified in Mesen2 headless —
-  see snes/test/m1_banner.png, m1_dir.png). Mode-5 hi-res 64x28 text via
-  BG1/BG2 column interleave: char writes are single tilemap writes,
-  scrolling is a scroll-register ring, all VRAM traffic queued through
-  NMI. START "types" dir and prints the canned PC DOS 2.00 listing.
-- **M4 done: the 65816 CPU core skeleton runs real 8086 code** —
-  `snes/cpu.asm` (~140 opcodes: MOV/ALU/INC/DEC/PUSH/POP/Jcc/JMP/TEST/
-  XCHG/LEA/flag ops) with lazy flags and cached segment bases, verified
-  by lockstep parity: `snes/test/parity.sh` diffs all 14 guest registers
-  against the C core after every instruction. 20+ random streams x 2000
-  instructions: zero divergence.
-- Next (M5): remaining opcode groups (string ops, shifts/rotates,
-  MUL/DIV, CALL/RET/INT, prefixes, MOV sreg), $7F memory spill, then
-  BIOS shims wiring the core to the M1 console.
+Developed and tested against the cycle-accurate [Mesen](https://www.mesen.ca/)
+emulator, where it boots MS-DOS and runs a broad library of DOS software (see
+[COMPATIBILITY.md](COMPATIBILITY.md)). **Real-hardware testing is still pending** —
+if you flash it to a cart, we'd love a report or a video.
 
-## core-c quickstart
+## Legal & credits
 
-```
-cd core-c
-make                  # builds build/libem86.dylib + build/runpc
-tests/vectors/fetch.sh   # one-time, ~760 MB of test vectors
-make test             # full vector sweep (multiprocess)
-python3 tests/run_vectors.py --files 00 F6.4 --fails 3   # focused run
+MS-DOS 2.0 is MIT-licensed ([microsoft/MS-DOS](https://github.com/microsoft/MS-DOS)).
+The public ROM contains only freely redistributable software — no copyrighted DOS
+applications. Our own tools ship with source.
 
-./build/runpc ../disks/pcdos200-disk1.img       # interactive DOS (quit: Ctrl-])
-printf '\r\rdir\r' | ./build/runpc ../disks/pcdos200-disk1.img   # scripted
-./build/runpc -c ../disks/pcdos200-disk1.img    # boot-to-prompt stats (M3.5)
-```
-
-Disk images in `disks/` are gitignored: the PC DOS 2.00 image is
-bring-up material only. The redistributable path for the SNES ROM is
-MS-DOS 2.0 from Microsoft's MIT-licensed repo (`v2.0/bin/MSDOS.SYS` +
-`COMMAND.COM` are real binaries there) plus our own IO.SYS written
-against `v2.0/source/SKELIO.ASM`, the official OEM porting skeleton.
-
-## Provenance / credits
-
-- Test vectors: [SingleStepTests/8088](https://github.com/SingleStepTests/8088)
-  v2 by Daniel Balsom (MartyPC), captured from a real AMD D8088.
-- The microcode division routines (CORD/PREIDIV/POSTIDIV/NEGATE) and the
-  undefined-flag behavior of the BCD instructions in `core-c/src/x86.c` are
-  ported from [MartyPC](https://github.com/dbalsom/martypc)
-  (MIT License, Copyright 2022-2026 Daniel Balsom), which in turn derives
-  from reenigne's 8086 microcode disassembly.
+- Test vectors: [SingleStepTests/8088](https://github.com/SingleStepTests/8088) v2
+  by Daniel Balsom, captured from a real AMD D8088.
+- The microcode division routines and the undefined-flag behavior of the BCD
+  instructions in `core-c/src/x86.c` are ported from
+  [MartyPC](https://github.com/dbalsom/martypc) (MIT, © 2022–2026 Daniel Balsom),
+  which derives from reenigne's 8086 microcode disassembly.
 - Inspired by Daniel Palmer's LinuxMD (Linux on the Mega Drive).
+
+Built with the help of AI.
