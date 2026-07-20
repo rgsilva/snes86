@@ -47,8 +47,8 @@ sites in `cpu.asm`/`cpu2.asm` if you reopen this.
 
 The 65C816 core is already about 1.7× faster than the first working version,
 through threaded dispatch, lazy flags, table-driven ModRM decode, inlined ALU/memory
-paths, and DMA disk reads (see the M9–M13 history in `docs/PROJECT.md`). The machine
-runs a few hundred guest instructions per SNES frame.
+paths, and DMA disk reads. The machine runs a few hundred guest instructions per
+SNES frame.
 
 Remaining ideas have diminishing returns and rising risk:
 
@@ -84,8 +84,3 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   own DOS programs without touching the build.
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
   build already proves a non-DOS boot works via `make fs`), are open territory.
-
----
-
-*Historical milestone notes and design rationale live in
-[docs/PROJECT.md](PROJECT.md).*

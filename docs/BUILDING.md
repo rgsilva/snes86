@@ -23,15 +23,43 @@ to a cart.
 
 ### Build targets
 
-| target | OS | C: drive | for |
-|---|---|---|---|
-| `make dosboot` | MS-DOS 2.0 (MIT) | free — our tools + a demo | the public ROM |
-| `make dev` | MS-DOS 2.0 | full local library (needs your own DOS software in `disks/`) | development |
-| `make big` | MS-DOS 2.0 | full, 172 KB guest RAM | BIGMEM experiment |
-| `make fs` | Flight Simulator self-boot | — | experiment |
+Every target boots the same 8086 core + HLE BIOS; they differ in what's on the C:
+drive, and two of them change the memory size or what boots at all.
 
-Only `make dosboot` builds from committed, freely-redistributable files. The other
-targets pull in software that lives only on a developer's machine (see
+| target | output | C: drive | needs local (uncommitted) files? |
+|---|---|---|---|
+| `make dosboot` | `build/dosboot.sfc` | free — our tools + a demo | no — builds from the repo |
+| `make dev` | `build/dosboot_dev.sfc` | the full local app library | yes — your `disks/` software |
+| `make big` | `build/dosboot_big.sfc` | full library, 172 KB guest | yes |
+| `make fs` | `build/dosboot_fs.sfc` | — (self-booting disk) | yes — the FS1 image |
+
+What each one actually is:
+
+- `make dosboot` — the public ROM (this is the one you flash). Its C: is built by
+  `tools/mkhd_free.py` from committed, freely-redistributable files only: our
+  MIDPLAY / MIDCONV MIDI tools, the SOKOBAN game, and the SIEVE / HELLO / CGATEST
+  benchmarks (all with Turbo Pascal source), plus a generated CC0 demo tune and
+  `PLAY.BAT`. Anything you drop in `snes/userware/` is added under `C:\USER`.
+  Builds with nothing but what's in this repo.
+
+- `make dev` — the same machine with the *full* C: (`tools/mkhd.py`): the complete
+  local library used for compatibility testing (GW-BASIC, WordStar, Multiplan, the
+  Infocom games, and so on). Those programs are copyrighted and are **not** in the
+  repo — `mkhd.py` reads them straight out of your local `disks/` folder, so this
+  target only builds on a machine that already has them. This is the day-to-day
+  development ROM.
+
+- `make big` — `dev` plus BIGMEM: the guest grows from ~108 KB to 172 KB by backing
+  the extra conventional RAM with cartridge SRAM, which revives the memory-hungry
+  titles (Rogue, Elite, Starglider). Same full C: as `dev`. It's an experiment —
+  see BIGMEM in [INTERNALS.md](INTERNALS.md) and [FUTURE.md](FUTURE.md).
+
+- `make fs` — boots the Microsoft Flight Simulator 1 self-booting disk directly
+  instead of MS-DOS (FS1 skipped DOS and drove the hardware itself). Not a DOS
+  program at all; a separate experiment. Needs the FS1 disk image locally.
+
+Only `make dosboot` builds from committed, freely-redistributable files; the rest
+pull in software that lives only on a developer's machine (see
 [COMPATIBILITY.md](COMPATIBILITY.md)). PC-DOS is no longer a build target; the code
 path survives behind `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
 

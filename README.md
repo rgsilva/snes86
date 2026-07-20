@@ -71,7 +71,6 @@ Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are
 | [docs/BUILDING.md](docs/BUILDING.md) | build the ROM + add your own software |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | what runs, and the SNES-as-MIDI-synth feature |
 | [docs/FUTURE.md](docs/FUTURE.md) | where this could go next |
-| [docs/PROJECT.md](docs/PROJECT.md) | the original design brief + constraints |
 
 ## Layout
 

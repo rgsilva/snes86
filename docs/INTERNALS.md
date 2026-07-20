@@ -205,4 +205,3 @@ only a real workload reaches.
 | the SPC-700 synth | `snes/spc_midi.asm` |
 | the C reference core | `core-c/src/x86.c` |
 | the host PC / build environment | `core-c/src/runpc.c` |
-| the original design brief + rationale | `docs/PROJECT.md` |

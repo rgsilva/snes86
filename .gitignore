@@ -2,21 +2,26 @@ core-c/build/
 snes/build/
 core-c/tests/vectors/*.json.gz
 core-c/tests/vectors/metadata.json
-disks/*.img
-disks/*.7z
 *.o
 *.dylib
 *.sfc
 *.sym
 .DS_Store
 releases/
-disks/*.zip
-disks/sokoban/
-disks/elite/
-disks/starglider/
-disks/hack103/
-disks/hack36/
-disks/snake_im/
 snake_im.zip
+
+# disks/ holds bring-your-own copyrighted DOS software: kept locally for testing
+# and screenshots, never committed. Only our own free tools are tracked — whitelist
+# them explicitly so nothing copyrighted can be re-added by accident.
+disks/*
+!disks/midplay.com
+!disks/midplay.pas
+!disks/midconv.com
+!disks/midconv.pas
+!disks/sieve.com
+!disks/hello.com
+!disks/HELLO.pas
+!disks/sokoban.com
+!disks/sokoban.pas
 __pycache__/
 snes/test/shot.lua
