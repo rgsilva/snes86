@@ -68,9 +68,11 @@ snes86's headline trick beyond "it boots DOS": it turns the SNES's SPC-700 audio
 into an 8-voice General MIDI synthesizer, and exposes a small MIDI card to the guest.
 
 <p align="center">
-  <video src="https://github.com/rgsilva/snes86/raw/main/docs/assets/mididemo.mp4" controls width="480"></video>
-  <br><sub>The demo tune played through the SPC-700 — Beethoven's "Ode to Joy", sequenced as a
-  CC0 MIDI. If the player doesn't load, <a href="assets/mididemo.mp4">download the clip</a> (~0.4 MB).</sub>
+  <a href="https://github.com/rgsilva/snes86/blob/main/docs/assets/mididemo.mp4">
+    <img src="assets/midi.png" width="480" alt="Watch the snes86 MIDI demo">
+  </a>
+  <br><sub>▶ The demo tune played through the SPC-700 — click to watch (Beethoven's
+  "Ode to Joy", sequenced as a CC0 MIDI, ~0.4 MB).</sub>
 </p>
 
 - MIDPLAY streams music to the synth. Point it at a converted song:
