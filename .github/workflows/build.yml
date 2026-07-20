@@ -29,16 +29,9 @@ jobs:
           cmake --build wla-dx/build -j"$(nproc)"
           echo "PVBIN=$(dirname "$(find "$PWD/wla-dx/build" -name wla-65816 -type f | head -1)")" >> "$GITHUB_ENV"
 
-      # JWasm — assembles our hand-written MS-DOS IO.SYS.
-      - name: Build JWasm
-        run: |
-          git clone --depth 1 https://github.com/JWasm/JWasm.git
-          cmake -S JWasm -B JWasm/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build JWasm/build -j"$(nproc)"
-          ln -sf "$(find "$PWD/JWasm" -name jwasm -type f | head -1)" msdos/jwasm
-
-      # runpc — the C reference 8086 core. Used as the boot smoke oracle and,
-      # inside `make dosboot`, to link IO.SYS with the original 1982 MS tools.
+      # runpc — the C reference 8086 core, used as the boot-smoke oracle below.
+      # (IO.SYS is prebuilt: msdos/msdos.img is a committed free floppy, so the
+      # public build no longer links it here — see `make io` for the dev path.)
       - name: Build core-c (runpc)
         run: make -C core-c runpc
 

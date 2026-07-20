@@ -90,12 +90,15 @@ done inside `runpc` (our own 8086 emulator) using the original Microsoft
 `LINK.EXE` + `EXE2BIN.EXE`:
 
 ```sh
-cd msdos
-./build_io.sh       # -> IO.SYS + msdos.img   (needs ./jwasm and ../core-c/build/runpc)
+cd msdos && ./build_io.sh      # or:  make -C snes io   (-> msdos/IO.SYS + msdos.img)
 ```
 
-`make dosboot` invokes this automatically when `io.asm` changes. See
-[msdos/README.md](../msdos/README.md) for the full story.
+This needs `msdos/jwasm`, `core-c/build/runpc`, and a local DOS host image to boot the
+linker — so it's a developer step, not part of the public build. Its output
+`msdos/msdos.img` is a free floppy (our `IO.SYS` + the MIT `MSDOS.SYS`/`COMMAND.COM`) and
+is committed to the repo; `make dosboot` just copies it. Rebuild it and commit the new
+image whenever you change `io.asm`. See [msdos/README.md](../msdos/README.md) for the full
+story.
 
 ## Testing
 
