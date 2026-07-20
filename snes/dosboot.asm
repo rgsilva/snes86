@@ -9,8 +9,8 @@
 ; CGA adapter RAM: 16 KB at $7E:1000-$7E:4FFF (B000-BFFF segments map
 ; here; the 80x25 text page is offset 0, graphics bitmaps will share it).
 ; Boot: sector 0 -> 0000:7C00, all IVT vectors -> IRET stub at 0000:0600.
-; The keyboard ring is pre-loaded with two CRs to auto-answer the DOS
-; date/time prompts.
+; (The DOS date/time prompt is skipped the normal way, by AUTOEXEC.BAT's
+; presence on the boot floppy — see msdos/mkmsdos.py — not by injected keys.)
 
 .DEFINE DOSBIOS
 .INCLUDE "build/trace_meta.asm"

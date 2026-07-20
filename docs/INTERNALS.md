@@ -82,6 +82,47 @@ dispatches BIOS calls natively.
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |
 
+### The display: CGA on a SNES PPU
+
+The guest believes it's driving a CGA card; the renderer turns that into SNES tiles and
+palettes every frame. Writes to `B800:xxxx` land in the 16 KB adapter RAM at `$7E:1000`,
+and a per-frame scanner rebuilds the visible screen from it — the CPU core never blocks on
+drawing.
+
+Text, and the 64-column trick. The console runs in PPU mode 5, which is 512 pixels wide —
+exactly 64 character columns of 8 pixels. Mode 5 is also a two-layer mode, and snes86 uses
+both at once: each 16-pixel tile slot carries two character cells, the even column on BG2
+(2bpp) and the odd column on BG1 (4bpp). A character is therefore a single tilemap write,
+and vertical scrolling is a ring over the tile rows via the scroll register. The 8×8 font
+(`tools/mkfont.py`) is emitted as two copies to match — 2bpp for BG2, 4bpp for BG1 — and
+DMA'd into VRAM at boot.
+
+Colours, without a 256-entry palette. A CGA cell is a character plus an attribute byte
+(foreground, background, blink) — far more fg/bg combinations than the SNES has palettes
+for, so snes86 hands them out on demand. Glyphs are drawn with palette colour 1 as their
+background and colour 2 as their foreground, so one SNES palette encodes exactly one CGA
+(background, foreground) pair. Two are fixed: pair 0 is the classic green-on-black DOS
+console, pair 7 is the on-screen keyboard's yellow highlight. The rest are dynamic — the
+first time an attribute byte appears on screen, `sr_alloc` claims a free palette, writes
+that attribute's two colours into CGRAM during vblank, and records it in a lookup table;
+the scanner then points each cell at whatever palette its attribute resolved to. A handful
+of pairs are available (1–3 and 5–6); once they're spent, further attributes fall back to
+green. The 16 CGA colours themselves become 15-bit SNES RGB through a build-time table
+(`tools/mkcgalut.py`), and ANSI.SYS SGR colours map in through a small ANSI→CGA index table.
+
+40 and 80 columns. Modes 0/1 are 40 columns, modes 2/3 are 80. The physical console is 64
+columns wide, so 40-column text just fits. Eighty don't — so the scanner renders a 64-column
+window into the full-width buffer and lets you pan it: the L/R shoulder buttons slide `kPAN`
+from 0 to 16, moving the window across the 80 columns. The buffer always holds the true
+80×25; you're just seeing 64 of them at a time.
+
+CGA graphics. The graphics modes (4/5/6 — 320×200 four-colour, 640×200 mono) switch the
+display to a third layer, BG3, with its own 2bpp tilemap and tiles in VRAM. The guest's
+bitmap in adapter RAM is blitted into those tiles, the four-colour CGA palette goes to
+CGRAM, and `INT 10h` teletype in a graphics mode blits font glyphs straight into the bitmap;
+scrolling shifts the whole bitmap up eight scanlines. (Mode 6's 640-wide mono currently
+renders like mode 4.)
+
 ### The SNES is your sound card
 
 The SNES has no MIDI hardware. Its audio is a whole separate computer — a Sony SPC-700
