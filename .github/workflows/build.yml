@@ -1,0 +1,79 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to attach the ROM to a release on a v* tag
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+
+      # WLA-DX — the SNES assembler/linker. Pinned to match the version the
+      # project is developed against (local: v10.7a). If a future WLA-DX ever
+      # rejects the sources, pin this to the matching tag.
+      - name: Build WLA-DX
+        run: |
+          git clone --depth 1 --branch v10.7 https://github.com/vhelin/wla-dx.git
+          cmake -S wla-dx -B wla-dx/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build wla-dx/build -j"$(nproc)"
+          echo "PVBIN=$(dirname "$(find "$PWD/wla-dx/build" -name wla-65816 -type f | head -1)")" >> "$GITHUB_ENV"
+
+      # JWasm — assembles our hand-written MS-DOS IO.SYS.
+      - name: Build JWasm
+        run: |
+          git clone --depth 1 https://github.com/JWasm/JWasm.git
+          cmake -S JWasm -B JWasm/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build JWasm/build -j"$(nproc)"
+          ln -sf "$(find "$PWD/JWasm" -name jwasm -type f | head -1)" msdos/jwasm
+
+      # runpc — the C reference 8086 core. Used as the boot smoke oracle and,
+      # inside `make dosboot`, to link IO.SYS with the original 1982 MS tools.
+      - name: Build core-c (runpc)
+        run: make -C core-c runpc
+
+      # The public ROM: MS-DOS 2.0 + a free-only C:. Builds from committed
+      # files only (no copyrighted software).
+      - name: Build the public ROM (dosboot.sfc)
+        run: make -C snes PVBIN="$PVBIN" dosboot
+
+      # End-to-end smoke: boot the built MS-DOS floppy (A:) + free C: on runpc.
+      - name: Smoke test — boot MS-DOS
+        run: |
+          printf '\r\r\r' | core-c/build/runpc -c -l 200000000 \
+            -m 108 -d snes/build/hd_free.img msdos/msdos.img | tee boot.log
+          grep -q "MS-DOS version 2.00" boot.log
+
+      - name: Upload ROM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dosboot-sfc
+          path: snes/build/dosboot.sfc
+
+      # On a v* tag: publish a release with the ROM. GitHub also attaches the
+      # "Source code" archives automatically. (Cut a real tag only after the
+      # git history is scrubbed of copyrighted material — see docs/FUTURE.md.)
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: snes/build/dosboot.sfc
+          generate_release_notes: true
+          body: |
+            **snes86** — MS-DOS 2.0 on a stock, unmodified SNES.
+
+            - `dosboot.sfc` — the flashable public ROM (free software only).
+            - Full source is in the auto-generated "Source code" archives below.
+
+            See the [README](https://github.com/rgsilva/snes86#readme) and
+            `docs/` for what it is and how to build it.
