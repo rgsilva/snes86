@@ -19,15 +19,27 @@ All captured from snes86 running in Mesen.
 <table>
 <tr>
 <td align="center"><img src="assets/boot.png" width="400"><br><sub>MS-DOS 2.0 booting to <code>C:\></code></sub></td>
-<td align="center"><img src="assets/sokoban.png" width="400"><br><sub>Sokoban — our own CGA game, with source</sub></td>
+<td align="center"><img src="assets/pcdos.png" width="400"><br><sub>PC DOS 2.00 — the original bring-up target</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/gwbasic.png" width="400"><br><sub>GW-BASIC 3.23</sub></td>
-<td align="center"><img src="assets/wordstar.png" width="400"><br><sub>WordStar 3.31</sub></td>
+<td align="center"><img src="assets/tp3.png" width="400"><br><sub>Turbo Pascal 3.01 — the compiler that builds our tools</sub></td>
 </tr>
 <tr>
+<td align="center"><img src="assets/wordstar.png" width="400"><br><sub>WordStar 3.31</sub></td>
 <td align="center"><img src="assets/multiplan.png" width="400"><br><sub>Multiplan</sub></td>
+</tr>
+<tr>
 <td align="center"><img src="assets/zork.png" width="400"><br><sub>Zork I — Infocom interactive fiction</sub></td>
+<td align="center"><img src="assets/zork2.png" width="400"><br><sub>Zork II: The Wizard of Frobozz</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="assets/zork3.png" width="400"><br><sub>Zork III: The Dungeon Master</sub></td>
+<td align="center"><img src="assets/planetfall.png" width="400"><br><sub>Planetfall</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="assets/wishbringer.png" width="400"><br><sub>Wishbringer</sub></td>
+<td align="center"><img src="assets/sokoban.png" width="400"><br><sub>Sokoban — our own CGA game, with source</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the dungeon (needs BIGMEM)</sub></td>
@@ -47,6 +59,7 @@ All captured from snes86 running in Mesen.
 | category | software | status | notes |
 |---|---|---|---|
 | OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection |
+| | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / BENCH / HELLO / CGATEST | ✅ shipped | our benchmarks + demos, with source |
@@ -56,7 +69,6 @@ All captured from snes86 running in Mesen.
 | | Multiplan | ✅ tested | spreadsheet grid, `.LOD`/`.SYS` overlays |
 | Interactive fiction | Zork I–III, Planetfall, Leather Goddesses, Hitchhiker's Guide, Wishbringer | ✅ tested | Infocom's later 8086 interpreter |
 | Games | Rogue | ✅ tested* | *needs BIGMEM (see [Memory](#memory)) |
-| | Elite, Starglider | ✅ tested* | *need BIGMEM (172 KB) |
 | | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make fs`), not a DOS program |
 | Benchmarks | Norton SI, CPUBENCH | ✅ tested | CPU/system info + timing loops |
 
@@ -92,9 +104,8 @@ work. Bring your own `.MID` files, convert them, and the SNES plays them.
 
 The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the
 software above. A handful of memory-hungry titles need more. The BIGMEM build
-(`make big`) extends the guest to 172 KB using cartridge SRAM, which revives Rogue,
-Elite (~99 KB), and Starglider (~95 KB). BIGMEM is an experiment (see
-[FUTURE.md](FUTURE.md)); most software needs only the default build.
+(`make big`) extends the guest to 172 KB using cartridge SRAM, which revives Rogue.
+BIGMEM is an experiment; most software needs only the default build.
 
 ## Known limitations
 

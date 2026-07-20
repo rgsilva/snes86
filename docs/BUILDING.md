@@ -51,7 +51,7 @@ What each one actually is:
 
 - `make big` — `dev` plus BIGMEM: the guest grows from ~108 KB to 172 KB by backing
   the extra conventional RAM with cartridge SRAM, which revives the memory-hungry
-  titles (Rogue, Elite, Starglider). Same full C: as `dev`. It's an experiment —
+  Rogue. Same full C: as `dev`. It's an experiment —
   see BIGMEM in [INTERNALS.md](INTERNALS.md) and [FUTURE.md](FUTURE.md).
 
 - `make fs` — boots the Microsoft Flight Simulator 1 self-booting disk directly

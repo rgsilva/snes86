@@ -21,7 +21,7 @@ Reports, screenshots, and videos are genuinely wanted. See
 ## More guest RAM (make BIGMEM fast)
 
 The default guest has ~108 KB. The BIGMEM build extends it to 172 KB using
-cartridge SRAM, which revives memory-hungry titles (Rogue, Elite, Starglider) — but
+cartridge SRAM, which revives memory-hungry titles (Rogue) — but
 it's currently ~1.7× slower than the standard build, so it's shipped only as an
 experiment (`make big`).
 
@@ -39,9 +39,13 @@ it:
   gives up.
 
 There's also a known correctness edge (an instruction whose *immediate* spills across
-the seam) that would need seam-safe operand fetch — the likely reason Elite's
-EXEPACK'd binary still doesn't unpack under BIGMEM. Start at the `lda [bCS],y` fetch
+the seam) that would need seam-safe operand fetch. Start at the `lda [bCS],y` fetch
 sites in `cpu.asm`/`cpu2.asm` if you reopen this.
+
+**Starglider regression (to investigate).** Starglider ran under the earlier PC-DOS
+build but stopped working after the port to MS-DOS — it now crawls (apparently stuck
+in its self-unpacker) and never reaches graphics. Something the MS-DOS port changed
+broke it; bisecting the PC-DOS→MS-DOS diff is the place to start.
 
 ## CPU performance
 
