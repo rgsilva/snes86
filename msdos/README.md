@@ -36,14 +36,23 @@ rejects the old OMF; JWasm chokes on `DOSMAC.ASM`'s old macros). So:
 ./build_io.sh          # -> IO.SYS + msdos.img   (needs ./jwasm, ../core-c/build/runpc)
 # host:
 printf '\r\r\r' | ../core-c/build/runpc -m 256 msdos.img -l 60000000
-# SNES (temporary until the msdos ROM variant is wired into the Makefile):
-cp msdos.img ../snes/build/adisk.img && touch ../snes/build/adisk.img
-(cd ../snes && make dos)   # A: is now MS-DOS
+# SNES ROM (reproducible; builds IO.SYS + msdos.img + the ROM):
+(cd ../snes && make msdos)    # -> snes/build/dosboot_msdos.sfc
 ```
 
-## Status / TODO
+`make msdos` is the MS-DOS twin of `make dos` (PC-DOS): it assembles
+`dosboot.asm` with `MSDOSA` defined, so the banner reads "MS-DOS 2.00" and
+A: comes from `build/msdos_a.img` (this `msdos.img`) instead of the PC-DOS
+`build/adisk.img`. C: (the app library) is shared. The default `make dos`
+is untouched and still builds IBM PC-DOS.
 
-- ✅ Boots to `A>`, VER/DIR work, on runpc **and** the SNES.
-- ⏳ Multi-unit disk driver (add B:/C: so the app library on C: is reachable).
-- ⏳ AUTOEXEC (skip the date/time prompt) + DOS utilities on A:.
-- ⏳ Proper ROM variant + Makefile integration (currently a manual A: swap).
+## Status
+
+- ✅ Boots to `A>`/`C:\>`, VER/DIR work, on runpc **and** the SNES.
+- ✅ 3-unit disk driver (A: floppy, B: SRAM floppy, C: hard disk) — the C: app
+  library is reachable; `AUTOEXEC.BAT` sets PATH + drops to C:.
+- ✅ Reproducible ROM: `make msdos` (no more manual A: swap).
+- ✅ App matrix re-run under MS-DOS on the SNES: GW-BASIC 3.23, WordStar 3.31,
+  Multiplan, Zork/Infocom, Sokoban (CGA), CPUBENCH all load & run. Rogue needs
+  ~120 KB (BIGMEM) — a memory-size edge, not an MS-DOS regression (MS-DOS
+  leaves *more* free than PC-DOS: our IO.SYS is smaller than IBMBIO).

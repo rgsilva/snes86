@@ -73,6 +73,23 @@ build/dosboot_big.o: dosboot_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm bu
 build/dosboot_big.sfc: build/dosboot_big.o linkfile_big
 	$(LD) -d -s -v -c linkfile_big build/dosboot_big.sfc
 
+# --- M16: MS-DOS 2.0 variant (MIT). A: is the MS-DOS boot floppy built by
+# msdos/mkmsdos.py; C: is the same app library. build_io.sh needs ./jwasm +
+# ../core-c/build/runpc (see BUILDING). Same as `dos` but with MSDOSA defined.
+msdos: build/dosboot_msdos.sfc
+
+../msdos/msdos.img: ../msdos/io.asm ../msdos/boot.asm ../msdos/mkmsdos.py ../msdos/MSDOS.SYS ../msdos/COMMAND.COM
+	cd ../msdos && ./build_io.sh
+
+build/msdos_a.img: ../msdos/msdos.img
+	cp ../msdos/msdos.img build/msdos_a.img
+
+build/dosboot_msdos.o: dosboot_msdos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm
+	$(AS) -o build/dosboot_msdos.o dosboot_msdos.asm
+
+build/dosboot_msdos.sfc: build/dosboot_msdos.o linkfile_msdos
+	$(LD) -d -s -v -c linkfile_msdos build/dosboot_msdos.sfc
+
 # SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
 # Run: Mesen --testrunner build/sramtest.sfc test/sram.lua
 sramtest: build/sramtest.sfc
