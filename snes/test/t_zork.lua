@@ -35,12 +35,18 @@ local function booted()
   return bufhas("C:\\>")
 end
 
+-- Adaptive: advance on what's on screen, not fixed frame numbers, so it can't
+-- break when headless emulation speed varies. Loads Zork, then exercises input
+-- (open mailbox -> leaflet).
+local stage = 0
 emu.addEventCallback(function()
   frame = frame + 1
-  if frame == 1200 then inject("zork1\r") end
-  if frame == 6500 then inject("open mailbox\r") end
-  if frame > 6500 and frame % 20 == 0 and bufhas("leaflet") then
+  if stage == 0 and frame > 900 and frame % 30 == 0 and booted() then
+    inject("zork1\r"); stage = 1
+  elseif stage == 1 and frame % 30 == 0 and bufhas("mailbox") then
+    inject("open mailbox\r"); stage = 2
+  elseif stage == 2 and frame % 20 == 0 and bufhas("leaflet") then
     print("RESULT PASS t_zork"); emu.stop(0)
   end
-  if frame == 13000 then print("RESULT FAIL t_zork"); emu.stop(0) end
+  if frame == 16000 then print("RESULT FAIL t_zork"); emu.stop(0) end
 end, emu.eventType.endFrame)
