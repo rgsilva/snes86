@@ -88,3 +88,52 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   own DOS programs without touching the build.
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
   build already proves a non-DOS boot works via `make fs`), are open territory.
+
+## Nested emulation (an emulator on the emulator)
+
+An emulator running MS-DOS running *another* emulator: absurd, but a real
+end-to-end stress test (CGA graphics, the 60 Hz BIOS tick, keyboard, and raw CPU
+throughput, all at once). The bar sets the whole design: snes86's 8086
+benchmarks at ~0.05–0.1× a real IBM XT, so anything that must emulate a
+MHz-class CPU *in real time* (NES, Game Boy at speed, 8080 arcade) is hopeless.
+But a single **"it booted" screenshot does not need real time** — just enough
+headless minutes (or hours) to paint one frame. Under that bar:
+
+- **CHIP-8 — greenlit, the clean win.** A ~35-opcode interpreted VM (4 KB RAM,
+  64×32 mono, 60 Hz timer, one beeper), *not* a real CPU — so it runs at roughly
+  authentic speed, actually *playable* rather than just screenshot-able. Write
+  the interpreter in the Turbo Pascal 3 we already ship (self-hosted!) or drop a
+  tiny `.COM` in `userware/`. 64×32 → CGA is trivial; the timer rides INT 1Ah/8;
+  the beep hits the PC-speaker→SPC path. Pong / Brix / Tetris / Invaders. Fits
+  the default 108 KB.
+
+- **Z80MU + CP/M — greenlit, the deep-nesting stunt.** `Z80MU` was a real 1980s
+  PC program that emulates a Z80 and boots CP/M: `65C816 → 8086 → Z80 → CP/M →
+  WordStar-CP/M / Zork-CP/M`, quadruple nesting with period-authentic software.
+  Text-only, so CGA/MDA and RAM are fine. Interactive speed is glacial (~1/100
+  real Z80), so it's a "boots and runs a command" trophy, not a daily driver.
+
+- **Game Boy — greenlit, the console trophy.** The payoff is the **Nintendo®
+  boot logo** — the earliest iconic frame (a few hundred thousand cycles,
+  reachable in minutes of headless run). GB has a framebuffer-style PPU (no
+  beam-racing) and only 4 shades, which maps structurally clean onto CGA
+  4-color (160×144 sits inside 320×200; colours come out "wrong", which is
+  funnier). Cost: a from-scratch 16-bit **real-mode** SM83 core — no GB emulator
+  ever ran on an 8086, and the 64 KB-segment / bank-switch dance is the fiddly
+  part. Needs **BIGMEM** and no-MBC **32 KB** carts (Tetris, Dr. Mario,
+  Alleyway).
+
+Noted, but not greenlit:
+
+- **Atari 2600 — a trap.** No framebuffer; the 6507 *races the beam*, so it needs
+  cycle-exact 6507+TIA lockstep (that's why 2600 emulators wanted a 386, despite
+  the machine having 128 *bytes* of RAM). Huge effort for any frame.
+- **Atari 800 — a text gag at best.** Xformer proved PC-emulates-Atari-800 is
+  real (but wanted a 286+); the achievable screenshot is the Atari BASIC
+  `READY.` prompt. ANTIC's display list is the wall for real graphics.
+- **NES — the original idea, biggest lift.** More PPU than the GB and worse CGA
+  colour mapping; screenshot-only, BIGMEM, from-scratch core. If GB lands first,
+  NES is "just" a bigger version of the same work.
+
+Aside: we already nest — Infocom's Z-machine is a VM, so every Zork is
+`snes86 → 8086 → Z-machine → story`. CHIP-8 just makes the inner VM graphical.
