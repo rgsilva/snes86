@@ -5,13 +5,17 @@
 #   test/suite.sh quick    parity + boot + zork (~3 min)
 #
 # Each Mesen test prints exactly one "RESULT PASS/FAIL name" line.
+#
+# Uses the DEV build (MS-DOS 2.0 + the full local C:): the app tests drive
+# GW-BASIC / WordStar / Multiplan / Zork, which live only on the dev C:
+# (build/hd.img via tools/mkhd.py). So this needs your local disks/ software.
 cd "$(dirname "$0")/.."
 MESEN=/Applications/Mesen.app/Contents/MacOS/Mesen
-ROM="$(pwd)/build/dosboot.sfc"
+ROM="$(pwd)/build/dosboot_dev.sfc"
 FAIL=
 
 echo "== build =="
-make -s dos || { echo "FAIL build"; exit 1; }
+make -s dev || { echo "FAIL build"; exit 1; }
 
 echo "== parity (C core vs 65816 lockstep) =="
 if ./test/parity.sh 2>&1 | grep -q "PARITY OK"; then
@@ -23,7 +27,7 @@ fi
 
 echo "== host smoke (runpc boots DOS, reads C:) =="
 if printf 'type c:\\autoexec.bat\r' \
-     | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img build/adisk.img 2>/dev/null \
+     | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
      | grep -q "PATH A:"; then
   echo "PASS host-smoke"
 else
