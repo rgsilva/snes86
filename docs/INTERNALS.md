@@ -61,9 +61,12 @@ video memory (segments `B000`–`BFFF`) is mapped to a 16 KB CGA/MDA buffer at
 scans out.
 
 The BIGMEM variant extends the guest to 172 KB by adding 64 KB of cartridge SRAM
-above WRAM; accesses that straddle the `$7E→$7F` bank seam take a save/restore slow
-path. It's an experiment for DOS (see [FUTURE.md](FUTURE.md)), off by default — but
-it is the foundation of the ELKS machine below.
+above WRAM; 16-bit accesses that straddle a region seam (the `$7F` WRAM top or an
+SRAM page top) go through seam-safe helpers (`rd16m`/`wr16m`) that split the word
+across regions — every 16-bit path, including the stack, `MOV`, and the flattened
+ALU bodies, routes through them under BIGMEM. It's an experiment for DOS (see
+[FUTURE.md](FUTURE.md)), off by default — but it is the foundation of the ELKS
+machine below.
 
 ---
 
@@ -78,7 +81,7 @@ dispatches BIOS calls natively.
 | 10h video | set mode (40/80-col text, CGA graphics 4/5/6), cursor, scroll, read/write char+attr, teletype, set pixel / read pixel, palette/border. Includes an ANSI/CSI escape parser (cursor moves, clears, SGR colors) for `ANSI.SYS`-style output. |
 | 11h equipment | returns "two floppies, 80×25 color". |
 | 12h memory size | returns the guest RAM size (108 KB, or 172 under BIGMEM). |
-| 13h disk | A: is a read-only floppy image in ROM (40 cyl / 1 head / 9 spt); B: is writable SRAM; C: is a hard-disk image. Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
+| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is writable SRAM; C: is a hard-disk image. Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
 | 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags. Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |
@@ -214,12 +217,20 @@ kernel code crossing the chunk boundary at file offset `$7FFF` — once explaine
 every mysterious ELKS symptom at once (failed forks, a missing login prompt,
 phantom output).
 
-**An interrupt wakes HLT.** DOS never executes HLT; ELKS idles in it. Two rules a
-DOS-era machine never needed: `run_slow`'s tick/key delivery clears `gHALT` when it
+**An interrupt wakes HLT.** DOS itself never executes HLT; ELKS idles in it. Two
+rules born here and since promoted to every build (a DOS app idling in `STI;HLT`
+used to freeze the machine): `run_slow`'s tick/key delivery clears `gHALT` when it
 vectors an interrupt (8086 semantics — otherwise a HLT with a tick already pending
 vectors the handler and then re-parks forever with the handler's IF=0), and the
 halted `wai` loop re-enters `run_slow` on IF=1 instead of parking. IF=0 still parks:
 that's a genuinely dead guest.
+
+**The interrupt shadow.** A real 8086 holds interrupt delivery off for one
+instruction after any segment-register load (`MOV`/`POP sreg`) and after `STI` —
+that's what makes a `MOV SS,x` / `MOV SP,y` stack switch atomic and the `STI;HLT`
+idiom safe. Both cores implement it (`gINHIB` here, the inhibit latch in
+`core-c`), and the deterministic trace tick honors it identically on both sides: a
+tick due during the shadow lands one instruction late, in lockstep.
 
 **Small BIOS honesty.** INT 15h answers CF=1/AH=86h (the XT "unsupported" reply —
 vectoring to the IRET stub makes ELKS's A20 probe "succeed" with garbage); port 64h
@@ -248,20 +259,24 @@ in the guest — exactly the SNES strategy. Boot is the real thing: load sector 
 `0000:7C00`, jump with `DL` = drive.
 
 ```
-usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] [-d disk.img]
-             [-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] [-tick N] image.img
+usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] [-d disk.img] [-T steps]
+             [-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] [-tick N]
+             [-cga out.ppm] image.img
   -m KB     conventional memory reported to the guest (default 256)
   -c        exit at the first keyboard wait and print stats (boot-cost measure)
   -v        log the first occurrence of every INT xx / AH=yy (incl. DOS 21h)
   -l N      stop after N guest instructions
   -w        write the modified disk image back to file on exit
   -d img    attach a fixed disk as C: (DL=80h)
+  -T N      print a "T ..." register-state line per step for the first N steps
+            (stderr); freezes INT 1Ah ticks for lockstep traces
   -kdelay N hold keyboard input until step N (ELKS's login flushes the tty,
             eating anything typed during boot)
   -rom F@S  map a file read-only at hex segment S in the 1 MB space (the ELKS
             kernel + ROMFS windows); verified unwritten at exit
   -entry S:O start at SEG:OFF instead of the boot sector (diskless ROM boot)
   -tick N   timer cadence in instructions (default 15000; ~800 mimics the SNES)
+  -cga f    dump the CGA B800 bitmap to f as a PPM on exit / mode-away
 ```
 
 A guest that executes HLT with IF=1 idles (skip to the next tick and wake) instead

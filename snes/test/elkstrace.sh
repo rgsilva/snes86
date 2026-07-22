@@ -1,5 +1,5 @@
 #!/bin/sh
-# elkstrace.sh SKIP — lockstep-compare ELKS ROM boot steps SKIP..SKIP+800
+# elkstrace.sh SKIP — lockstep-compare ELKS ROM boot steps SKIP..SKIP+340
 # between the C core (runpc -rom/-entry) and the 65816 core (TRACE build).
 SKIP=$1
 printf '.DEFINE TRACE\n.DEFINE TRACE_SKIP %s\n.DEFINE TRACE_SKIPL %s\n.DEFINE TRACE_SKIPH %s\n.DEFINE TRACE_COUNT 340\n' "$SKIP" $((SKIP % 65536)) $((SKIP / 65536)) > build/trace_meta.asm

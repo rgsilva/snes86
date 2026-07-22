@@ -29,6 +29,7 @@ PSECS = TOTAL - PSTART
 SPC, SFAT, ROOTN = 4, 6, 256
 RS = ROOTN * 32 // 512
 DATA0 = 1 + 2 * SFAT + RS            # partition-relative first data LBA
+NCLUST = (PSECS - DATA0) // SPC      # data clusters (indices 2..NCLUST+1)
 
 
 def read_img(path):
@@ -222,6 +223,20 @@ sglider_exe = rd("starglider", "Strglid", "SGLIDER.EXE")
 CA_BAT = b"MIDPLAY C:\\MIDI\\CANYON.SNM\r\n"
 L1_BAT = b"MIDPLAY C:\\MIDI\\LEVEL1.SNM\r\n"
 
+BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build")
+
+# repbench.com / cpubench.com are one-off local binaries nothing in the
+# repo regenerates (no source); skip them when absent so a clean checkout
+# with a full disks/ can still `make dev`.
+bench_extra = []
+for bn in ("repbench.com", "cpubench.com"):
+    bp = os.path.join(BUILD, bn)
+    if os.path.exists(bp):
+        bench_extra.append((bn.upper(), open(bp, "rb").read()))
+    else:
+        print(f"mkhd.py: build/{bn} missing (no source in repo) - skipped",
+              file=sys.stderr)
+
 rootfiles = [
     ("AUTOEXEC.BAT", AUTOEXEC),
     ("CA.BAT", CA_BAT),
@@ -248,16 +263,10 @@ subdirs = [
                 ("TURBO.MSG", ftp["TURBO.MSG"]),
                 ("HELLO.PAS", hello),
                 ("HELLO.COM", hello_com)]),
-    ("BENCH", [("SI.EXE", rd("bench_NortonSI", "si45", "SI.EXE")),
-               ("REPBENCH.COM", open(os.path.join(
-                   os.path.dirname(os.path.abspath(__file__)),
-                   "..", "build", "repbench.com"), "rb").read()),
-               ("CPUBENCH.COM", open(os.path.join(
-                   os.path.dirname(os.path.abspath(__file__)),
-                   "..", "build", "cpubench.com"), "rb").read()),
-               ("CGATEST.COM", open(os.path.join(
-                   os.path.dirname(os.path.abspath(__file__)),
-                   "..", "build", "cgatest.com"), "rb").read()),
+    ("BENCH", [("SI.EXE", rd("bench_NortonSI", "si45", "SI.EXE"))] +
+              bench_extra +
+              [("CGATEST.COM", open(os.path.join(
+                   BUILD, "cgatest.com"), "rb").read()),
                ("SIEVE.PAS", sieve),
                ("SIEVE.COM", sieve_com),
                ("BENCH.PAS", bench)]),
@@ -319,6 +328,11 @@ def put(nm, data, attr=0):
     struct.pack_into("<HHH", ent, 22, 0x6000, 0x0668, nc[0])
     struct.pack_into("<I", ent, 28, len(data))
     ncl = max(1, (len(data) + SPC * 512 - 1) // (SPC * 512))
+    # writing past the partition would silently APPEND to the img bytearray
+    # (slice-assign past the end grows it) — fail loudly instead
+    assert nc[0] - 2 + ncl <= NCLUST, (
+        f"hd.img full: {nm} needs {ncl} clusters, "
+        f"only {NCLUST - (nc[0] - 2)} of {NCLUST} free")
     for k in range(ncl):
         c = nc[0] + k
         sf(c, 0xFFF if k == ncl - 1 else c + 1)
@@ -342,9 +356,11 @@ def mkent(nm, attr, clus, size):
 
 idx = 0
 for nm, data in rootfiles:
+    assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {nm}"
     root[idx * 32:idx * 32 + 32] = put(nm, data)
     idx += 1
 for dname, files in subdirs:
+    assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {dname}"
     ents = [put(fn, data) for fn, data in files]
     dclus = nc[0]
     dirdata = bytearray(SPC * 512)

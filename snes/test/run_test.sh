@@ -2,7 +2,7 @@
 # Run the M1 console ROM in Mesen2's headless testrunner and extract the
 # screenshots the Lua script hex-dumps to stdout.
 cd "$(dirname "$0")/.."
-MESEN=/Applications/Mesen.app/Contents/MacOS/Mesen
+MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
 "$MESEN" --testrunner "$(pwd)/build/console.sfc" "$(pwd)/test/console.lua" |
 python3 -c '
 import sys

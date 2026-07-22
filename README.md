@@ -59,7 +59,8 @@ assembly (`snes/cpu.asm`). Both are held to the same standard:
   microcode-exact divide-error flags, and the 8088 DAA/AAA hardware quirks.
 - The 65C816 core is diffed against the C core in lockstep: `test/parity.sh` runs
   random 8086 instruction streams through both and compares all 14 guest registers
-  after every instruction. 12–20+ seeds × up to 2000 instructions: zero divergence.
+  after every instruction. The automated suite runs one 1200-instruction stream per
+  pass; manual sweeps of 12–20+ seeds × up to 2000 instructions found zero divergence.
 
 ## Try it
 

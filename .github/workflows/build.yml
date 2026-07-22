@@ -79,8 +79,9 @@ jobs:
           path: snes/build/elks.sfc
 
       # On a v* tag: publish a release with the ROM. GitHub also attaches the
-      # "Source code" archives automatically. (Cut a real tag only after the
-      # git history is scrubbed of copyrighted material — see docs/FUTURE.md.)
+      # "Source code" archives automatically. (The git history has been
+      # scrubbed of copyrighted material — disks/ and gbdos/ — so tags are
+      # safe to cut.)
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

@@ -10,7 +10,7 @@
 # GW-BASIC / WordStar / Multiplan / Zork, which live only on the dev C:
 # (build/hd.img via tools/mkhd.py). So this needs your local disks/ software.
 cd "$(dirname "$0")/.."
-MESEN=/Applications/Mesen.app/Contents/MacOS/Mesen
+MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
 ROM="$(pwd)/build/dosboot_dev.sfc"
 FAIL=
 

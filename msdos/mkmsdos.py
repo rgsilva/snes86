@@ -61,10 +61,17 @@ def main():
 
     root = bytearray(RS * 512)
     layout = {}                     # name -> (start_cluster, start_sector, n_sectors)
+    nclust = (TOTAL - DATA) // SPC  # data clusters (indices 2..nclust+1)
     nextc = 2
     for i, (nm, data, attr) in enumerate(files):
         nc = clus(data)
         start = nextc
+        # writing past the disk/root would silently APPEND to the bytearray
+        # (slice-assign past the end grows it) — fail loudly instead
+        assert start - 2 + nc <= nclust, (
+            f"msdos.img full: {nm} needs {nc} clusters, "
+            f"only {nclust - (start - 2)} of {nclust} free")
+        assert i < ROOTN, f"root dir full ({ROOTN} entries) at {nm}"
         for j in range(nc):
             c = start + j
             setfat(c, (c + 1) if j < nc - 1 else 0xFFF)
@@ -107,11 +114,8 @@ def main():
     boot = bytearray(boot)
     boot[510:512] = b"\x55\xAA"
 
-    # assemble the image
+    # assemble the image: FAT1 at sector 1, FAT2 at sector 1+SFAT
     img[0:512] = boot
-    for k in range(SFAT):
-        img[(1 + k * SFAT) * 512:(1 + k * SFAT) * 512 + len(fat)] = fat
-    # correct FAT copy offsets: FAT1 at sec1, FAT2 at sec1+SFAT
     img[1 * 512:1 * 512 + len(fat)] = fat
     img[(1 + SFAT) * 512:(1 + SFAT) * 512 + len(fat)] = fat
     img[(1 + 2 * SFAT) * 512:(1 + 2 * SFAT) * 512 + len(root)] = root

@@ -1,5 +1,5 @@
--- ELKS lockstep trace dump: records live in VBUF ($7E1000), sentinels at
--- $7E4FF8 (count) / $7E4FFA ($CAFE magic) — out of guest reach.
+-- ELKS lockstep trace dump: records live in VBUF adapter RAM at $7E2000,
+-- sentinels at $7E4FF8 (count) / $7E4FFA ($CAFE magic) — out of guest reach.
 local frame = 0
 emu.addEventCallback(function()
   frame = frame + 1

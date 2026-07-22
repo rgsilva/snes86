@@ -34,6 +34,7 @@ PSECS = TOTAL - PSTART
 SPC, SFAT, ROOTN = 4, 6, 256
 RS = ROOTN * 32 // 512
 DATA0 = 1 + 2 * SFAT + RS
+NCLUST = (PSECS - DATA0) // SPC      # data clusters (indices 2..NCLUST+1)
 
 
 def rd(*p):
@@ -121,7 +122,7 @@ TRY IT\r
 \r
 BRING YOUR OWN SOFTWARE\r
   Drop .COM/.EXE files into  snes86/userware/  on your PC and rebuild the\r
-  ROM (make release).  They appear here in C:\\USER, which is on the PATH,\r
+  ROM (make dosboot).  They appear here in C:\\USER, which is on the PATH,\r
   so you can run them from anywhere.  See BUILDING.md.\r
 """
 
@@ -289,7 +290,7 @@ demo_snm = mid_to_snm(demo_mid)
 user_files = collect_userware()
 if not user_files:
     user_files = [("READ.ME", b"Put your own DOS .COM/.EXE files in "
-                              b"snes86/userware/ and run 'make release'.\r\n"
+                              b"snes86/userware/ and run 'make dosboot'.\r\n"
                               b"They will appear here, on the PATH.\r\n")]
 
 rootfiles = [
@@ -367,6 +368,11 @@ def put(nm, data, attr=0):
     struct.pack_into("<HHH", ent, 22, 0x6000, 0x0668, nc[0])
     struct.pack_into("<I", ent, 28, len(data))
     ncl = max(1, (len(data) + SPC * 512 - 1) // (SPC * 512))
+    # writing past the partition would silently APPEND to the img bytearray
+    # (slice-assign past the end grows it) — fail loudly instead
+    assert nc[0] - 2 + ncl <= NCLUST, (
+        f"hd_free.img full: {nm} needs {ncl} clusters, "
+        f"only {NCLUST - (nc[0] - 2)} of {NCLUST} free")
     for k in range(ncl):
         c = nc[0] + k
         sf(c, 0xFFF if k == ncl - 1 else c + 1)
@@ -390,9 +396,11 @@ def mkent(nm, attr, clus, size):
 
 idx = 0
 for nm, data in rootfiles:
+    assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {nm}"
     root[idx * 32:idx * 32 + 32] = put(nm, data)
     idx += 1
 for dname, files in subdirs:
+    assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {dname}"
     ents = [put(fn, data) for fn, data in files]
     dclus = nc[0]
     dirdata = bytearray(SPC * 512)

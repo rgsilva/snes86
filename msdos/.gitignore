@@ -10,7 +10,7 @@ build.img
 SYSINIT.err
 # NOTE: msdos.img is intentionally TRACKED — it's the free prebuilt boot floppy
 # the public build ships. Regenerate with `make io` (see docs/BUILDING.md).
-# host toolchain (built from source into the scratch dir; symlinked in)
+# host toolchain (built from source locally; binaries copied in)
 jwasm
 jwlink
 # not used by the build (self-hosted link uses LINK.EXE + EXE2BIN.EXE)

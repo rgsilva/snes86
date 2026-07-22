@@ -4,7 +4,7 @@ Drop your own DOS `.COM` / `.EXE` (and any data files they need) into this
 directory, then rebuild the ROM:
 
 ```sh
-cd snes && make release
+cd snes && make dosboot
 ```
 
 They appear on the release C: drive under `C:\USER`, which is on the PATH, so

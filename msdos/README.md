@@ -23,8 +23,8 @@ and runs on both the host emulator (`runpc`) and the SNES.
 Modern assemblers can't fully handle the 1982 sources/objects (jwlink
 rejects the old OMF; JWasm chokes on `DOSMAC.ASM`'s old macros). So:
 
-- **JWasm** (built from source: `github.com/JWasm/JWasm`, symlinked as `./jwasm`)
-  assembles our `io.asm` → `io.obj`.
+- **JWasm** ≥ 2.x (built locally from source: `github.com/JWasm/JWasm`, placed
+  here as `./jwasm` — git-ignored) assembles our `io.asm` → `io.obj`.
 - The **link is self-hosted**: `build_io.sh` puts `io.obj` + the MIT
   `SYSINIT.OBJ`/`SYSIMES.OBJ` + `LINK.EXE`/`EXE2BIN.EXE` on a scratch floppy and
   runs `LINK` + `EXE2BIN` **inside `runpc`** (our own 8086 emulator), then

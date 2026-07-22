@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 SEED=${1:-1}
 COUNT=${2:-1200}
-MESEN=/Applications/Mesen.app/Contents/MacOS/Mesen
+MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
 
 python3 test/gen_stream.py "$SEED" "$COUNT" build
 ( cd ../core-c && make -s x86trace )

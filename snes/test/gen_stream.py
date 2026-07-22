@@ -98,6 +98,14 @@ if not seed_arg.isdigit():
 
 seed = int(seed_arg)
 count = int(sys.argv[2]) if len(sys.argv) > 2 else 1200
+# cputest.asm stores one 28-byte (14-word) record per instruction at
+# $7F:0000+, and the sentinels sit at $7F:FFFA (count) / $7F:FFFC (magic)
+# — see test/cputest.lua. 0xFFFA // 28 = 2340 records is the hard ceiling;
+# past it the records silently clobber the sentinels.
+MAX_COUNT = 0xFFFA // 28
+if count > MAX_COUNT:
+    sys.exit(f"gen_stream.py: count {count} > {MAX_COUNT} "
+             f"(records would overrun the $7F:FFFA sentinels)")
 outdir = sys.argv[3] if len(sys.argv) > 3 else "build"
 rng = random.Random(seed)
 
