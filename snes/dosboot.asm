@@ -2085,12 +2085,18 @@ _rst_bs:
     sta bCS
     sta bSS
     sta bDS
+.IFDEF BIGMEM
+    sta bCSc                 ; naive CS base: fetch_rebase derives from
+.ENDIF                       ; this in every BIGMEM build
     sep #$20
     lda.b #$7E
     sta bES+2
     sta bCS+2
     sta bSS+2
     sta bDS+2
+.IFDEF BIGMEM
+    sta bCSc+2
+.ENDIF
     rep #$20
 .IFDEF ELKS
     ; ELKS ROM boot: enter the option-ROM's INT 19h handler at E000:0014
@@ -4288,11 +4294,19 @@ boot_banner:
 .IFDEF ELKS
     .db "booting...", $0D, $0A, 0
 .ELSE
+.IFDEF BIGMEM
+    .db "snes86: 8086 core up, 172KB guest RAM", $0D, $0A
+.ELSE
     .db "snes86: 8086 core up, 108KB guest RAM", $0D, $0A
+.ENDIF
 .IFDEF PCDOS
     .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
 .ELSE
+.IFDEF FREEDOS
+    .db "booting FreeDOS 1.3 from ROM disk...", $0D, $0A, $0D, $0A, 0
+.ELSE
     .db "booting MS-DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
+.ENDIF
 .ENDIF
 .ENDIF
 
@@ -4364,7 +4378,11 @@ zero_w:
 .IFDEF PCDOS                 ; 14+; the 360 KB DOS floppy would be dead
 .DEFINE AIMG "build/adisk.img"  ; weight in banks 2-13 (a DL=0 probe now
 .ELSE                        ; reads zero-filled banks and fails cleanly)
+.IFDEF FREEDOS
+.DEFINE AIMG "build/freedos_a.img"
+.ELSE
 .DEFINE AIMG "build/msdos_a.img"
+.ENDIF
 .ENDIF
 .BANK 2 SLOT 0
 .ORG 0

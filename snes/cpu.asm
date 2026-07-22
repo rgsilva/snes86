@@ -122,15 +122,16 @@ smBNK    dw                  ; BIGMEM: seam-split save of mPTR bank + byte
 gINHIB   dw                  ; 8086 one-instruction interrupt shadow: set by
                              ; sreg loads (MOV/POP sreg) and STI, consumed at
                              ; the next delivery point (run_slow / trace tick)
-.IFDEF ELKS
 bCSc     ds 3                ; NAIVE CS base (GUEST_BASE + CS*16, unfolded).
                              ; The rebased bCS is per-instruction scratch and
-                             ; not a sound fold input; every fold starts here.
+                             ; not a sound fold input; every fold (and every
+                             ; fetch_rebase, in ALL BIGMEM builds — a bounce
+                             ; rebase poisons bCS for one instruction) starts
+                             ; here. (BIGMEM machinery; harmless elsewhere.)
 ebounce  ds 8                ; fetch_rebase seam-bounce buffer (lives in the
                              ; DP page, NOT in adapter RAM: $7E4FE0 was the
                              ; top of the CGA buffer and graphics would have
                              ; silently corrupted the bounce)
-.ENDIF
 .ENDE
 
 ;======================================================================
@@ -790,55 +791,114 @@ elks_fold_sm:
 ; Keep bCS+Y inside a backed region so the opcode/immediate fetches
 ; (lda [bCS],y at 53 sites) never read the ROM half of an SRAM bank when
 ; sequential execution walks a code segment across a seam. Runs once per
-; instruction. Folds the fetch pointer (bCS+Y) to its real region and
-; rebases bCS = folded - Y, so bCS+Y is unchanged when already in region
-; (a no-op for WRAM code) and corrected when it has crossed. Y preserved.
-; (bCS is the code base, used only for fetch and the rare CS: override.)
+; instruction. Derives the fetch pointer from the NAIVE bCSc (sound under
+; offset carries, and immune to a previous bounce's rebase — bCS itself
+; is derived scratch), folds it to its real region and rebases
+; bCS = folded - Y, so bCS+Y is unchanged when already in region (a
+; no-op for WRAM code) and corrected when it has crossed. Y preserved.
 fetch_rebase:
     tya
     clc
-.IFDEF ELKS
     adc bCSc                 ; naive base + Y: sound fold input (naive
     sta smSAV                ; space is closed under offset carries)
     sep #$20
     lda bCSc+2
-.ELSE
-    adc bCS
-    sta smSAV
-    sep #$20
-    lda bCS+2
-.ENDIF
     adc #0
     sta smBNK
     rep #$20
     jsr norm_fp
-.IFDEF ELKS
-    ; ROM-window seam straddle: an instruction starting in the last 5
-    ; bytes of a 32K chunk spills its operands into the NEXT bank's ROM
-    ; half, but the naive [bCS],y continuation reads the next bank's LOW
-    ; half (mirror garbage). Bounce 8 bytes (chunk tail + next chunk
-    ; head) into WRAM and fetch this instruction from there; the next
-    ; fetch_rebase re-derives from the naive base and leaves the bounce.
+    ; Seam straddle: an instruction STARTING in the last 5 bytes of its
+    ; region spills operand bytes into the wrong SNES bytes — the next
+    ; bank's low half (WRAM-mirror garbage) after a ROM chunk, or plain
+    ; pointer arithmetic past an SRAM page top — because [bCS],y only
+    ; carries the flat 24-bit pointer. ($7E WRAM needs nothing: its next
+    ; guest byte IS the next SNES byte.) Bounce 8 bytes (region tail +
+    ; next region head) into ebounce and fetch this one instruction from
+    ; there; the next fetch_rebase re-derives from bCSc and leaves the
+    ; bounce. FreeDOS found the WRAM->SRAM case: its kernel relocates
+    ; init to top-of-memory, parking code exactly across linear $1B000.
+    ;   $7F:FFFB+ -> next $70:0000   $70:7FFB+ -> next $71:0000
+    ;   $71:7FFB+ -> next $70:0000 (wrap, ~never)
+    ;   ELKS $8E-$94:FFFB+ -> next bank+1:$8000 (ROM chunk top)
     sep #$20
     lda smBNK
-    cmp.b #$8E
-    bcc _fr_nostrad
+    cmp.b #$7F
+    beq _fr_wtop
+    cmp.b #$70
+    beq _fr_p0
+    cmp.b #$71
+    beq _fr_p1
+.IFDEF ELKS
+    cmp.b #EK_B0
+    bcc _fr_no8
     cmp.b #$95
-    bcs _fr_nostrad
+    bcs _fr_no8
     rep #$20
     lda smSAV
     cmp.w #$FFFB
-    bcc _fr_strad16
+    bcc _fr_no16
+    lda.w #$8000             ; next chunk = bank+1 : $8000
+    sta mOFF
+    sep #$20
+    lda smBNK
+    inc a
+    bra _fr_go8
+.ELSE
+    bra _fr_no8
+.ENDIF
+_fr_no8:                     ; no straddle: the bounce body below is too
+    rep #$20                 ; big for short branches, so exits funnel
+_fr_no16:                    ; through this near trampoline
+    brl _fr_strad16
+_fr_wtop:
+    rep #$20
+    lda smSAV
+    cmp.w #$FFFB
+    bcc _fr_no16
+    stz mOFF                 ; next = SRAM page 0 : 0000
+    sep #$20
+    lda.b #$70
+    bra _fr_go8
+_fr_p0:
+    rep #$20
+    lda smSAV
+    cmp.w #$7FFB
+    bcc _fr_no16
+    stz mOFF                 ; next = SRAM page 1 : 0000
+    sep #$20
+    lda.b #$71
+    bra _fr_go8
+_fr_p1:
+    rep #$20
+    lda smSAV
+    cmp.w #$7FFB
+    bcc _fr_no16
+    stz mOFF                 ; top of guest memory: wrap (~never)
+    sep #$20
+    lda.b #$70
+_fr_go8:
+    sta tmp2                 ; next region's bank (8-bit store)
+    rep #$20
+    lda smSAV                ; n1 = bytes left in this region:
+    and.w #$8000             ; $FFFB+ cases: $10000 - smSAV (= 0 - smSAV)
+    beq _fr_n8k              ; $7FFB+ cases: $8000 - smSAV
+    lda.w #$0000
+    sec
+    sbc smSAV
+    bra _fr_n1
+_fr_n8k:
+    lda.w #$8000
+    sec
+    sbc smSAV
+_fr_n1:
+    sta tmp1
     phy
-    sta mPTR2                ; source = folded chunk-tail pointer
+    lda smSAV
+    sta mPTR2                ; source = region-tail pointer
     sep #$20
     lda smBNK
     sta mPTR2+2
     rep #$20
-    lda.w #$0000
-    sec
-    sbc smSAV                ; n1 = $10000 - smSAV (1..5 tail bytes)
-    sta tmp1
     ldx #$0000
     ldy #$0000
 _fr_cp1:
@@ -851,11 +911,10 @@ _fr_cp1:
     cpy tmp1
     bcc _fr_cp1
     sep #$20
-    lda mPTR2+2              ; source now = next chunk's ROM half
-    inc a
+    lda tmp2                 ; source now = next region's head
     sta mPTR2+2
     rep #$20
-    lda.w #$8000
+    lda mOFF
     sta mPTR2
     ldy #$0000
 _fr_cp2:
@@ -873,10 +932,8 @@ _fr_cp2:
     sep #$20
     lda.b #$7E
     sta smBNK
-_fr_nostrad:
     rep #$20
 _fr_strad16:
-.ENDIF
     sty tmp0
     lda smSAV
     sec

@@ -115,17 +115,15 @@ _ub_norm:
     sta.b 2,x
     rep #$20
 .IFDEF BIGMEM
-.IFDEF ELKS
     cpx.w #27                ; CS reload: stash the NAIVE base in bCSc
-    bne _ub_nocs             ; BEFORE the fold — fetch and CS-override
-    lda.b 0,x                ; folds must start from naive space
-    sta bCSc
-    sep #$20
+    bne _ub_nocs             ; BEFORE the fold — fetch_rebase (and under
+    lda.b 0,x                ; ELKS the CS-override fold too) must start
+    sta bCSc                 ; from naive space, never from a bCS that a
+    sep #$20                 ; seam bounce may have rebased
     lda.b 2,x
     sta bCSc+2
     rep #$20
 _ub_nocs:
-.ENDIF
     jmp norm_base_x          ; fold a 108-172 KB base ($80) into SRAM
 .ENDIF
     rts
@@ -141,10 +139,10 @@ opP26: lda #24
        sta ovSEG
        jmp step_fetch
 opP2E:
-.IFDEF ELKS
-       lda #bCSc             ; CS override: read via the canonical fold
-.ELSE
-       lda #27
+.IFDEF BIGMEM
+       lda #bCSc             ; CS override: start from the naive base —
+.ELSE                        ; bCS is fetch scratch and a seam bounce may
+       lda #27               ; have rebased it this very instruction
 .ENDIF
        sta ovSEG
        jmp step_fetch
