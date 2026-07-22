@@ -38,22 +38,22 @@ test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test clean dosboot dev big fs io
+.PHONY: all run test clean msdos dev big fs freedos io
 
-# --- DOS boot ROM.  `make dosboot` = the PUBLIC build: MS-DOS 2.0 (MIT) + a
+# --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) + a
 # free C: (tools/mkhd_free.py; no copyrighted software).  `make dev` is the
 # same machine with the full local C: app library.  See docs/BUILDING.md.
-dosboot: build/dosboot.sfc
+msdos: build/msdos.sfc
 
-build/dosboot.o: dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/dosboot.o dosboot.asm
+build/msdos.o: msdos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+	$(AS) -o build/msdos.o msdos.asm
 
 build/aluflat.asm: tools/mkaluflat.py
 	python3 tools/mkaluflat.py build/aluflat.asm
 
 # trace_meta.asm is empty for normal builds; test/tracewin.sh overwrites it to
 # turn on the lockstep-trace build. Create the empty default so a clean checkout
-# (e.g. CI) assembles — dosboot.asm .INCLUDEs it unconditionally.
+# (e.g. CI) assembles — dosboot.asm (the shared machine) .INCLUDEs it always.
 build/trace_meta.asm:
 	@mkdir -p build && printf '' > build/trace_meta.asm
 
@@ -68,18 +68,34 @@ build/spc_beep64.bin: spc_beep.asm linkfile_spc
 	$(AS_SPC) -o build/spc_beep.o spc_beep.asm
 	$(LD) -d -s linkfile_spc build/spc_beep64.bin
 
-build/dosboot.sfc: build/dosboot.o linkfile_dos
-	$(LD) -d -s -v -c linkfile_dos build/dosboot.sfc
+build/msdos.sfc: build/msdos.o linkfile_msdos
+	$(LD) -d -s -v -c linkfile_msdos build/msdos.sfc
 
 fs: build/dosboot_fs.sfc
 
-big: build/dosboot_big.sfc
+big: build/msdos_big.sfc
 
-build/dosboot_big.o: dosboot_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/dosboot_big.o dosboot_big.asm
+build/msdos_big.o: msdos_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+	$(AS) -o build/msdos_big.o msdos_big.asm
 
-build/dosboot_big.sfc: build/dosboot_big.o linkfile_big
-	$(LD) -d -s -v -c linkfile_big build/dosboot_big.sfc
+build/msdos_big.sfc: build/msdos_big.o linkfile_big
+	$(LD) -d -s -v -c linkfile_big build/msdos_big.sfc
+
+# --- FreeDOS 1.3: GPL, fetched at build time like ELKS (freedos/mkfreedos.py
+# downloads the official FD 1.3 floppy release, extracts KERNEL.SYS + FreeCOM
+# and assembles a 360 KB boot floppy — nothing copyrighted-in-the-bad-way is
+# committed).  Runs on the BIGMEM machine: FreeDOS needs the full 172 KB
+# (108 KB dies in kernel init).  Same free C: as the public build.
+freedos: build/freedos.sfc
+
+build/freedos_a.img: ../freedos/mkfreedos.py
+	python3 ../freedos/mkfreedos.py build/freedos_a.img
+
+build/freedos.o: freedos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/freedos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+	$(AS) -o build/freedos.o freedos.asm
+
+build/freedos.sfc: build/freedos.o linkfile_freedos
+	$(LD) -d -s -v -c linkfile_freedos build/freedos.sfc
 
 # sneslinux: ELKS ROM-XIP variant (not a DOS boot, hence no dosboot_ prefix).
 # build/elks_rom.bin + build/elks_romfs.bin are the kernel + ROMFS images:
@@ -117,13 +133,13 @@ build/hd_free.img: tools/mkhd_free.py build/cgatest.com ../disks/midplay.com ../
 
 # --- DEVELOPER build: MS-DOS + the FULL local C: app library (tools/mkhd.py,
 # which pulls in copyrighted software present only on the dev machine).
-dev: build/dosboot_dev.sfc
+dev: build/msdos_dev.sfc
 
-build/dosboot_dev.o: dosboot_dev.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/dosboot_dev.o dosboot_dev.asm
+build/msdos_dev.o: msdos_dev.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+	$(AS) -o build/msdos_dev.o msdos_dev.asm
 
-build/dosboot_dev.sfc: build/dosboot_dev.o linkfile_dev
-	$(LD) -d -s -v -c linkfile_dev build/dosboot_dev.sfc
+build/msdos_dev.sfc: build/msdos_dev.o linkfile_dev
+	$(LD) -d -s -v -c linkfile_dev build/msdos_dev.sfc
 
 # SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
 # Run: Mesen --testrunner build/sramtest.sfc test/sram.lua

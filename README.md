@@ -64,9 +64,10 @@ assembly (`snes/cpu.asm`). Both are held to the same standard:
 
 ## Try it
 
-Flash `snes/build/dosboot.sfc` to a flashcart, or load it in an accurate emulator
+Flash `snes/build/msdos.sfc` to a flashcart, or load it in an accurate emulator
 such as [Mesen](https://www.mesen.ca/). You boot straight to `C:\>`. For Linux,
-flash `snes/build/elks.sfc` instead and log in as `root`.
+flash `snes/build/elks.sfc` instead and log in as `root`. There's also a
+FreeDOS 1.3 build (`freedos.sfc`) for the 172 KB machine.
 
 The public ROM ships only free software: our own snes86 tools (with Turbo Pascal
 source) — a MIDI player, a Sokoban game, benchmarks — plus a generated demo tune. To
@@ -76,7 +77,8 @@ run your own DOS programs, drop them in `snes/userware/` and rebuild (see
 ## Build
 
 ```sh
-cd snes && make dosboot      # -> build/dosboot.sfc   (the public ROM)
+cd snes && make msdos        # -> build/msdos.sfc     (the public ROM)
+cd snes && make freedos      # -> build/freedos.sfc   (FreeDOS 1.3, 172 KB)
 cd snes && make elks         # -> build/elks.sfc      (Linux: the ELKS ROM)
 ```
 

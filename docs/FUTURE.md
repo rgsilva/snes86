@@ -10,7 +10,7 @@ The single most valuable next step, and the one thing we can't do ourselves righ
 now. Everything has been validated in the cycle-accurate Mesen emulator; a real
 SNES/Super Famicom (via a flashcart) is the real test. Specifically worth checking:
 
-- Does `dosboot.sfc` boot to `C:\>` on hardware?
+- Does `msdos.sfc` boot to `C:\>` on hardware?
 - Does the B: SRAM drive persist across power cycles (battery-backed save)?
 - Is the timing right? The BIOS clock and PC-speaker/MIDI pacing come off the SNES
   frame interrupt, which is what real hardware does too — but only hardware confirms.
@@ -92,14 +92,13 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   kernel and apps executing in place from cart ROM on the BIGMEM machine (see
   [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
   BIGMEM speedups above a real customer: the ELKS boot pays the seam tax in full.
-- **FreeDOS 1.3 — proven on the core, waiting on a boot disk.** The official
-  720 KB floppy edition boots on `runpc` all the way to FreeCOM and the installer
-  prompt at `-m 172` — the BIGMEM machine's exact size (108 KB is too small: the
-  kernel dies during init). The kernel is 8086-clean and everything is GPL, so a
-  ROM could ship it. What the SNES port needs: a 360 KB FreeDOS boot disk (kernel
-  ~46 KB + FreeCOM fit trivially; the FAT12 boot sector's BPB needs re-patching
-  from 80×2×9 to 40×2×9), built into A: the way `msdos_a.img` is today, on a
-  BIGMEM base. The HLT wake rule (now in every build) covers FreeDOS's `IDLEHALT`.
+- Another one landed the same week it was checked: **FreeDOS**. `make freedos`
+  boots FreeDOS 1.3 to FreeCOM on the BIGMEM machine (172 KB is its exact
+  floor — the kernel dies during init at 108 KB). The kernel is 8086-clean and
+  GPL, so unlike the dev C: it ships in a public ROM; `freedos/mkfreedos.py`
+  fetches the official release and re-packs a 360 KB boot floppy. Note the
+  arena is tight: FreeCOM stays fully resident without XMS, so big .COMs won't
+  fit — the growth path is the same SRAM-bank lever as Windows 1.01 below.
 
 ## Windows 1.01 — the next milestone
 

@@ -3,15 +3,15 @@
 SKIP=$1
 MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
 printf '.DEFINE TRACE\n.DEFINE TRACE_SKIP %s\n.DEFINE TRACE_COUNT 800\n' "$SKIP" > build/trace_meta.asm
-rm -f build/dosboot.o
-make -s dosboot 2>&1 | grep -i error
-# reference = the C core booting the same machine as dosboot.sfc:
-# MS-DOS A: floppy + the free C: (dosboot INCBINs hd_free.img, not hd.img)
+rm -f build/msdos.o
+make -s msdos 2>&1 | grep -i error
+# reference = the C core booting the same machine as msdos.sfc:
+# MS-DOS A: floppy + the free C: (the msdos target INCBINs hd_free.img, not hd.img)
 printf '' | ../core-c/build/runpc -m 108 -T $((SKIP+800)) -l $((SKIP+900)) \
   -d build/hd_free.img build/msdos_a.img \
   2>&1 >/dev/null | grep '^T ' | sed 's/^T //' | tail -800 > build/dosexp.txt
 echo "ref lines: $(wc -l < build/dosexp.txt)"
-"$MESEN" --testrunner "$(pwd)/build/dosboot.sfc" "$(pwd)/test/dostrace.lua" 2>/dev/null | grep -E '^[0-9A-F]{4} ' > build/dosgot.txt
+"$MESEN" --testrunner "$(pwd)/build/msdos.sfc" "$(pwd)/test/dostrace.lua" 2>/dev/null | grep -E '^[0-9A-F]{4} ' > build/dosgot.txt
 python3 -c "
 import sys
 exp=open('build/dosexp.txt').read().splitlines()
@@ -29,6 +29,6 @@ for i,(e,g) in enumerate(zip(exp,got)):
         sys.exit(1)
 print('steps', skip, '-', skip+min(len(exp),len(got)), 'MATCH')"
 
-# leave a clean (non-trace) build behind so `make dosboot` artifacts are never stale
+# leave a clean (non-trace) build behind so `make msdos` artifacts are never stale
 printf '' > build/trace_meta.asm
-rm -f build/dosboot.o build/dosboot.sfc
+rm -f build/msdos.o build/msdos.sfc

@@ -1,2 +1,2 @@
 [objects]
-build/dosboot_dev.o
+build/msdos_dev.o

@@ -122,7 +122,7 @@ TRY IT\r
 \r
 BRING YOUR OWN SOFTWARE\r
   Drop .COM/.EXE files into  snes86/userware/  on your PC and rebuild the\r
-  ROM (make dosboot).  They appear here in C:\\USER, which is on the PATH,\r
+  ROM (make msdos).  They appear here in C:\\USER, which is on the PATH,\r
   so you can run them from anywhere.  See BUILDING.md.\r
 """
 
@@ -290,7 +290,7 @@ demo_snm = mid_to_snm(demo_mid)
 user_files = collect_userware()
 if not user_files:
     user_files = [("READ.ME", b"Put your own DOS .COM/.EXE files in "
-                              b"snes86/userware/ and run 'make dosboot'.\r\n"
+                              b"snes86/userware/ and run 'make msdos'.\r\n"
                               b"They will appear here, on the PATH.\r\n")]
 
 rootfiles = [

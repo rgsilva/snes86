@@ -56,6 +56,9 @@ All captured from snes86 running in Mesen.
 <tr>
 <td align="center" colspan="2"><img src="assets/elks.png" width="480"><br><sub>ELKS 0.9.1 — Linux on the SNES: boot, <code>login: root</code>, <code>uname</code>, <code>meminfo</code>. Kernel and apps execute in place from cartridge ROM (<code>make elks</code>)</sub></td>
 </tr>
+<tr>
+<td align="center" colspan="2"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 172 KB machine, reading the C: tools (<code>make freedos</code>)</sub></td>
+</tr>
 </table>
 
 > 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
@@ -67,6 +70,7 @@ All captured from snes86 running in Mesen.
 |---|---|---|---|
 | OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection |
 | | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — see [Linux on the SNES](#linux-on-the-snes-elks) |
+| | FreeDOS 1.3 | ✅ shipped | its own ROM (`make freedos`, BIGMEM): kernel + FreeCOM to `A:\>`, runs the C: tools — see [FreeDOS on the SNES](#freedos-on-the-snes) |
 | | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
@@ -109,6 +113,26 @@ into an 8-voice General MIDI synthesizer, and exposes a small MIDI card to the g
 Both tools ship with Turbo Pascal source in `C:\MIDI`. See
 [INTERNALS.md](INTERNALS.md#the-snes-is-your-sound-card) for how the card and synth
 work. Bring your own `.MID` files, convert them, and the SNES plays them.
+
+## FreeDOS on the SNES
+
+`make freedos` builds a third-OS ROM: [FreeDOS](https://www.freedos.org/) 1.3 on the
+172 KB BIGMEM machine — 172 KB is FreeDOS's exact floor here (the kernel dies during
+init at 108 KB, measured on the host core first).
+
+- **Boot** lands at a FreeCOM `A:\>` prompt; the C: drive is the same free image as
+  the MS-DOS ROM, so `DIR C:`, the benchmarks and the MIDI tools are all there.
+- **Memory is tight**: FreeCOM stays fully resident (no XMS to swap to), so the free
+  arena runs the small tools but not big programs — `MEM` itself doesn't fit, which
+  says it all. More RAM is the same SRAM-bank lever as the Windows 1.01 plan
+  ([FUTURE.md](FUTURE.md#windows-101--the-next-milestone)).
+- **It found a real bug**: FreeDOS relocates its kernel init to the top of memory,
+  which parked live code exactly across the WRAM→SRAM seam at 108 KB — the first
+  guest ever to execute across it, and the reason the fetch path now has a general
+  seam bounce (the suite's `t_fdos` regression-guards it).
+- **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release
+  (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM
+  into a 360 KB boot floppy. See [freedos/README.md](../freedos/README.md).
 
 ## Linux on the SNES (ELKS)
 

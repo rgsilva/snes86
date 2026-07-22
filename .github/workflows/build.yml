@@ -37,8 +37,8 @@ jobs:
 
       # The public ROM: MS-DOS 2.0 + a free-only C:. Builds from committed
       # files only (no copyrighted software).
-      - name: Build the public ROM (dosboot.sfc)
-        run: make -C snes PVBIN="$PVBIN" dosboot
+      - name: Build the public ROM (msdos.sfc)
+        run: make -C snes PVBIN="$PVBIN" msdos
 
       # End-to-end smoke: boot the built MS-DOS floppy (A:) + free C: on runpc.
       - name: Smoke test — boot MS-DOS
@@ -66,11 +66,33 @@ jobs:
             -entry e000:0014 | tee elks.log
           grep -qE "login:|# " elks.log
 
+      # The FreeDOS ROM: FreeDOS 1.3 on the 172 KB BIGMEM machine. Kernel +
+      # FreeCOM are pulled from the official FreeDOS 1.3 Floppy Edition by
+      # freedos/mkfreedos.py (GPL - fetched at build time with a pinned
+      # sha256, never committed; source at github.com/FDOS). Same
+      # aggregation stance as the ELKS ROM.
+      - name: Build the FreeDOS ROM (freedos.sfc)
+        run: make -C snes PVBIN="$PVBIN" freedos
+
+      # End-to-end smoke: boot FreeDOS on runpc, expect our AUTOEXEC banner
+      # (which only prints after kernel + FreeCOM + the C: mount all work).
+      - name: Smoke test — boot FreeDOS
+        run: |
+          printf '' | core-c/build/runpc -m 172 -l 100000000 \
+            -d snes/build/hd_free.img snes/build/freedos_a.img | tee fdos.log
+          grep -q "FreeDOS on a SNES" fdos.log
+
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dosboot-sfc
-          path: snes/build/dosboot.sfc
+          name: msdos-sfc
+          path: snes/build/msdos.sfc
+
+      - name: Upload FreeDOS ROM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: freedos-sfc
+          path: snes/build/freedos.sfc
 
       - name: Upload ELKS ROM artifact
         uses: actions/upload-artifact@v4
@@ -87,13 +109,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            snes/build/dosboot.sfc
+            snes/build/msdos.sfc
+            snes/build/freedos.sfc
             snes/build/elks.sfc
           generate_release_notes: true
           body: |
-            **snes86** — MS-DOS 2.0 (and Linux!) on a stock, unmodified SNES.
+            **snes86** — MS-DOS 2.0, FreeDOS and Linux on a stock, unmodified SNES.
 
-            - `dosboot.sfc` — the flashable public ROM (free software only).
+            - `msdos.sfc` — the flashable public ROM (free software only).
+            - `freedos.sfc` — FreeDOS 1.3 booting to FreeCOM on the 172 KB
+              BIGMEM machine; bundles the unmodified official FreeDOS kernel
+              + FreeCOM (GPL — source at https://github.com/FDOS).
             - `elks.sfc` — ELKS 0.9.1 (Linux for the 8086) booting to a root
               shell; bundles the unmodified official ELKS release images
               (GPL — source at https://github.com/ghaerr/elks).

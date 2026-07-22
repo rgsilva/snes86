@@ -11,7 +11,7 @@
 # (build/hd.img via tools/mkhd.py). So this needs your local disks/ software.
 cd "$(dirname "$0")/.."
 MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
-ROM="$(pwd)/build/dosboot_dev.sfc"
+ROM="$(pwd)/build/msdos_dev.sfc"
 FAIL=
 
 echo "== build =="
@@ -35,6 +35,18 @@ if printf '' \
   echo "PASS elks-host"
 else
   echo "FAIL elks-host"
+  FAIL=1
+fi
+
+echo "== host smoke (FreeDOS boots to FreeCOM on runpc) =="
+make -s freedos >/dev/null || { echo "FAIL freedos-build"; FAIL=1; }
+if printf '' \
+     | ../core-c/build/runpc -m 172 -l 100000000 \
+         -d build/hd_free.img build/freedos_a.img 2>/dev/null \
+     | grep -q "FreeDOS on a SNES"; then
+  echo "PASS freedos-host"
+else
+  echo "FAIL freedos-host"
   FAIL=1
 fi
 
@@ -66,6 +78,19 @@ if [ "$1" != "quick" ]; then
   r=$("$MESEN" --testrunner --timeout=1500 "$(pwd)/build/elks.sfc" \
       "$(pwd)/test/t_elks.lua" 2>/dev/null | grep '^RESULT' | head -1)
   echo "${r:-RESULT FAIL t_elks (no output)}"
+  case "$r" in
+    *PASS*) ;;
+    *) FAIL=1 ;;
+  esac
+fi
+
+# FreeDOS end-to-end (own ROM, own timeout: BIGMEM kernel init is the
+# slowest boot in the fleet — and it executes code straight across the
+# WRAM->SRAM seam, which regression-guards the fetch bounce).
+if [ "$1" != "quick" ]; then
+  r=$("$MESEN" --testrunner --timeout=1800 "$(pwd)/build/freedos.sfc" \
+      "$(pwd)/test/t_fdos.lua" 2>/dev/null | grep '^RESULT' | head -1)
+  echo "${r:-RESULT FAIL t_fdos (no output)}"
   case "$r" in
     *PASS*) ;;
     *) FAIL=1 ;;

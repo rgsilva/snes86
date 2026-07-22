@@ -14,11 +14,11 @@
 
 ```sh
 cd snes
-make dosboot        # -> build/dosboot.sfc   (the public build; flash this)
+make msdos        # -> build/msdos.sfc   (the public build; flash this)
 ```
 
-`build/dosboot.sfc` boots MS-DOS 2.0 to `C:\>`. Load it in Mesen (`make run` opens
-the console demo; to run the DOS ROM point Mesen at `build/dosboot.sfc`) or flash it
+`build/msdos.sfc` boots MS-DOS 2.0 to `C:\>`. Load it in Mesen (`make run` opens
+the console demo; to run the DOS ROM point Mesen at `build/msdos.sfc`) or flash it
 to a cart.
 
 ### Build targets
@@ -28,10 +28,11 @@ drive, and two of them change the memory size or what boots at all.
 
 | target | output | C: drive | needs local (uncommitted) files? |
 |---|---|---|---|
-| `make dosboot` | `build/dosboot.sfc` | free — our tools + a demo | no — builds from the repo |
+| `make msdos` | `build/msdos.sfc` | free — our tools + a demo | no — builds from the repo |
+| `make freedos` | `build/freedos.sfc` | free (same as `msdos`) | no — FreeDOS auto-fetched |
 | `make elks` | `build/elks.sfc` | — (boots Linux, not DOS) | no — ELKS images auto-fetched |
-| `make dev` | `build/dosboot_dev.sfc` | the full local app library | yes — your `disks/` software |
-| `make big` | `build/dosboot_big.sfc` | full library, 172 KB guest | yes |
+| `make dev` | `build/msdos_dev.sfc` | the full local app library | yes — your `disks/` software |
+| `make big` | `build/msdos_big.sfc` | full library, 172 KB guest | yes |
 | `make fs` | `build/dosboot_fs.sfc` | — (self-booting disk) | yes — the FS1 image |
 
 What each one actually is:
@@ -44,12 +45,21 @@ What each one actually is:
   copied over `build/elks_rom.bin` / `build/elks_romfs.bin` and wins. See
   [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine) and
   [COMPATIBILITY.md](COMPATIBILITY.md#linux-on-the-snes-elks).
-- `make dosboot` — the public ROM (this is the one you flash). Its C: is built by
+- `make msdos` — the public ROM (this is the one you flash). Its C: is built by
   `tools/mkhd_free.py` from committed, freely-redistributable files only: our
   MIDPLAY / MIDCONV MIDI tools, the SOKOBAN game, and the SIEVE / HELLO / CGATEST
   benchmarks (all with Turbo Pascal source), plus a generated CC0 demo tune and
   `PLAY.BAT`. Anything you drop in `snes/userware/` is added under `C:\USER`.
   Builds with nothing but what's in this repo.
+
+- `make freedos` — the same machine on the 172 KB BIGMEM base, booting
+  [FreeDOS](https://www.freedos.org/) 1.3 to FreeCOM instead of MS-DOS.
+  `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 Floppy Edition on
+  first build (GPL — fetched with a pinned sha256, cached in `freedos/cache/`,
+  never committed) and assembles a minimal 360 KB boot floppy from it; the C:
+  is the same free image as `make msdos`. FreeDOS needs the full 172 KB — the
+  kernel dies during init at 108 KB — so there is no non-BIGMEM variant, and
+  BIGMEM's B: drive is absent by design. See [freedos/README.md](../freedos/README.md).
 
 - `make dev` — the same machine with the *full* C: (`tools/mkhd.py`): the complete
   local library used for compatibility testing (GW-BASIC, WordStar, Multiplan, the
@@ -67,7 +77,7 @@ What each one actually is:
   instead of MS-DOS (FS1 skipped DOS and drove the hardware itself). Not a DOS
   program at all; a separate experiment. Needs the FS1 disk image locally.
 
-Only `make dosboot` builds from committed, freely-redistributable files; the rest
+Only `make msdos` builds from committed, freely-redistributable files; the rest
 pull in software that lives only on a developer's machine (see
 [COMPATIBILITY.md](COMPATIBILITY.md)). PC-DOS is no longer a build target; the code
 path survives behind `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
@@ -77,7 +87,7 @@ path survives behind `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
 The public C: drive is deliberately small. To add your own DOS programs:
 
 1. Drop `.COM` / `.EXE` files (and any data they need) into `snes/userware/`.
-2. `make dosboot` again.
+2. `make msdos` again.
 
 They land in `C:\USER`, which is on the DOS `PATH`, so you can run them from
 anywhere at the `C:\>` prompt. The contents of `userware/` are git-ignored, so your
@@ -105,7 +115,7 @@ cd msdos && ./build_io.sh      # or:  make -C snes io   (-> msdos/IO.SYS + msdos
 This needs `msdos/jwasm`, `core-c/build/runpc`, and a local DOS host image to boot the
 linker — so it's a developer step, not part of the public build. Its output
 `msdos/msdos.img` is a free floppy (our `IO.SYS` + the MIT `MSDOS.SYS`/`COMMAND.COM`) and
-is committed to the repo; `make dosboot` just copies it. Rebuild it and commit the new
+is committed to the repo; `make msdos` just copies it. Rebuild it and commit the new
 image whenever you change `io.asm`. See [msdos/README.md](../msdos/README.md) for the full
 story.
 
