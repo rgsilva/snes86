@@ -53,6 +53,9 @@ All captured from snes86 running in Mesen.
 <td align="center"><img src="assets/gameboy.png" width="400"><br><sub>GB.COM — a Game Boy inside DOS inside a SNES: the boot logo, four machines deep</sub></td>
 <td align="center"><img src="assets/tetris.png" width="400"><br><sub>Tetris® (1989) title screen — a real cartridge running on GB.COM, on the SNES</sub></td>
 </tr>
+<tr>
+<td align="center" colspan="2"><img src="assets/elks.png" width="480"><br><sub>ELKS 0.9.1 — Linux on the SNES: boot, <code>login: root</code>, <code>uname</code>, <code>meminfo</code>. Kernel and apps execute in place from cartridge ROM (<code>make elks</code>)</sub></td>
+</tr>
 </table>
 
 > 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
@@ -63,6 +66,7 @@ All captured from snes86 running in Mesen.
 | category | software | status | notes |
 |---|---|---|---|
 | OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection |
+| | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — see [Linux on the SNES](#linux-on-the-snes-elks) |
 | | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
@@ -106,12 +110,36 @@ Both tools ship with Turbo Pascal source in `C:\MIDI`. See
 [INTERNALS.md](INTERNALS.md#the-snes-is-your-sound-card) for how the card and synth
 work. Bring your own `.MID` files, convert them, and the SNES plays them.
 
+## Linux on the SNES (ELKS)
+
+`make elks` builds a separate ROM that boots [ELKS](https://github.com/ghaerr/elks) —
+the Linux-family kernel for real-mode x86 — instead of DOS. It is not a DOS program:
+the whole machine changes shape (see
+[INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)).
+
+- **Boot** takes about two minutes to `login:`; log in as `root`, no password.
+- **The machine** is the 172 KB BIGMEM guest. The kernel and every application
+  execute in place from cartridge ROM; only data, stacks and the heap live in RAM,
+  which leaves >100 KB free for processes at the shell.
+- **The console** is ELKS's 80×25 headless console over the BIOS: the SNES shows a
+  64-column window, and L/R pan across the full 80 columns, exactly like the DOS
+  console. Type with the on-screen keyboard (SELECT), or the controller shortcuts
+  (START = Enter, B = Backspace, X = Space, Y = Escape).
+- **What runs**: the ELKS shell and the ROMFS userland — `sh`, `uname`, `ls`, `cat`,
+  `ps`, `meminfo`, `date`, and friends. There is no writable filesystem yet; it's a
+  real Unix, if a spartan one.
+- **Images**: the build fetches the unmodified official ELKS v0.9.1 release images
+  (GPL — never committed to this repo). A custom-built ELKS (e.g. with a smaller
+  kernel heap for more process RAM) can be dropped over `build/elks_rom.bin` /
+  `build/elks_romfs.bin` before `make elks`.
+
 ## Memory
 
 The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the
 software above. A handful of memory-hungry titles need more. The BIGMEM build
 (`make big`) extends the guest to 172 KB using cartridge SRAM, which revives Rogue.
-BIGMEM is an experiment; most software needs only the default build.
+BIGMEM is an experiment for DOS — but it's load-bearing for the ELKS ROM, which is
+built on the 172 KB machine.
 
 ## Known limitations
 

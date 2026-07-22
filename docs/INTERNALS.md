@@ -62,7 +62,8 @@ scans out.
 
 The BIGMEM variant extends the guest to 172 KB by adding 64 KB of cartridge SRAM
 above WRAM; accesses that straddle the `$7E→$7F` bank seam take a save/restore slow
-path. It's an experiment (see [FUTURE.md](FUTURE.md)), off by default.
+path. It's an experiment for DOS (see [FUTURE.md](FUTURE.md)), off by default — but
+it is the foundation of the ELKS machine below.
 
 ---
 
@@ -173,6 +174,72 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the MIDI feature from a user's view
 
 ---
 
+## Booting Linux: the ELKS machine
+
+`make elks` builds `build/elks.sfc`: the same 8086 core and HLE BIOS, reshaped to
+boot [ELKS](https://github.com/ghaerr/elks) 0.9.1 — a real Linux-family kernel for
+real-mode x86 — to a root shell. Everything below is `.IFDEF ELKS`-gated; the DOS
+builds are byte-identical with the variant compiled out.
+
+**Execute-in-place from cartridge ROM.** ELKS's ROM configuration keeps kernel
+*code* in ROM and only its data in RAM, and since v0.9.0 application text also runs
+in place from the ROM filesystem. snes86 maps two windows of the guest's 1 MB
+address space straight onto cart ROM banks: the 64 KB kernel at guest `E0000`
+(banks 14–15) and the 128 KB ROMFS at `80000` (banks 16–19). RAM is the 172 KB
+BIGMEM pool — with the kernel's code out of the way, over 100 KB is free for
+processes at the shell. Boot enters the kernel image's option-ROM INT 19h handler
+at `E000:0014`; the root filesystem mounts from the ROMFS window with zero disk
+I/O.
+
+**The fold, and why bases stay naive.** A guest pointer into a window has to land
+in a LoROM bank's `$8000–$FFFF` half: `bank = B0 + (F>>15)`, `off = $8000 |
+(F & $7FFF)` for window offset `F`. The crucial design rule, learned the hard way:
+**segment bases are left "naive"** (plain `GUEST_BASE + seg*16`), and the fold
+happens exactly once, at point of use, on the summed pointer (`norm_ptr` /
+`norm_ptr2` / `norm_fp`). Folding bases first looks cheaper but is unsound — the
+folded space is not closed under 16-bit offset arithmetic (a carry past a 32 KB
+chunk top lands in the next bank's low half, which aliases with legitimate folded
+pointers). Naive space *is* closed, so folding the sum is always unambiguous. The
+fetch path keeps a dedicated naive CS base (`bCSc`) as its only fold input; the
+per-instruction rebased `bCS` the fetch sites read through is derived scratch,
+never an input. The CS-override prefix points at `bCSc` for the same reason.
+
+**The seam bounce.** An instruction *starting* in the last bytes of a 32 KB chunk
+spills its operand bytes past the bank top — naively into the next bank's low half
+(open-bus mirrors, not ROM). When `fetch_rebase` sees the fetch pointer within 5
+bytes of a chunk top, it copies 8 bytes (chunk tail + next chunk head) into a WRAM
+bounce buffer and fetches that one instruction from there; the next instruction
+re-derives from `bCSc` and leaves the bounce automatically. This single bug —
+kernel code crossing the chunk boundary at file offset `$7FFF` — once explained
+every mysterious ELKS symptom at once (failed forks, a missing login prompt,
+phantom output).
+
+**An interrupt wakes HLT.** DOS never executes HLT; ELKS idles in it. Two rules a
+DOS-era machine never needed: `run_slow`'s tick/key delivery clears `gHALT` when it
+vectors an interrupt (8086 semantics — otherwise a HLT with a tick already pending
+vectors the handler and then re-parks forever with the handler's IF=0), and the
+halted `wai` loop re-enters `run_slow` on IF=1 instead of parking. IF=0 still parks:
+that's a genuinely dead guest.
+
+**Small BIOS honesty.** INT 15h answers CF=1/AH=86h (the XT "unsupported" reply —
+vectoring to the IRET stub makes ELKS's A20 probe "succeed" with garbage); port 64h
+reads as an idle keyboard controller; INT 13h reports no fixed disk (banks 14+ hold
+the ELKS images, not C:); SRAM is zeroed at reset so the machine is deterministic
+and matches the C-core oracle (Mesen randomizes and persists SRAM).
+
+**Lockstep, deep.** `test/elkstrace.sh` is tracewin's ELKS twin, with one upgrade:
+both sides tick *deterministically on the instruction count* — `runpc -T` fires
+its timer every N instructions and treats a halted CPU as no-op steps, and the
+TRACE build mirrors `x86_irq` exactly (IF=0: dropped; IF=1: wake + vector) from a
+countdown of its own. That makes windows valid at any depth: the ELKS boot was
+verified register-exact against the C core through step 450,000 — through init,
+fork and exec. (ELKS TRACE builds also relocate trace records into the VBUF
+adapter RAM: the DOS location is live guest memory during an ELKS boot, and the
+text page gets overwritten by the guest's own console output — both produced
+convincing phantom divergences before they were evicted.)
+
+---
+
 ## runpc — the host emulator
 
 `core-c/src/runpc.c` boots a PC disk image on the C core plus the *same* HLE BIOS,
@@ -271,6 +338,8 @@ only a real workload reaches.
 | the CPU core + dispatch + lazy flags | `snes/cpu.asm` (header block is the best summary) |
 | memory access, segment bases, string/mul/div, BIGMEM seam | `snes/cpu2.asm` |
 | the HLE BIOS, the machine, the MIDI card, boot | `snes/dosboot.asm` |
+| the ELKS variant: ROM windows, folds, seam bounce | `snes/elks.asm` + the `.IFDEF ELKS` blocks in `cpu.asm`/`cpu2.asm`/`dosboot.asm` |
+| the deep ELKS lockstep harness | `snes/test/elkstrace.sh` |
 | the SPC-700 synth | `snes/spc_midi.asm` |
 | the C reference core | `core-c/src/x86.c` |
 | the host PC / build environment | `core-c/src/runpc.c` |

@@ -29,12 +29,21 @@ drive, and two of them change the memory size or what boots at all.
 | target | output | C: drive | needs local (uncommitted) files? |
 |---|---|---|---|
 | `make dosboot` | `build/dosboot.sfc` | free — our tools + a demo | no — builds from the repo |
+| `make elks` | `build/elks.sfc` | — (boots Linux, not DOS) | no — ELKS images auto-fetched |
 | `make dev` | `build/dosboot_dev.sfc` | the full local app library | yes — your `disks/` software |
 | `make big` | `build/dosboot_big.sfc` | full library, 172 KB guest | yes |
 | `make fs` | `build/dosboot_fs.sfc` | — (self-booting disk) | yes — the FS1 image |
 
 What each one actually is:
 
+- `make elks` — Linux on the SNES: boots [ELKS](https://github.com/ghaerr/elks)
+  0.9.1 to a root shell on the 172 KB BIGMEM machine, with the kernel and userland
+  executing in place from cartridge ROM. The kernel/ROMFS images are fetched from
+  the official ELKS release by `test/fetch_elks.sh` on first build (GPL software —
+  fetched, never committed, like the CPU test vectors); a custom-built ELKS can be
+  copied over `build/elks_rom.bin` / `build/elks_romfs.bin` and wins. See
+  [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine) and
+  [COMPATIBILITY.md](COMPATIBILITY.md#linux-on-the-snes-elks).
 - `make dosboot` — the public ROM (this is the one you flash). Its C: is built by
   `tools/mkhd_free.py` from committed, freely-redistributable files only: our
   MIDPLAY / MIDCONV MIDI tools, the SOKOBAN game, and the SIEVE / HELLO / CGATEST

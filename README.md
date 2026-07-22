@@ -4,9 +4,10 @@ Run an IBM PC — MS-DOS and all — on a stock, unmodified SNES.
 
 snes86 is an 8086 PC emulator written from scratch in 65C816 assembly. It boots
 real MS-DOS 2.0 from a ROM "disk", renders CGA/MDA text and graphics, turns the
-SNES sound chip into a MIDI synth, and runs period DOS software. It ships as a
-single flashable `.sfc` — no special cartridge chip, no expansion hardware, just a
-Super Nintendo.
+SNES sound chip into a MIDI synth, and runs period DOS software. It even boots
+Linux — [ELKS](https://github.com/ghaerr/elks), the Embeddable Linux Kernel
+Subset — to a root shell. It ships as a single flashable `.sfc` — no special
+cartridge chip, no expansion hardware, just a Super Nintendo.
 
 <p align="center">
   <img src="docs/assets/boot.png" width="480" alt="MS-DOS 2.0 booting on snes86"><br>
@@ -31,6 +32,22 @@ See [docs/INTERNALS.md](docs/INTERNALS.md) for how it all actually works — inc
 the C reference core, the `runpc` host emulator, and the CPU parity harness that
 keeps the two implementations honest.
 
+## And yes, it boots Linux
+
+<p align="center">
+  <img src="docs/assets/elks.png" width="480" alt="ELKS 0.9.1 booting to a root shell on snes86"><br>
+  <sub>ELKS 0.9.1 — kernel and userland executing in place from cartridge ROM.
+  <code>uname</code> says <code>ELKS elks 0.9.1 ibmpc i8086</code>.</sub>
+</p>
+
+`make elks` builds a second ROM that boots [ELKS](https://github.com/ghaerr/elks),
+the Linux-family kernel for real-mode x86, on a 172 KB machine: the kernel and the
+applications execute **in place from cartridge ROM** (only their data lives in RAM),
+the root filesystem is an in-ROM ROMFS, and you land at `login:` about two minutes
+after power-on. Log in as `root`, run `uname`, `ls`, `meminfo` — it's a real Unix
+prompt on a Super Nintendo. How the ROM-execute-in-place machine works is in
+[docs/INTERNALS.md](docs/INTERNALS.md#booting-linux-the-elks-machine).
+
 ## How do we know it's correct?
 
 The same 8086 core exists twice: once in portable C (`core-c/`) and once in 65C816
@@ -47,7 +64,8 @@ assembly (`snes/cpu.asm`). Both are held to the same standard:
 ## Try it
 
 Flash `snes/build/dosboot.sfc` to a flashcart, or load it in an accurate emulator
-such as [Mesen](https://www.mesen.ca/). You boot straight to `C:\>`.
+such as [Mesen](https://www.mesen.ca/). You boot straight to `C:\>`. For Linux,
+flash `snes/build/elks.sfc` instead and log in as `root`.
 
 The public ROM ships only free software: our own snes86 tools (with Turbo Pascal
 source) — a MIDI player, a Sokoban game, benchmarks — plus a generated demo tune. To
@@ -58,6 +76,7 @@ run your own DOS programs, drop them in `snes/userware/` and rebuild (see
 
 ```sh
 cd snes && make dosboot      # -> build/dosboot.sfc   (the public ROM)
+cd snes && make elks         # -> build/elks.sfc      (Linux: the ELKS ROM)
 ```
 
 Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in
@@ -89,15 +108,17 @@ docs/            documentation + the original design brief.
 ## Status
 
 Developed and tested against the cycle-accurate [Mesen](https://www.mesen.ca/)
-emulator, where it boots MS-DOS and runs a broad library of DOS software (see
-[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Real-hardware testing is still
+emulator, where it boots MS-DOS (and ELKS Linux) and runs a broad library of DOS
+software (see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Real-hardware testing is still
 pending — if you flash it to a cart, we'd love a report or a video.
 
 ## Legal & credits
 
 MS-DOS 2.0 is MIT-licensed ([microsoft/MS-DOS](https://github.com/microsoft/MS-DOS)).
 The public ROM contains only freely redistributable software — no copyrighted DOS
-applications. Our own tools ship with source.
+applications. Our own tools ship with source. The ELKS ROM bundles the unmodified
+official [ELKS](https://github.com/ghaerr/elks) release images (GPL-2.0), fetched at
+build time rather than committed here; ELKS's source lives upstream.
 
 - Test vectors: [SingleStepTests/8088](https://github.com/SingleStepTests/8088) v2
   by Daniel Balsom, captured from a real AMD D8088.

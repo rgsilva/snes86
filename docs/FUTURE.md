@@ -88,6 +88,10 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   own DOS programs without touching the build.
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
   build already proves a non-DOS boot works via `make fs`), are open territory.
+- One of them landed: **Linux**. `make elks` boots ELKS 0.9.1 to a root shell —
+  kernel and apps executing in place from cart ROM on the BIGMEM machine (see
+  [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
+  BIGMEM speedups below a real customer: the ELKS boot pays the seam tax in full.
 
 ## Nested emulation (an emulator on the emulator)
 
