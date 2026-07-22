@@ -1,4 +1,4 @@
-CC      = cc
+CC     ?= cc
 CFLAGS  = -O2 -std=c11 -Wall -Wextra -fPIC
 
 all: lib runpc
@@ -13,7 +13,7 @@ build:
 build/libem86.dylib: src/x86.c src/x86.h | build
 	$(CC) $(CFLAGS) -shared -o $@ src/x86.c
 
-build/runpc: src/runpc.c src/x86.c src/x86.h | build
+build/runpc: src/runpc.c src/x86.c src/x86.h src/cgafont.h | build
 	$(CC) $(CFLAGS) -o $@ src/runpc.c src/x86.c
 
 x86trace: build/x86trace

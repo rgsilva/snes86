@@ -14,6 +14,7 @@
  * what the hardware microcode does — multi-bit counts then come out right
  * by construction instead of by special-cased formulas.
  */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "x86.h"
@@ -54,6 +55,18 @@ static uint8_t mrd8(X86 *c, uint16_t seg, uint16_t off)
 
 static void mwr8(X86 *c, uint16_t seg, uint16_t off, uint8_t v)
 {
+    if (c->wp_n) {          /* write-protect report (runpc -rom): the write
+                             * still lands — the exit checksum only says THAT
+                             * a window was hit, this says the first WHERE */
+        uint32_t a = lin(seg, off);
+        for (int i = 0; i < c->wp_n; i++)
+            if (!c->wp[i].hit && a >= c->wp[i].lo && a < c->wp[i].hi) {
+                c->wp[i].hit = 1;
+                fprintf(stderr, "WARNING: guest wrote %02X to protected "
+                        "%05X (first hit; bisect with the step counter)\n",
+                        v, a);
+            }
+    }
     c->mem[lin(seg, off)] = v;
 }
 
@@ -937,9 +950,13 @@ static void exec(X86 *c, Pfx *p, uint8_t op)
         break;
     case 0x07: case 0x17: case 0x1F:                       /* POP sreg */
         c->sr[(op >> 3) & 3] = pop16(c);
+        c->inhibit = 1;                  /* interrupt shadow: an IRQ between
+                                          * POP SS and POP SP would frame on
+                                          * a torn stack */
         break;
     case 0x0F:                                             /* POP CS (undoc) */
         c->sr[CS] = pop16(c);
+        c->inhibit = 1;
         break;
     case 0x27: op_daa(c); break;
     case 0x2F: op_das(c); break;
@@ -992,7 +1009,11 @@ static void exec(X86 *c, Pfx *p, uint8_t op)
     case 0x8B: modrm(c, p, &e); c->r[e.reg] = rdm16(c, &e); break;
     case 0x8C: modrm(c, p, &e); wrm16(c, &e, c->sr[e.reg & 3]); break;
     case 0x8D: modrm(c, p, &e); c->r[e.reg] = e.off; break;    /* LEA */
-    case 0x8E: modrm(c, p, &e); c->sr[e.reg & 3] = rdm16(c, &e); break;
+    case 0x8E:                               /* MOV sreg,rm16 */
+        modrm(c, p, &e);
+        c->sr[e.reg & 3] = rdm16(c, &e);
+        c->inhibit = 1;                      /* shadow (MOV SS,x / MOV SP,y) */
+        break;
     case 0x8F: {                             /* POP rm16 */
         modrm(c, p, &e);
         uint16_t v = pop16(c);
@@ -1210,7 +1231,12 @@ static void exec(X86 *c, Pfx *p, uint8_t op)
     case 0xF8: setf(c, CF, 0); break;
     case 0xF9: setf(c, CF, 1); break;
     case 0xFA: setf(c, IF_, 0); break;
-    case 0xFB: setf(c, IF_, 1); break;
+    case 0xFB:                               /* STI sets IF at once, but
+                                              * delivery waits one more
+                                              * instruction (STI;RET tails) */
+        setf(c, IF_, 1);
+        c->inhibit = 1;
+        break;
     case 0xFC: setf(c, DF, 0); break;
     case 0xFD: setf(c, DF, 1); break;
 
@@ -1272,6 +1298,13 @@ void x86_step(X86 *c)
     if (c->halted)
         return;
 
+    /* end of the interrupt shadow: a sreg load or STI set inhibit LAST
+     * step so x86_irq couldn't split e.g. MOV SS,x / MOV SP,y. Cleared
+     * exactly once per architectural instruction — the prefix loop below
+     * continues without re-entering here, so prefixes can't cut the
+     * shadow short. */
+    c->inhibit = 0;
+
     Pfx p = { -1, 0 };
     int trap = (c->flags & TF) != 0;
     uint8_t op;
@@ -1297,12 +1330,15 @@ void x86_step(X86 *c)
         do_int(c, 1);
 }
 
-void x86_irq(X86 *c, int n)
+int x86_irq(X86 *c, int n)
 {
+    if (c->inhibit)             /* sreg-load/STI shadow: caller retries */
+        return 0;
     if (!(c->flags & IF_))
-        return;
+        return 0;
     c->halted = 0;
     do_int(c, n);
+    return 1;
 }
 
 void x86_reset(X86 *c)
@@ -1313,6 +1349,7 @@ void x86_reset(X86 *c)
     c->ip     = 0;
     c->flags  = canon(0);
     c->halted = 0;
+    c->inhibit = 0;
 }
 
 X86 *x86_new(void)

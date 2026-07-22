@@ -22,6 +22,8 @@
  *   -entry S:O start execution at S:O (hex) instead of the boot sector
  * Interactive keys go straight to the guest (raw mode); quit with Ctrl-].
  */
+#define _POSIX_C_SOURCE 200809L   /* select/termios/gettimeofday under a
+                                   * strict -std=c11 libc (Linux) */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -66,7 +68,8 @@ typedef struct {
     uint8_t cga_3d9;         /* port 3D9 shadow: bit5 pal, bit4 bright, low bg */
     /* INT9 raw scancodes: booters/games (FS1, Snipes) never call INT16 */
     uint8_t s60;             /* port 60h latch */
-    uint8_t s9q[4];          /* pending make/break codes */
+    uint8_t s9q[8];          /* pending make/break codes (max: shift-wrapped
+                              * key = 2A, make, break, AA) */
     int s9n, s9i;
     /* keyboard hold-off + jump-proof pump threshold (HLT idling makes
      * steps skip forward, so "steps & mask == 0" gates can miss);
@@ -74,6 +77,8 @@ typedef struct {
      * itself at its post-sti tail (the SNES side's s9CD, host edition) */
     unsigned long long kdelay, next_pump, s9next;
     int tickstep;            /* instructions per timer tick (-tick) */
+    int pending_irq;         /* IRQ refused by the interrupt shadow (or by
+                              * IF=0), retried each step; -1 = none */
     /* -rom: read-only blobs mapped into the 1 MB space (ELKS ROMCODE) */
     struct { const char *path; uint32_t base, len, sum; } rom[4];
     int nrom;
@@ -462,6 +467,20 @@ static int bios_disk(X86 *c, Harness *h)
             return 1;
         }
         uint16_t es = c->sr[X86_ES], bx = c->r[X86_BX];
+        if (ah == 0x02 && c->wp_n) {
+            /* HLE DMA would bypass the mwr8 write trap: refuse reads
+             * aimed at a -rom window instead of silently shredding it */
+            uint32_t dst = glin(es, bx), dend = dst + (uint32_t)cnt * 512;
+            for (int i = 0; i < c->wp_n; i++)
+                if (dst < c->wp[i].hi && dend > c->wp[i].lo) {
+                    fprintf(stderr, "[int13 rd into ROM window %05X-%05X "
+                            "refused]\n", c->wp[i].lo, c->wp[i].hi - 1);
+                    sah(c, 0x01);
+                    sal(c, 0);
+                    set_cf(c, 1);
+                    return 1;
+                }
+        }
         for (long i = 0; i < (long)cnt * 512; i++) {
             uint32_t g = glin(es, (uint16_t)(bx + i));
             if (ah == 0x02)
@@ -510,6 +529,18 @@ static uint8_t scancode(uint8_t ch)
             return (uint8_t)(rows[i].base + (p - rows[i].row));
     }
     return 0;
+}
+
+/* shifted symbol -> unshifted key (US layout), 0 = not a shifted symbol.
+ * Only the INT9 path needs this: a guest INT9 handler applies its own
+ * modifier state, so '|' or 'A' must arrive as a real Shift press (the
+ * INT16 path hands the ASCII over directly and stays shift-free). */
+static uint8_t unshift(uint8_t ch)
+{
+    static const char *sym  = "!@#$%^&*()_+|:\"<>?~{}";
+    static const char *base = "1234567890-=\\;',./`[]";
+    const char *p = strchr(sym, ch);
+    return (p && *p) ? (uint8_t)base[p - sym] : 0;
 }
 
 static uint8_t kb_xlate(uint8_t b)
@@ -650,7 +681,7 @@ static int bios_time(X86 *c, Harness *h)
             sal(c, 0);
             return 1;
         }
-        uint32_t ticks = (uint32_t)(h->steps / 15000);
+        uint32_t ticks = (uint32_t)(h->steps / (unsigned)h->tickstep);
         c->r[X86_CX] = (uint16_t)(ticks >> 16);
         c->r[X86_DX] = (uint16_t)ticks;
         sal(c, 0);                               /* no midnight rollover */
@@ -684,8 +715,11 @@ static int bios_hook(X86 *c, int n)
     h->int_count[n & 0xFF]++;
     logcall(h, n & 0xFF, rah(c));
     /* idle-loop tracking: INT 28h and empty AH=01 polls count as idle
-     * (the poll case increments in bios_kbd); anything else is progress */
-    if (n != 0x28 && n != 0x16)
+     * (the poll case increments in bios_kbd); anything else is progress.
+     * Our own timer tick (INT 8 and its 1Ch chain) must not reset the
+     * count — it fires every tickstep, so the threshold would be
+     * unreachable and the idle-at-prompt exit could never trigger. */
+    if (n != 0x28 && n != 0x16 && n != 0x08 && n != 0x1C)
         h->idle = 0;
     /* first DOS buffered-line read = "boot to interactive prompt" (M3.5) */
     if (n == 0x21 && rah(c) == 0x0A && !h->prompt_steps)
@@ -820,27 +854,34 @@ int main(int argc, char **argv)
     Harness h;
     memset(&h, 0, sizeof h);
     h.peek = -1;
+    h.pending_irq = -1;
     h.mem_kb = 256;
     h.tickstep = 15000;
     h.cols = 80;
     h.vmode = 3;
     const char *img = NULL, *hdimg = NULL;
-    long long limit = 0;
-    int writeback = 0, trace = 0;
+    long long limit = 0, trace = 0;      /* -T windows can exceed 2.1G steps */
+    int writeback = 0;
     int entry_set = 0;
     unsigned entry_cs = 0, entry_ip = 0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc)      h.mem_kb = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-l") && i + 1 < argc) limit = atoll(argv[++i]);
-        else if (!strcmp(argv[i], "-T") && i + 1 < argc) { trace = atoi(argv[++i]); g_trace = 1; }
+        else if (!strcmp(argv[i], "-T") && i + 1 < argc) { trace = atoll(argv[++i]); g_trace = 1; }
         else if (!strcmp(argv[i], "-c"))                 h.count_mode = 1;
         else if (!strcmp(argv[i], "-v"))                 h.verbose = 1;
         else if (!strcmp(argv[i], "-w"))                 writeback = 1;
         else if (!strcmp(argv[i], "-d") && i + 1 < argc) hdimg = argv[++i];
         else if (!strcmp(argv[i], "-cga") && i + 1 < argc) h.cga_out = argv[++i];
-        else if (!strcmp(argv[i], "-tick") && i + 1 < argc)
+        else if (!strcmp(argv[i], "-tick") && i + 1 < argc) {
             h.tickstep = atoi(argv[++i]);
+            if (h.tickstep <= 0) {       /* 0 would divide-by-zero the tick
+                                          * derivations, negatives wrap */
+                fprintf(stderr, "-tick wants a positive instruction count\n");
+                return 2;
+            }
+        }
         else if (!strcmp(argv[i], "-kdelay") && i + 1 < argc)
             h.kdelay = (unsigned long long)atoll(argv[++i]);
         else if (!strcmp(argv[i], "-rom") && i + 1 < argc) {
@@ -874,9 +915,11 @@ int main(int argc, char **argv)
     if (img) {
         FILE *f = fopen(img, "rb");
         if (!f) { perror(img); return 1; }
-        fseek(f, 0, SEEK_END);
-        h.disksz = ftell(f);
-        fseek(f, 0, SEEK_SET);
+        if (fseek(f, 0, SEEK_END) || (h.disksz = ftell(f)) < 0 ||
+            fseek(f, 0, SEEK_SET)) {
+            fprintf(stderr, "%s: can't determine image size\n", img);
+            return 1;
+        }
         h.disk = malloc((size_t)h.disksz);
         if (!h.disk || fread(h.disk, 1, (size_t)h.disksz, f) != (size_t)h.disksz) {
             fprintf(stderr, "failed to read %s\n", img);
@@ -888,6 +931,7 @@ int main(int argc, char **argv)
          * so stray INT 13h reads return zeros instead of crashing */
         h.disksz = 368640;
         h.disk = calloc(1, (size_t)h.disksz);
+        if (!h.disk) { fprintf(stderr, "out of memory\n"); return 1; }
     }
     if (disk_geometry(&h)) {
         fprintf(stderr, "%s: unsupported image size %ld\n",
@@ -900,9 +944,11 @@ int main(int argc, char **argv)
     if (hdimg) {                       /* fixed disk: 17 spt, 4 heads */
         FILE *hf = fopen(hdimg, "rb");
         if (!hf) { perror(hdimg); return 1; }
-        fseek(hf, 0, SEEK_END);
-        h.hdsz = ftell(hf);
-        fseek(hf, 0, SEEK_SET);
+        if (fseek(hf, 0, SEEK_END) || (h.hdsz = ftell(hf)) < 0 ||
+            fseek(hf, 0, SEEK_SET)) {
+            fprintf(stderr, "%s: can't determine image size\n", hdimg);
+            return 1;
+        }
         h.hd = malloc((size_t)h.hdsz);
         if (!h.hd || fread(h.hd, 1, (size_t)h.hdsz, hf) != (size_t)h.hdsz) {
             fprintf(stderr, "failed to read %s\n", hdimg);
@@ -927,14 +973,18 @@ int main(int argc, char **argv)
     c->ctx = &h;
     guest_bios_setup(c, &h);
 
-    /* -rom blobs into the flat 1 MB space (read-only by contract: the C
-     * core can't trap writes, so a checksum is re-verified at exit) */
+    /* -rom blobs into the flat 1 MB space (read-only by contract: mwr8
+     * reports stray writes as they happen via the wp windows below, and
+     * a checksum is re-verified at exit as the backstop) */
     for (int i = 0; i < h.nrom; i++) {
         FILE *rf = fopen(h.rom[i].path, "rb");
         if (!rf) { perror(h.rom[i].path); return 1; }
-        fseek(rf, 0, SEEK_END);
-        long rl = ftell(rf);
-        fseek(rf, 0, SEEK_SET);
+        long rl;
+        if (fseek(rf, 0, SEEK_END) || (rl = ftell(rf)) < 0 ||
+            fseek(rf, 0, SEEK_SET)) {
+            fprintf(stderr, "%s: can't determine image size\n", h.rom[i].path);
+            return 1;
+        }
         if (rl <= 0 || h.rom[i].base + (uint32_t)rl > (1u << 20)) {
             fprintf(stderr, "%s: doesn't fit below 1 MB at %05X\n",
                     h.rom[i].path, h.rom[i].base);
@@ -950,6 +1000,12 @@ int main(int argc, char **argv)
         for (uint32_t j = 0; j < h.rom[i].len; j++)
             s = s * 31 + c->mem[h.rom[i].base + j];
         h.rom[i].sum = s;
+        /* write trap: the exit checksum only proves THAT a window was
+         * clobbered; the core's report says where and (via the step
+         * counter) roughly when */
+        c->wp[c->wp_n].lo = h.rom[i].base;
+        c->wp[c->wp_n].hi = h.rom[i].base + h.rom[i].len;
+        c->wp_n++;
     }
 
     if (entry_set) {
@@ -973,25 +1029,35 @@ int main(int argc, char **argv)
     setvbuf(stdout, NULL, _IONBF, 0);
     if (h.tty && !h.count_mode)
         tty_raw();
-    else
-        signal(SIGINT, on_sigint);
+    signal(SIGINT, on_sigint);   /* raw mode disables ISIG, but an external
+                                  * kill -INT must still exit cleanly (and
+                                  * atexit tty_restore never runs on a
+                                  * default-action signal death) */
     gettimeofday(&h.t0, NULL);
 
     while (!h.exit_flag && !g_stop) {
         x86_step(c);
         h.steps++;
-        if (h.steps % h.tickstep == 0)
-            x86_irq(c, 8);           /* timer tick (if IF set). Under -T this
-                                      * is DETERMINISTIC lockstep state: the
+        if (h.steps % (unsigned)h.tickstep == 0)
+            h.pending_irq = 8;       /* timer tick due */
+        if (h.pending_irq >= 0 && x86_irq(c, h.pending_irq))
+            h.pending_irq = -1;      /* delivered. Under -T this is
+                                      * DETERMINISTIC lockstep state: the
                                       * ELKS TRACE build mirrors x86_irq on
-                                      * the same instruction count. -tick N
-                                      * changes the cadence. */
+                                      * the same instruction count, and a
+                                      * tick due at step N lands at N+1 when
+                                      * step N loaded a segment register or
+                                      * ran STI (the SNES TRACE build
+                                      * implements the identical shadow
+                                      * rule); IF=0 holds the tick pending
+                                      * like the PIC would. -tick N changes
+                                      * the cadence. */
         if ((h.steps & 0xFFF) == 0) {
             /* keep the BDA tick count live (TP polls 40:6C directly).
              * Step-derived, not wall-clock: at ~200 MIPS a wall-clock
-             * tick makes 16-bit delay calibrations overflow. 15000
-             * steps/tick models a ~270 kIPS XT. */
-            uint32_t tk = (uint32_t)(h.steps / 15000);
+             * tick makes 16-bit delay calibrations overflow. The default
+             * 15000 steps/tick models a ~270 kIPS XT. */
+            uint32_t tk = (uint32_t)(h.steps / (unsigned)h.tickstep);
             c->mem[0x46C] = (uint8_t)tk;
             c->mem[0x46D] = (uint8_t)(tk >> 8);
             c->mem[0x46E] = (uint8_t)(tk >> 16);
@@ -1008,13 +1074,26 @@ int main(int argc, char **argv)
             memcpy(&v9, &c->mem[9 * 4], 4);
             if (v9 != 0x000004F0u && h.steps >= h.kdelay
                 && h.s9i >= h.s9n && kb_poll(&h)) {
-                uint8_t sc = scancode((uint8_t)h.peek);
-                h.peek = -1;
-                if (sc) {
-                    h.s9q[0] = sc;
-                    h.s9q[1] = (uint8_t)(sc | 0x80);
-                    h.s9n = 2;
-                    h.s9i = 0;
+                if (h.peek == 0x1D && h.tty) {   /* Ctrl-]: quit harness,
+                                                  * same as the INT16 path */
+                    h.exit_flag = 1;
+                    h.exit_reason = "Ctrl-]";
+                    h.peek = -1;
+                } else {
+                    uint8_t ch = (uint8_t)h.peek;
+                    uint8_t base = unshift(ch);
+                    int shift = base || (ch >= 'A' && ch <= 'Z');
+                    uint8_t sc = scancode(base ? base : ch);
+                    h.peek = -1;
+                    if (sc) {
+                        int n = 0;
+                        if (shift) h.s9q[n++] = 0x2A;    /* LShift make */
+                        h.s9q[n++] = sc;
+                        h.s9q[n++] = (uint8_t)(sc | 0x80);
+                        if (shift) h.s9q[n++] = 0xAA;    /* LShift break */
+                        h.s9n = n;
+                        h.s9i = 0;
+                    }
                 }
             }
         }
@@ -1026,11 +1105,15 @@ int main(int argc, char **argv)
          * guest ISR at its post-sti tail before the first char reaches
          * the tty queue (all codes "delivered", none surviving). */
         if (h.s9i < h.s9n && (c->flags & 0x0200) && h.steps >= h.s9next) {
-            h.s60 = h.s9q[h.s9i++];
-            h.s9next = h.steps + 5000;
-            x86_irq(c, 9);
+            h.s60 = h.s9q[h.s9i];
+            /* a refusal (sreg-load/STI shadow) keeps the code queued for a
+             * retry next step — consuming it here would drop keys */
+            if (x86_irq(c, 9)) {
+                h.s9i++;
+                h.s9next = h.steps + 5000;
+            }
         }
-        if (trace && h.steps <= (unsigned)trace)
+        if (trace && h.steps <= (unsigned long long)trace)
             fprintf(stderr, "T %04X %04X %04X %04X %04X %04X %04X %04X "
                     "%04X %04X %04X %04X %04X %04X\n",
                     c->r[0], c->r[1], c->r[2], c->r[3], c->r[4], c->r[5],
@@ -1047,8 +1130,10 @@ int main(int argc, char **argv)
                  * TRACE build's no-op x86step) until the tick wakes it */
             } else {
                 if (!(c->flags & 0x0200)) { h.exit_reason = "guest HLT (IF=0)"; break; }
-                h.steps += 15000 - (h.steps % 15000);
-                x86_irq(c, 8);
+                h.steps += (unsigned)h.tickstep - (h.steps % (unsigned)h.tickstep);
+                if (!x86_irq(c, 8))
+                    h.pending_irq = 8;   /* the shadow can't be up mid-HLT,
+                                          * but never drop a tick */
             }
         }
         if (limit && h.steps >= (unsigned long long)limit) {
