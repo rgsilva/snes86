@@ -237,6 +237,8 @@ rootfiles = [
     ("SETUP.INF", setup_inf),
 ] + [(dn, dd) for _, _, dn, dd in inf_games]
 subdirs = [
+    ("DOS", [("MODE.COM", f1["MODE.COM"])]),   # 40/80-col switch (t_m40);
+                                               # lost in the MS-DOS A: slimdown
     ("BASIC", [("GWBASIC.EXE", gwbasic)]),
     ("MIDI", [("MIDPLAY.COM", mid_com), ("MIDPLAY.PAS", mid_pas),
               ("MIDCONV.COM", mc_com), ("MIDCONV.PAS", mc_pas),

@@ -35,18 +35,23 @@ local function booted()
   return bufhas("C:\\>")
 end
 
-local w40 = false
+-- Adaptive (the t_zork pattern): advance on screen/machine state, not fixed
+-- frame numbers - boot time drifts as the C: image evolves.
+local function cwid()
+  return emu.read16(0x7E078C, emu.memType.snesMemory)
+end
+local stage = 0
 emu.addEventCallback(function()
   frame = frame + 1
-  if frame == 1200 then inject("mode 40\r") end
-  if frame == 2500 then
-    w40 = (emu.read16(0x7E078C, emu.memType.snesMemory) == 40)
-    inject("mode 80\r")
+  if stage == 0 and frame > 600 and frame % 30 == 0 and booted() then
+    inject("mode 40\r"); stage = 1
+  elseif stage == 1 and frame % 30 == 0 and cwid() == 40 then
+    inject("mode 80\r"); stage = 2
+  elseif stage == 2 and frame % 30 == 0 and cwid() == 80 then
+    print("RESULT PASS t_m40"); emu.stop(0)
   end
-  if frame == 3800 then
-    local w80 = (emu.read16(0x7E078C, emu.memType.snesMemory) == 80)
-    if w40 and w80 then print("RESULT PASS t_m40")
-    else print("RESULT FAIL t_m40 (40=" .. tostring(w40) .. " 80=" .. tostring(w80) .. ")") end
+  if frame == 12000 then
+    print("RESULT FAIL t_m40 (stage=" .. stage .. " cWID=" .. cwid() .. ")")
     emu.stop(0)
   end
 end, emu.eventType.endFrame)
