@@ -113,15 +113,19 @@ headless minutes (or hours) to paint one frame. Under that bar:
   Text-only, so CGA/MDA and RAM are fine. Interactive speed is glacial (~1/100
   real Z80), so it's a "boots and runs a command" trophy, not a daily driver.
 
-- **Game Boy — greenlit, the console trophy.** The payoff is the **Nintendo®
+- **Game Boy — in progress (`gbdos/`).** The payoff is the **Nintendo®
   boot logo** — the earliest iconic frame (a few hundred thousand cycles,
   reachable in minutes of headless run). GB has a framebuffer-style PPU (no
   beam-racing) and only 4 shades, which maps structurally clean onto CGA
   4-color (160×144 sits inside 320×200; colours come out "wrong", which is
-  funnier). Cost: a from-scratch 16-bit **real-mode** SM83 core — no GB emulator
-  ever ran on an 8086, and the 64 KB-segment / bank-switch dance is the fiddly
-  part. Needs **BIGMEM** and no-MBC **32 KB** carts (Tetris, Dr. Mario,
-  Alleyway).
+  funnier). The from-scratch 16-bit **real-mode** SM83 core exists: `GB.COM`
+  (8086 assembly, `gbdos/`) passes all 11 of Blargg's cpu_instrs test ROMs
+  on the host reference core. The whole GB address space sits flat in one
+  8086 segment, so it fits the **default build** (~85 KB free measured,
+  ~65 KB needed — no BIGMEM required after all). PPU → CGA rendering and
+  the boot ROM are next. No-MBC **32 KB** carts only (Tetris, Dr. Mario,
+  Alleyway). Stretch goal, deliberately absurd: assemble GB.COM *inside*
+  the emulated PC with MS-DOS 2.0's own MASM.
 
 Noted, but not greenlit:
 
