@@ -25,6 +25,19 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (ELKS boots to login on runpc) =="
+make -s elks >/dev/null || { echo "FAIL elks-build"; FAIL=1; }
+if printf '' \
+     | ../core-c/build/runpc -m 172 -l 100000000 \
+         -rom build/elks_rom.bin@e000 -rom build/elks_romfs.bin@8000 \
+         -entry e000:0014 2>/dev/null \
+     | grep -qE "login:|# "; then
+  echo "PASS elks-host"
+else
+  echo "FAIL elks-host"
+  FAIL=1
+fi
+
 echo "== host smoke (runpc boots DOS, reads C:) =="
 if printf 'type c:\\autoexec.bat\r' \
      | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
@@ -46,6 +59,18 @@ for t in $TESTS; do
     *) FAIL=1 ;;
   esac
 done
+
+# ELKS end-to-end (own ROM, own timeout: boot to login is ~2 emulated
+# minutes; Mesen's default 100 s testrunner limit would kill it).
+if [ "$1" != "quick" ]; then
+  r=$("$MESEN" --testrunner --timeout=1500 "$(pwd)/build/elks.sfc" \
+      "$(pwd)/test/t_elks.lua" 2>/dev/null | grep '^RESULT' | head -1)
+  echo "${r:-RESULT FAIL t_elks (no output)}"
+  case "$r" in
+    *PASS*) ;;
+    *) FAIL=1 ;;
+  esac
+fi
 
 echo
 if [ -z "$FAIL" ]; then
