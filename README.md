@@ -6,7 +6,7 @@ snes86 is an 8086 PC emulator written from scratch in 65C816 assembly. It boots
 real MS-DOS 2.0 from a ROM "disk", renders CGA/MDA text and graphics, turns the
 SNES sound chip into a MIDI synth, and runs period DOS software. It even boots
 Linux — [ELKS](https://github.com/ghaerr/elks), the Embeddable Linux Kernel
-Subset — to a root shell. It ships as a single flashable `.sfc` — no special
+Subset — to a root shell. Each machine ships as a flashable `.sfc` — no special
 cartridge chip, no expansion hardware, just a Super Nintendo.
 
 <p align="center">
@@ -96,7 +96,7 @@ Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are
 ```
 snes/            the SNES ROM: 8086 core (cpu.asm/cpu2.asm), HLE BIOS + machine
                  (dosboot.asm), SPC-700 MIDI synth (spc_midi.asm), build tools.
-                 `make dosboot` -> build/dosboot.sfc
+                 `make dosboot` -> build/dosboot.sfc; `make elks` -> build/elks.sfc
 core-c/          reference 8086 core in portable C; the correctness oracle and
                  the `runpc` host PC emulator (also builds our IO.SYS).
 msdos/           the free MS-DOS 2.0 build: our IO.SYS, boot sector, disk builder,

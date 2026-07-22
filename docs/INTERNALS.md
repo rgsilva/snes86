@@ -248,16 +248,28 @@ in the guest — exactly the SNES strategy. Boot is the real thing: load sector 
 `0000:7C00`, jump with `DL` = drive.
 
 ```
-usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] [-d disk.img] image.img
+usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] [-d disk.img]
+             [-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] [-tick N] image.img
   -m KB     conventional memory reported to the guest (default 256)
   -c        exit at the first keyboard wait and print stats (boot-cost measure)
   -v        log the first occurrence of every INT xx / AH=yy (incl. DOS 21h)
   -l N      stop after N guest instructions
   -w        write the modified disk image back to file on exit
   -d img    attach a fixed disk as C: (DL=80h)
+  -kdelay N hold keyboard input until step N (ELKS's login flushes the tty,
+            eating anything typed during boot)
+  -rom F@S  map a file read-only at hex segment S in the 1 MB space (the ELKS
+            kernel + ROMFS windows); verified unwritten at exit
+  -entry S:O start at SEG:OFF instead of the boot sector (diskless ROM boot)
+  -tick N   timer cadence in instructions (default 15000; ~800 mimics the SNES)
 ```
 
-runpc earns its keep three ways:
+A guest that executes HLT with IF=1 idles (skip to the next tick and wake) instead
+of ending the run; under `-T` the timer fires *deterministically on the instruction
+count* and a halted CPU burns steps one at a time, mirroring the SNES TRACE build
+exactly — that's what lets ELKS lockstep run arbitrarily deep.
+
+runpc earns its keep four ways:
 
 1. A development mirror. Reproduce a guest bug on the desktop, with tracing, in
    milliseconds — no SNES layer in the way. If it misbehaves here, it'll misbehave
@@ -268,6 +280,10 @@ runpc earns its keep three ways:
    `msdos/build_io.sh` runs the original Microsoft `LINK.EXE` + `EXE2BIN.EXE`
    *inside runpc* to link our `IO.SYS`. The emulator builds the operating system it
    then boots.
+4. It brought up Linux. ELKS booted to a login prompt on runpc (`-rom`/`-entry`)
+   before a single line of 65C816 changed — every HLE gap surfaced at desktop
+   speed, and runpc then served as the oracle that debugged the SNES machine
+   (see [Booting Linux](#booting-linux-the-elks-machine)).
 
 ---
 
@@ -327,7 +343,9 @@ cd snes && ./test/parity.sh 1 1200      # seed, instruction count
 
 A companion harness (`test/tracewin.sh`) runs the same lockstep comparison during an
 *actual DOS boot* — tens of thousands of instructions — to catch divergences that
-only a real workload reaches.
+only a real workload reaches. Its ELKS twin (`test/elkstrace.sh`) goes further:
+with deterministic instruction-counted ticks on both sides, its windows are valid
+at any depth, and the ELKS boot is verified register-exact through step 450,000.
 
 ---
 

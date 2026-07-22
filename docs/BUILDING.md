@@ -119,15 +119,25 @@ make test
 # 65C816 core vs the C core, in lockstep, all 14 registers per instruction
 cd snes && ./test/parity.sh                   # [seed] [count], default 1 1200
 
-# end-to-end boot + app smoke tests in Mesen (headless)
-cd snes && ./test/suite.sh
+# end-to-end regression suite in Mesen (headless): MS-DOS boot + the app
+# matrix + ELKS boot-to-login, plus parity and the runpc host smokes
+cd snes && ./test/suite.sh          # ./test/suite.sh quick for the short loop
 ```
 
-`runpc` also runs DOS on your desktop directly — handy for reproducing a guest
-issue without the SNES layer:
+`runpc` also runs the guests on your desktop directly — handy for reproducing a
+guest issue without the SNES layer:
 
 ```sh
 printf '\r\r\r' | core-c/build/runpc -m 256 msdos/msdos.img    # boot MS-DOS
+
+cd snes && make elks    # fetches the ELKS images on first run, then:
+printf 'root\r' | ../core-c/build/runpc -m 172 -l 150000000 -kdelay 3000000 \
+  -rom build/elks_rom.bin@e000 -rom build/elks_romfs.bin@8000 \
+  -entry e000:0014                       # boot Linux, log in as root
 ```
+
+(The `-l` bound matters for piped runs: an idle ELKS sits in HLT forever, unlike
+DOS, which exits at the first key wait once stdin is drained. Run it without a
+pipe for an interactive session — quit with Ctrl-].)
 
 See [INTERNALS.md](INTERNALS.md) for what `runpc` is and how parity testing works.

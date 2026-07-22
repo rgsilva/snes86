@@ -91,7 +91,7 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
 - One of them landed: **Linux**. `make elks` boots ELKS 0.9.1 to a root shell —
   kernel and apps executing in place from cart ROM on the BIGMEM machine (see
   [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
-  BIGMEM speedups below a real customer: the ELKS boot pays the seam tax in full.
+  BIGMEM speedups above a real customer: the ELKS boot pays the seam tax in full.
 
 ## Nested emulation (an emulator on the emulator)
 

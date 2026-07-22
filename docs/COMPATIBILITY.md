@@ -151,8 +151,8 @@ built on the 172 KB machine.
 
 ## Help wanted
 
-- Real hardware. Everything here was verified in Mesen. If you flash the ROM to a cart
-  and boot it on a real SNES/Super Famicom, please report what you see — it's the one
-  thing we haven't been able to check.
+- Real hardware. Everything here was verified in Mesen. If you flash a ROM to a cart
+  (the DOS one or the ELKS one) and boot it on a real SNES/Super Famicom, please
+  report what you see — it's the one thing we haven't been able to check.
 - Videos and captures welcome. Recordings of DOS software (or the MIDI synth) running
   on snes86 are genuinely useful, and fun. Share them.
