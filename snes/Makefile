@@ -96,7 +96,7 @@ io:
 
 # --- free C: (public): our tools + Turbo Pascal source + a generated CC0 demo
 # + anything in userware/.  Built from committed files only.
-build/hd_free.img: tools/mkhd_free.py build/cgatest.com ../disks/midplay.com ../disks/midconv.com ../disks/sokoban.com ../disks/hello.com ../disks/sieve.com ../disks/midplay.pas ../disks/midconv.pas ../disks/sokoban.pas ../disks/HELLO.pas $(wildcard userware/*)
+build/hd_free.img: tools/mkhd_free.py build/cgatest.com ../disks/midplay.com ../disks/midconv.com ../disks/sokoban.com ../disks/hello.com ../disks/sieve.com ../disks/midplay.pas ../disks/midconv.pas ../disks/sokoban.pas ../disks/HELLO.pas $(wildcard userware/*) $(wildcard ../gbdos/build/GB.COM) $(wildcard ../gbdos/build/*.gb) $(wildcard ../gbdos/roms/dmg_boot*.bin) $(wildcard ../disks/gb/*.gb)
 	python3 tools/mkhd_free.py build
 
 # --- DEVELOPER build: MS-DOS + the FULL local C: app library (tools/mkhd.py,
@@ -131,7 +131,7 @@ build/kbdlayout.asm: tools/mkkbd.py
 build/adisk.img: tools/mkadisk.py tools/autoexec.bat ../disks/pcdos200-disk1.img ../disks/pcdos200-disk2.img
 	python3 tools/mkadisk.py build
 
-build/hd.img: tools/mkhd.py tools/autoexec.bat ../disks/gwbasic.exe ../disks/zork1_snes.com ../disks/ws_installed.com ../disks/mp_com_compaq.bin ../disks/tp301.img build/cgatest.com
+build/hd.img: tools/mkhd.py tools/autoexec.bat ../disks/gwbasic.exe ../disks/zork1_snes.com ../disks/ws_installed.com ../disks/mp_com_compaq.bin ../disks/tp301.img build/cgatest.com $(wildcard ../gbdos/build/GB.COM) $(wildcard ../gbdos/build/*.gb) $(wildcard ../gbdos/roms/dmg_boot*.bin) $(wildcard ../disks/gb/*.gb)
 	python3 tools/mkhd.py build
 
 build/cgatest.com: tools/mkcgatest.py
