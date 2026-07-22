@@ -121,11 +121,12 @@ headless minutes (or hours) to paint one frame. Under that bar:
   ~90% correct (BG + window + sprites with per-scanline register
   logging); joypad works via INT 9. The whole GB address space sits flat
   in one 8086 segment and fits the **default build** — no BIGMEM after
-  all. No-MBC **32 KB** carts only. Still open: a famous cart running on
-  the SNES (drop `disks/gb/tetris.gb` locally and it lands on `C:\GB`),
-  shipping GB.COM + a homebrew cart in the free public ROM, and the
-  deliberately absurd stretch: assembling GB.COM *inside* the emulated
-  PC with MS-DOS 2.0's own MASM.
+  all. No-MBC **32 KB** carts only (drop one in `disks/gb/` locally and
+  it lands on `C:\GB`). Tetris runs: playable on the host core, and its
+  title + copyright screens are captured from the SNES build in the
+  [gallery](COMPATIBILITY.md#gallery). GB.COM + the homebrew carts ship
+  in the free public ROM. Still open: the deliberately absurd stretch of
+  assembling GB.COM *inside* the emulated PC with MS-DOS 2.0's own MASM.
 
 Noted, but not greenlit:
 

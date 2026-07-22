@@ -53,6 +53,10 @@ All captured from snes86 running in Mesen.
 <td align="center"><img src="assets/gameboy.png" width="400"><br><sub>GB.COM — a Game Boy inside DOS inside a SNES: the boot logo, four machines deep</sub></td>
 <td align="center"><img src="assets/gameboy_fade.png" width="400"><br><sub>the same logo mid-fade — GB shades through CGA's palette, wrong on purpose</sub></td>
 </tr>
+<tr>
+<td align="center"><img src="assets/tetris.png" width="400"><br><sub>Tetris® (1989) title screen — a real cartridge running on GB.COM, on the SNES</sub></td>
+<td align="center"><img src="assets/tetris_copyright.png" width="400"><br><sub>the Elorg / Bullet-Proof / Pazhitnov copyright screen, four machines deep</sub></td>
+</tr>
 </table>
 
 > 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
@@ -74,6 +78,7 @@ All captured from snes86 running in Mesen.
 | | Multiplan | ✅ tested | spreadsheet grid, `.LOD`/`.SYS` overlays |
 | Interactive fiction | Zork I–III, Planetfall, Leather Goddesses, Hitchhiker's Guide, Wishbringer | ✅ tested | Infocom's later 8086 interpreter |
 | Games | Rogue | ✅ tested* | *needs BIGMEM (see [Memory](#memory)) |
+| | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* GB.COM — playable on the host core, title screen captured on the SNES |
 | | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make fs`), not a DOS program |
 | Benchmarks | Norton SI, CPUBENCH | ✅ tested | CPU/system info + timing loops |
 
