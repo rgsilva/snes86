@@ -113,19 +113,19 @@ headless minutes (or hours) to paint one frame. Under that bar:
   Text-only, so CGA/MDA and RAM are fine. Interactive speed is glacial (~1/100
   real Z80), so it's a "boots and runs a command" trophy, not a daily driver.
 
-- **Game Boy — in progress (`gbdos/`).** The payoff is the **Nintendo®
-  boot logo** — the earliest iconic frame (a few hundred thousand cycles,
-  reachable in minutes of headless run). GB has a framebuffer-style PPU (no
-  beam-racing) and only 4 shades, which maps structurally clean onto CGA
-  4-color (160×144 sits inside 320×200; colours come out "wrong", which is
-  funnier). The from-scratch 16-bit **real-mode** SM83 core exists: `GB.COM`
-  (8086 assembly, `gbdos/`) passes all 11 of Blargg's cpu_instrs test ROMs
-  on the host reference core. The whole GB address space sits flat in one
-  8086 segment, so it fits the **default build** (~85 KB free measured,
-  ~65 KB needed — no BIGMEM required after all). PPU → CGA rendering and
-  the boot ROM are next. No-MBC **32 KB** carts only (Tetris, Dr. Mario,
-  Alleyway). Stretch goal, deliberately absurd: assemble GB.COM *inside*
-  the emulated PC with MS-DOS 2.0's own MASM.
+- **Game Boy — landed (`gbdos/`).** The payoff happened: the **Nintendo®
+  boot logo**, rendered by a real (CC0) boot ROM on our from-scratch
+  real-mode SM83 core, inside DOS, inside the SNES — the shot is in the
+  [compatibility gallery](COMPATIBILITY.md#gallery). `GB.COM` (8086
+  assembly) passes all 11 Blargg cpu_instrs ROMs and renders dmg-acid2
+  ~90% correct (BG + window + sprites with per-scanline register
+  logging); joypad works via INT 9. The whole GB address space sits flat
+  in one 8086 segment and fits the **default build** — no BIGMEM after
+  all. No-MBC **32 KB** carts only. Still open: a famous cart running on
+  the SNES (drop `disks/gb/tetris.gb` locally and it lands on `C:\GB`),
+  shipping GB.COM + a homebrew cart in the free public ROM, and the
+  deliberately absurd stretch: assembling GB.COM *inside* the emulated
+  PC with MS-DOS 2.0's own MASM.
 
 Noted, but not greenlit:
 

@@ -49,6 +49,10 @@ All captured from snes86 running in Mesen.
 <td align="center"><img src="assets/si.png" width="400"><br><sub>Norton SI — Computing Index 0.0 vs the IBM/XT</sub></td>
 <td align="center"><img src="assets/midi.png" width="400"><br><sub>MIDPLAY — the SNES as a MIDI synth</sub></td>
 </tr>
+<tr>
+<td align="center"><img src="assets/gameboy.png" width="400"><br><sub>GB.COM — a Game Boy inside DOS inside a SNES: the boot logo, four machines deep</sub></td>
+<td align="center"><img src="assets/gameboy_fade.png" width="400"><br><sub>the same logo mid-fade — GB shades through CGA's palette, wrong on purpose</sub></td>
+</tr>
 </table>
 
 > 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
@@ -63,6 +67,7 @@ All captured from snes86 running in Mesen.
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / BENCH / HELLO / CGATEST | ✅ shipped | our benchmarks + demos, with source |
+| | GB.COM | ✅ tested | our Game Boy emulator ([`gbdos/`](../gbdos)): Blargg's cpu_instrs 11/11, dmg-acid2 ~90%, boot-ROM logo above |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
 | Applications | WordStar 3.31 | ✅ tested | full-screen editor, overlays load from C: |
