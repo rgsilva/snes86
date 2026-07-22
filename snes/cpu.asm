@@ -162,6 +162,7 @@ _step_halted:
 ; the stack; handlers never push).
 step_next:
 .IFDEF DOSBIOS
+.IFNDEF TRACE
     dec tSKIP
     beq _sn_slow
     stz ovSEG
@@ -177,6 +178,10 @@ step_next:
     jmp (optable,x)
 _sn_slow:
     jmp run_slow             ; dosboot: IRQ/HALT service, then back in
+.ELSE
+    sty gIP                  ; TRACE build: run_slow isn't assembled —
+    rts                      ; restore the jsr x86step single-step
+.ENDIF                       ; contract (threading broke tracewin at M9r2)
 .ELSE
     sty gIP                  ; single-step contract: commit IP, return
     rts                      ; to the jsr x86step caller
@@ -2175,7 +2180,11 @@ opF4:                        ; HLT
     sta gHALT
     sty gIP
 .IFDEF DOSBIOS
+.IFNDEF TRACE
     jmp run_slow             ; threaded: the slow path parks in wai
+.ELSE
+    rts                      ; TRACE build: x86step's caller sees gHALT
+.ENDIF
 .ELSE
     rts
 .ENDIF
