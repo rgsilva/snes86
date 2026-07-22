@@ -1,9 +1,12 @@
-; snes86 — DOS boot ROM (M6): boots PC DOS 2.00 on the 65816 core.
+; snes86 — the boot ROM: boots MS-DOS 2.0 (and, as `elks`, Linux) on the
+; 65816 core. PC DOS 2.00 was the original bring-up target and survives
+; behind .IFDEF PCDOS.
 ;
 ; The full HLE-BIOS machine: the parity-proven CPU core plus native
 ; handlers for INT 10h (mode-5 console), INT 11h/12h (equipment/memory),
-; INT 13h (ROM floppy in banks 2-7, write-protected), INT 16h (keyboard
-; ring; START injects "dir\r"), INT 1Ah (NMI-derived ticks).
+; INT 13h (360 KB ROM floppy in banks 2-13, write-protected; SRAM B:;
+; ROM C: in banks 14+), INT 16h (keyboard ring; START injects "dir\r"),
+; INT 1Ah (NMI-derived ticks).
 ;
 ; Guest memory: linear 0x00000-0x1AFFF (108 KB) at $7E:5000-$7F:FFFF.
 ; CGA adapter RAM: 16 KB at $7E:1000-$7E:4FFF (B000-BFFF segments map
@@ -1002,9 +1005,15 @@ row_addr:                    ; A = row -> in-bank ($7E) addr VBOFS + row*160
     rts
 
 hle_int11:
+.IFDEF BIGMEM
+    lda #$0021               ; ONE floppy: under BIGMEM the SRAM banks are
+    sta gAX                  ; guest RAM above 108 KB, so the B: vdisk is
+    rts                      ; gone (a B: access would read guest memory
+.ELSE                        ; as a FAT and a write would corrupt it)
     lda #$0061               ; two floppies (A: B:), 80x25 color; C: is
     sta gAX                  ; the fixed disk (INT 13h DL=80h)
     rts
+.ENDIF
 
 hle_int12:
     lda #GUESTKB             ; KB of guest RAM (172 in the BIGMEM variant)
@@ -1147,8 +1156,8 @@ _h16_ret:
     rts
 
 ;----------------------------------------------------------------------
-; INT 13h: floppy = 180 KB image in ROM banks 2-7 (read-only)
-; geometry 40 cyl / 1 head / 9 spt; LBA = cyl*9 + sec-1
+; INT 13h: floppy = 360 KB image in ROM banks 2-13 (read-only)
+; geometry 40 cyl / 2 heads / 9 spt; LBA = (cyl*2+head)*9 + sec-1
 ;----------------------------------------------------------------------
 hle_int13:
     lda gAX
@@ -1296,11 +1305,23 @@ _h13_flp:
     phy
     lda gAX
     and #$00FF
-    sta cT1                  ; sectors remaining
+    beq _h13_al0             ; AL=0 would dec-wrap into a 65535-sector
+    sta cT1                  ; sectors remaining          runaway copy
     lda gDX
     and #$00FF
     beq _h13_romA
+.IFDEF BIGMEM
+_h13_al0:                    ; BIGMEM: no B: — the SRAM banks are guest
+    ply                      ; RAM above 108 KB (see hle_int11)
+    lda #$0001               ; invalid request
+    jmp _h13_err
+.ELSE
     jmp _h13_vdisk           ; DL=1 -> B: VRAM disk
+_h13_al0:
+    ply
+    lda #$0001               ; invalid request
+    jmp _h13_err
+.ENDIF
 _h13_romA:
     lda #$0082               ; A: ROM disk, banks $82+
 _h13_rom:
@@ -2052,6 +2073,7 @@ _rst_bs:
     sta gSS
     sta gDS
     sta gHALT
+    sta gINHIB
     sta lfKIND
     lda #$7C00
     sta gIP
@@ -2297,24 +2319,36 @@ _rst_mv:
 .IFDEF ELKS
     lda #15000
     sta.l $7E4FF4            ; deterministic-tick countdown (VBUF cell)
+    lda #0
+    sta.l $7E4FF2            ; pending-tick flag (WRAM powers up random)
 .ENDIF
 _rst_run:
     jsr x86step
 .IFDEF ELKS
-    lda.l $7E4FF4            ; every 15000 instructions: mirror runpc's
-    dec a                    ; x86_irq exactly (IF=0 -> dropped; IF=1 ->
-    sta.l $7E4FF4            ; wake HLT + vector INT 8)
-    bne _rst_notick
-    lda #15000
-    sta.l $7E4FF4
+    lda.l $7E4FF4            ; every -tick instructions: mirror runpc
+    dec a                    ; exactly. Due -> pending; the sreg-load/STI
+    sta.l $7E4FF4            ; shadow defers it one instruction, IF=0
+    bne _rst_ntdue           ; holds it like the PIC, IF=1 wakes HLT +
+    lda #15000               ; vectors INT 8. (runpc implements the same
+    sta.l $7E4FF4            ; rules — the two stay in lockstep.)
+    lda #1
+    sta.l $7E4FF2            ; pending-tick flag (VBUF cell)
+_rst_ntdue:
+    lda.l $7E4FF2
+    beq _rst_notick
+    lda gINHIB
+    bne _rst_notick          ; shadowed: retry after the next instruction
     lda fSTATIC
     and #$0200
-    beq _rst_notick
+    beq _rst_notick          ; IF=0: held pending like the PIC (runpc rule)
+    lda #0
+    sta.l $7E4FF2            ; delivered: clear the pending mark
     stz gHALT
     lda #8
     jsr do_int
     sty gIP
 _rst_notick:
+    stz gINHIB               ; the shadow lasts exactly one instruction
 .ENDIF
     lda tSKIP
     beq _rst_sk0
@@ -2388,6 +2422,11 @@ run_slow:                    ; gas exhausted (or HLT): service and refuel
     sty gIP
     lda #64
     sta tSKIP
+    lda gINHIB               ; sreg-load/STI shadow: the instruction that
+    beq _rs_shok             ; just retired blocks delivery until one more
+    stz gINHIB               ; runs (MOV SS,x / MOV SP,y must be atomic).
+    bra _rs_n9               ; Skip both delivery checks this pass — but
+_rs_shok:                    ; still honor a parked HLT below (STI;HLT).
     lda cTickP
     beq _rs_nirq
     lda fSTATIC              ; IF lives in the static flag bits
@@ -2397,12 +2436,10 @@ run_slow:                    ; gas exhausted (or HLT): service and refuel
     lda #8                   ; 18.2 Hz timer tick -> guest IVT[8]
     jsr do_int
     sty gIP
-.IFDEF ELKS
     stz gHALT                ; 8086: interrupt delivery wakes HLT. Without
                              ; this, HLT with a tick already pending vectors
                              ; the handler but re-parks on gHALT=1 with the
                              ; handler's IF=0 — machine freezes mid-boot.
-.ENDIF
 _rs_nirq:
     lda s9CD                 ; hold-off pending (the NMI counts it down)
     bne _rs_n9
@@ -2438,25 +2475,18 @@ _rs_9go:
     lda #9
     jsr do_int
     sty gIP
-.IFDEF ELKS
     stz gHALT                ; same wake rule for IRQ1 delivery
-.ENDIF
 _rs_n9:
     lda gHALT
     bne _rst_halt
     jmp step_lean
 _rst_halt:
-.IFDEF ELKS
-    wai                      ; ELKS idles in HLT with IF=1: sleep to the
-    lda fSTATIC              ; next NMI, then rejoin run_slow — it delivers
-    and #$0200               ; any pending tick/key and resumes the guest
-    beq _rst_halt            ; after the HLT. IF=0 stays parked (real hang).
-    stz gHALT
-    jmp run_slow
-.ELSE
-    wai
-    bra _rst_halt
-.ENDIF
+    wai                      ; HLT with IF=1: sleep to the next NMI, then
+    lda fSTATIC              ; rejoin run_slow — it delivers any pending
+    and #$0200               ; tick/key and resumes the guest after the
+    beq _rst_halt            ; HLT. IF=0 stays parked (a real 8086 hang).
+    stz gHALT                ; (Was ELKS-only; correct for DOS too — any
+    jmp run_slow             ; app idling in STI;HLT used to freeze here.)
 .ENDIF
 
 
@@ -4330,9 +4360,10 @@ zero_w:
 .INCBIN "../disks/fs1.img" SKIP 131072 READ 32768
 .ENDS
 .ELSE
-.IFDEF PCDOS
-.DEFINE AIMG "build/adisk.img"
-.ELSE
+.IFNDEF ELKS                 ; ELKS boots from the ROM windows in banks
+.IFDEF PCDOS                 ; 14+; the 360 KB DOS floppy would be dead
+.DEFINE AIMG "build/adisk.img"  ; weight in banks 2-13 (a DL=0 probe now
+.ELSE                        ; reads zero-filled banks and fails cleanly)
 .DEFINE AIMG "build/msdos_a.img"
 .ENDIF
 .BANK 2 SLOT 0
@@ -4395,6 +4426,7 @@ zero_w:
 .SECTION "Disk13" FORCE
 .INCBIN AIMG SKIP 360448 READ 8192
 .ENDS
+.ENDIF                       ; IFNDEF ELKS (A: floppy banks)
 .ENDIF
 .IFDEF DEVHD
 .DEFINE HDIMG "build/hd.img"

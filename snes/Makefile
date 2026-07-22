@@ -91,7 +91,7 @@ elks: build/elks.sfc
 build/elks_rom.bin build/elks_romfs.bin:
 	./test/fetch_elks.sh
 
-build/elks.o: elks.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm build/elks_rom.bin build/elks_romfs.bin
+build/elks.o: elks.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm build/elks_rom.bin build/elks_romfs.bin
 	$(AS) -o build/elks.o elks.asm
 
 build/elks.sfc: build/elks.o linkfile_elks

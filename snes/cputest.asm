@@ -132,6 +132,7 @@ _dp:
     rep #$20
     stz gIP
     stz gHALT
+    stz gINHIB
     lda #$F002
     sta fSTATIC
     stz lfKIND

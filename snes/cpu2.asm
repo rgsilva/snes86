@@ -180,7 +180,8 @@ op1E: PUSHSEG gDS
     ldx #SEGOFF
     sta.b 0,x
     jsr upd_base_x
-    jmp step_next
+    inc gINHIB               ; 8086: no delivery until one more instruction
+    jmp step_next            ; retires (protects MOV SS,x / MOV SP,y pairs)
 .ENDM
 op07: POPSEG 16
 op0F: POPSEG 18              ; POP CS (8086 quirk)
@@ -210,6 +211,7 @@ op8E:                        ; MOV sreg, rm16
     lda tmp2
     sta.b 0,x
     jsr upd_base_x
+    inc gINHIB               ; one-instruction interrupt shadow (see POPSEG)
     jmp step_next
 
 op8F:                        ; POP rm16
@@ -230,28 +232,46 @@ op8F:                        ; POP rm16
 
 opC4:                        ; LES r16, m32
     jsr decode_modrm
-    lda [mPTR]
+.IFDEF BIGMEM
+    jsr rd16m                ; both words seam-safe; mptr_adv1 carries the
+.ELSE                        ; bank byte (bare inc mPTR wrapped inside the
+    lda [mPTR]               ; bank and read the segment word from DP!)
+.ENDIF
     ldx mREG
     sta.b 0,x
-    inc mPTR
-    inc mPTR
+    jsr mptr_adv1
+    jsr mptr_adv1
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta gES
     ldx #16
     jsr upd_base_x
+    inc gINHIB               ; sreg load: one-instruction shadow
     jmp step_next
 
 opC5:                        ; LDS r16, m32
     jsr decode_modrm
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     ldx mREG
     sta.b 0,x
-    inc mPTR
-    inc mPTR
+    jsr mptr_adv1
+    jsr mptr_adv1
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta gDS
     ldx #22
     jsr upd_base_x
+    inc gINHIB               ; sreg load: one-instruction shadow
     jmp step_next
 
 ;----------------------------------------------------------------------
@@ -584,11 +604,19 @@ g5_call:
     jmp step_next
 
 g5_callf:                    ; CALL far m16:16
+.IFDEF BIGMEM
+    jsr rd16m                ; seam-safe + bank-carrying, like LES/LDS
+.ELSE
     lda [mPTR]
+.ENDIF
     sta tmp0
-    inc mPTR
-    inc mPTR
+    jsr mptr_adv1
+    jsr mptr_adv1
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta tmp2
     lda gCS
     jsr push16v
@@ -606,11 +634,19 @@ g5_jmp:
     jmp step_next
 
 g5_jmpf:
+.IFDEF BIGMEM
+    jsr rd16m                ; seam-safe + bank-carrying, like LES/LDS
+.ELSE
     lda [mPTR]
+.ENDIF
     sta tmp0
-    inc mPTR
-    inc mPTR
+    jsr mptr_adv1
+    jsr mptr_adv1
+.IFDEF BIGMEM
+    jsr rd16m
+.ELSE
     lda [mPTR]
+.ENDIF
     sta gCS
     ldy tmp0
     jsr upd_bCS

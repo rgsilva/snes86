@@ -1,15 +1,15 @@
-; snes86 — 8086 CPU core in 65816 assembly (M4 skeleton).
+; snes86 — 8086 CPU core in 65816 assembly.
 ;
 ; Execution model:
 ;   - native mode, A/X/Y 16-bit unless noted, D=$0000, DBR=$7E
-;   - guest memory: linear 0x00000-0x0DFFF lives at $7E:2000-$7E:FFFF
-;     (M4 constraint: guests must stay under 56 KB linear; the $7F spill
-;     for the full ~90 KB arrives with M5)
+;   - guest memory: linear 0x00000-0x1AFFF lives at $7E:5000-$7F:FFFF
+;     (108 KB of WRAM; BIGMEM adds 64 KB of cart SRAM at $70/$71 for a
+;     172 KB guest — see the region notes above norm_base_x)
 ;   - guest registers live in direct page, 8086 register order, gAX at
 ;     DP $00 so a ModRM reg field *2 IS the DP offset
-;   - cached segment bases: bXX = $2000 + seg*16 = the 16-bit SNES address
-;     of the segment start inside bank $7E; memory access is one 16-bit
-;     add + a (dp) indirect. Rewritten whenever a segment register loads.
+;   - cached segment bases: bXX = GUEST_BASE + seg*16 = the 24-bit SNES
+;     address of the segment start; memory access is one 16-bit add + a
+;     (dp) indirect. Rewritten whenever a segment register loads.
 ;   - Y holds the guest IP from fetch to handler end (sty gIP; rts)
 ;   - dispatch: opcode*2 -> jmp (optable,x), table in the code bank
 ;
@@ -41,14 +41,6 @@
 .ENDIF
 
 ; lazy-flag kinds (word values, double as norm_tab jump index)
-.MACRO STEP_END
-.IFDEF DOSBIOS
-    jmp step_next
-.ELSE
-    jmp step_next
-.ENDIF
-.ENDM
-
 .DEFINE LF_NONE  0
 .DEFINE LF_ADD8  2
 .DEFINE LF_ADD16 4
@@ -127,10 +119,17 @@ dQ       dw
 dINT     dw
 smSAV    dw                  ; BIGMEM: seam-split save of mPTR low16
 smBNK    dw                  ; BIGMEM: seam-split save of mPTR bank + byte
+gINHIB   dw                  ; 8086 one-instruction interrupt shadow: set by
+                             ; sreg loads (MOV/POP sreg) and STI, consumed at
+                             ; the next delivery point (run_slow / trace tick)
 .IFDEF ELKS
 bCSc     ds 3                ; NAIVE CS base (GUEST_BASE + CS*16, unfolded).
                              ; The rebased bCS is per-instruction scratch and
                              ; not a sound fold input; every fold starts here.
+ebounce  ds 8                ; fetch_rebase seam-bounce buffer (lives in the
+                             ; DP page, NOT in adapter RAM: $7E4FE0 was the
+                             ; top of the CGA buffer and graphics would have
+                             ; silently corrupted the bounce)
 .ENDIF
 .ENDE
 
@@ -437,9 +436,15 @@ _efn\@:
 ; half of $70/$71 is ROM. A NAIVE pointer $7E5000+linear reaches SRAM
 ; only in bank $80 exactly: $80:0000 = linear $1B000 (SRAM start),
 ; $80:FFFF = linear $2AFFF (SRAM end). Bank $81+ is past 172 KB and
-; UNBACKED — it must be left naive (points at ROM, reads harmlessly and
-; drops writes) rather than folded, or high segments like F000 (BIOS)
-; would alias into SRAM.
+; UNBACKED — it must be left naive rather than folded, or high segments
+; like F000 (BIOS) would alias into SRAM.
+;   HAZARD, not harmless: in LoROM the $81+ banks mirror the system area
+; in their low half — $0000-$1FFF is low WRAM (this emulator's state)
+; and $2100-$43FF is live PPU/APU/DMA MMIO; only $8000+ is ROM. A guest
+; that reads/writes past its top of memory lands there, so a buggy guest
+; can corrupt HOST state or poke registers, where the C core's flat 1 MB
+; just reads zeros. Deliberately unchecked: a fold gate on every access
+; would tax all guests to protect only broken ones.
 
 ; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x). A base
 ; is one point: only bank $80 is the SRAM window; $7E/$7F (WRAM) and $81+
@@ -839,7 +844,7 @@ fetch_rebase:
 _fr_cp1:
     lda [mPTR2],y
     sep #$20
-    sta.l $7E4FE0,x
+    sta.l $7E0000+ebounce,x
     rep #$20
     inx
     iny
@@ -856,14 +861,14 @@ _fr_cp1:
 _fr_cp2:
     lda [mPTR2],y
     sep #$20
-    sta.l $7E4FE0,x
+    sta.l $7E0000+ebounce,x
     rep #$20
     inx
     iny
     cpx.w #$0008
     bcc _fr_cp2
     ply
-    lda.w #$4FE0             ; fetch this instruction from the bounce
+    lda.w #ebounce           ; fetch this instruction from the bounce
     sta smSAV
     sep #$20
     lda.b #$7E
@@ -881,6 +886,87 @@ _fr_strad16:
     lda smBNK
     sbc #0
     sta bCS+2
+    rep #$20
+    rts
+.ENDIF
+
+; advance mPTR by one byte, carrying into the bank/region. `inc mPTR`
+; alone wraps the low word at $FFFF WITHOUT touching the bank byte: a
+; far pointer whose m32 operand starts at $7E:FFFF (guest linear 0xAFFF,
+; prime DOS arena) would read its segment word from $7E:0000 — this
+; emulator's own direct page. Used by the m16:16 loaders (LES/LDS,
+; CALL/JMP far m); 16-bit A in and out.
+mptr_adv1:
+.IFDEF BIGMEM
+    lda mPTR
+    cmp #$7FFF
+    beq _ma_top              ; maybe an SRAM page top
+    cmp #$FFFF
+    beq _ma_bank
+    inc mPTR
+    rts
+_ma_top:                     ; $xx:7FFF: a region top only in $70/$71
+    sep #$20
+    lda mPTR+2
+    cmp #$70
+    beq _ma_p0t
+    cmp #$71
+    beq _ma_p1t
+    rep #$20
+    inc mPTR
+    rts
+_ma_p0t:
+    lda #$71                 ; page 0 top -> page 1 : 0000
+    sta mPTR+2
+    rep #$20
+    stz mPTR
+    rts
+_ma_p1t:
+    lda #$70                 ; page 1 top -> page 0 (wrap, ~never)
+    sta mPTR+2
+    rep #$20
+    stz mPTR
+    rts
+_ma_bank:                    ; $xx:FFFF: bank carry or region hop
+    stz mPTR
+    sep #$20
+    lda mPTR+2
+    cmp #$7F
+    bne _ma_nb1
+    lda #$70                 ; WRAM top -> SRAM page 0 (linear $1B000)
+    sta mPTR+2
+    rep #$20
+    rts
+_ma_nb1:
+.IFDEF ELKS
+    cmp.b #EK_B0             ; ROM-window chunk top: the next guest byte
+    bcc _ma_nb2              ; is the NEXT bank's ROM half, not its low
+    cmp.b #$94               ; half (same fold rule as EFOLD)
+    bcs _ma_nb2
+    inc a
+    sta mPTR+2
+    rep #$20
+    lda #$8000
+    sta mPTR
+    rts
+_ma_nb2:
+.ENDIF
+    inc a                    ; plain carry ($7E->$7F, naive space)
+    sta mPTR+2
+    rep #$20
+    rts
+.ELSE
+    lda mPTR                 ; non-BIGMEM: only the $7E->$7F carry exists
+    cmp #$FFFF
+    beq _ma_bank
+    inc mPTR
+    rts
+_ma_bank:
+    stz mPTR
+    sep #$20
+    lda mPTR+2
+    inc a
+    sta mPTR+2
     rep #$20
     rts
 .ENDIF
@@ -1836,7 +1922,11 @@ op89:                        ; MOV rm16, r16
     lda.b 0,x
     ldx mISREG
     bne _m89r
+.IFDEF BIGMEM
+    jsr wr16m                ; seam-safe (word may straddle a region top)
+.ELSE
     sta [mPTR]
+.ENDIF
     jmp step_next
 _m89r:
     ldx mRM
@@ -1864,7 +1954,11 @@ op8B:                        ; MOV r16, rm16
     jsr decode_modrm
     lda mISREG
     bne _m8Br
+.IFDEF BIGMEM
+    jsr rd16m                ; seam-safe
+.ELSE
     lda [mPTR]
+.ENDIF
     ldx mREG
     sta.b 0,x
     jmp step_next
@@ -1904,7 +1998,11 @@ opA1:                        ; MOV AX, [moffs16]
     jsr seg_src_x
     lda tmp0
     jsr mk_ptr
+.IFDEF BIGMEM
+    jsr rd16m                ; seam-safe
+.ELSE
     lda [mPTR]
+.ENDIF
     sta gAX
     jmp step_next
 
@@ -1931,7 +2029,11 @@ opA3:                        ; MOV [moffs16], AX
     lda tmp0
     jsr mk_ptr
     lda gAX
+.IFDEF BIGMEM
+    jsr wr16m                ; seam-safe
+.ELSE
     sta [mPTR]
+.ENDIF
     jmp step_next
 
 ; MOV r8, imm8 (byte fetch, byte store — 16-bit read then 8-bit store)
@@ -2111,7 +2213,11 @@ push_common:                 ; A = value to push
     ldx #30                  ; bSS
     jsr mk_ptr
     lda tmp0
+.IFDEF BIGMEM
+    jsr wr16m                ; a stack word can straddle a region seam
+.ELSE
     sta [mPTR]
+.ENDIF
     jmp step_next
 
 pop_common:                  ; A <- popped value
@@ -2122,8 +2228,12 @@ pop_common:                  ; A <- popped value
     inc a
     inc a
     sta gSP
+.IFDEF BIGMEM
+    jmp rd16m
+.ELSE
     lda [mPTR]
     rts
+.ENDIF
 
 op58:
     jsr pop_common
@@ -2403,7 +2513,13 @@ opF5:                        ; CMC
 opF8: FLAGAND $FFFE
 opF9: FLAGOR  $0001
 opFA: FLAGAND $FDFF
-opFB: FLAGOR  $0200
+opFB:                        ; STI — IF sets now, but delivery is shadowed
+    jsr flags_norm           ; for one instruction (the STI;HLT idiom must
+    lda fSTATIC              ; not take the interrupt before the HLT)
+    ora #F_IF
+    sta fSTATIC
+    inc gINHIB               ; (inc, not sta: cleared at every delivery
+    jmp step_next            ; point, so it can never accumulate far)
 opFC: FLAGAND $FBFF
 opFD: FLAGOR  $0400
 
