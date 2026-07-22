@@ -47,11 +47,36 @@ jobs:
             -m 108 -d snes/build/hd_free.img msdos/msdos.img | tee boot.log
           grep -q "MS-DOS version 2.00" boot.log
 
+      # The ELKS ROM: Linux (well, the Embeddable Linux Kernel Subset) on a
+      # SNES. The kernel + ROMFS images are fetched from the official ELKS
+      # v0.9.1 release by test/fetch_elks.sh (GPL software - fetched at build
+      # time, never committed here; unmodified upstream binaries, source at
+      # github.com/ghaerr/elks). Bundling them in the ROM alongside our MIT
+      # emulator is aggregation, with source available upstream.
+      - name: Build the ELKS ROM (elks.sfc)
+        run: make -C snes PVBIN="$PVBIN" elks
+
+      # End-to-end smoke: boot ELKS from the ROM images on runpc, expect the
+      # login prompt (or a direct root shell on no-getty root filesystems).
+      - name: Smoke test — boot ELKS
+        run: |
+          printf '' | core-c/build/runpc -m 172 -l 100000000 \
+            -rom snes/build/elks_rom.bin@e000 \
+            -rom snes/build/elks_romfs.bin@8000 \
+            -entry e000:0014 | tee elks.log
+          grep -qE "login:|# " elks.log
+
       - name: Upload ROM artifact
         uses: actions/upload-artifact@v4
         with:
           name: dosboot-sfc
           path: snes/build/dosboot.sfc
+
+      - name: Upload ELKS ROM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: elks-sfc
+          path: snes/build/elks.sfc
 
       # On a v* tag: publish a release with the ROM. GitHub also attaches the
       # "Source code" archives automatically. (Cut a real tag only after the
@@ -60,12 +85,17 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: snes/build/dosboot.sfc
+          files: |
+            snes/build/dosboot.sfc
+            snes/build/elks.sfc
           generate_release_notes: true
           body: |
-            **snes86** — MS-DOS 2.0 on a stock, unmodified SNES.
+            **snes86** — MS-DOS 2.0 (and Linux!) on a stock, unmodified SNES.
 
             - `dosboot.sfc` — the flashable public ROM (free software only).
+            - `elks.sfc` — ELKS 0.9.1 (Linux for the 8086) booting to a root
+              shell; bundles the unmodified official ELKS release images
+              (GPL — source at https://github.com/ghaerr/elks).
             - Full source is in the auto-generated "Source code" archives below.
 
             See the [README](https://github.com/rgsilva/snes86#readme) and
