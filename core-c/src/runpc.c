@@ -71,6 +71,9 @@ typedef struct {
     uint8_t s9q[8];          /* pending make/break codes (max: shift-wrapped
                               * key = 2A, make, break, AA) */
     int s9n, s9i;
+    uint16_t kq[16];         /* INT16 tee ring for hooked-INT9 guests:
+                              * (scan<<8)|ascii, like the SNES $0700 ring */
+    int kqh, kqt;
     /* keyboard hold-off + jump-proof pump threshold (HLT idling makes
      * steps skip forward, so "steps & mask == 0" gates can miss);
      * s9next spaces INT9 deliveries so the guest ISR can't re-enter
@@ -553,6 +556,10 @@ static uint8_t kb_xlate(uint8_t b)
 /* pull one byte into h->peek if available; returns 1 if a key is buffered */
 static int kb_poll(Harness *h)
 {
+    if (h->steps < h->kdelay)   /* -kdelay holds the INT 16h path too, not
+                                 * just the INT 9 pump — FreeDOS's F8/F5
+                                 * boot prompt eats early piped keys */
+        return 0;
     if (h->peek >= 0)
         return 1;
     if (h->eof)
@@ -610,11 +617,21 @@ static int bios_kbd(X86 *c, Harness *h)
             return 1;
         }
     }
-    /* a guest INT9 hook replaces the BIOS handler: our stdin ring
-     * starves and INT16 reports empty — stdin belongs to the IRQ1 pump */
+    /* a guest INT9 hook replaces the BIOS handler: stdin belongs to the
+     * IRQ1 pump. But serve the pump's tee ring here (BDA first, own ring
+     * second — the same arbitration hle_int16 does on the SNES): a hook
+     * that only monitors INT 9 and chains to our IRET stub never fills
+     * the BDA, yet still expects INT 16h to have the key (FreeDOS). */
     if (int9_hooked(c) && (ah == 0x00 || ah == 0x01)) {
-        if (ah == 0x01) set_zf(c, 1);
-        else c->r[X86_AX] = 0;
+        if (h->kqh != h->kqt) {
+            c->r[X86_AX] = h->kq[h->kqh];
+            if (ah == 0x00) h->kqh = (h->kqh + 1) & 15;
+            else set_zf(c, 0);
+        } else if (ah == 0x01) {
+            set_zf(c, 1);
+        } else {
+            c->r[X86_AX] = 0;
+        }
         return 1;
     }
     switch (ah) {
@@ -1093,6 +1110,16 @@ int main(int argc, char **argv)
                         if (shift) h.s9q[n++] = 0xAA;    /* LShift break */
                         h.s9n = n;
                         h.s9i = 0;
+                        /* tee the keystroke into the INT16 ring too, like
+                         * the SNES kb_push: a hooker that only MONITORS
+                         * INT 9 and chains to the (IRET-stub) BIOS handler
+                         * never stuffs the BDA — FreeDOS does exactly this
+                         * — so bios_kbd falls back to this ring */
+                        int nt = (h.kqt + 1) & 15;
+                        if (nt != h.kqh) {
+                            h.kq[h.kqt] = (uint16_t)((sc << 8) | ch);
+                            h.kqt = nt;
+                        }
                     }
                 }
             }
