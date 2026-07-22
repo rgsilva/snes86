@@ -115,6 +115,17 @@ _ub_norm:
     sta.b 2,x
     rep #$20
 .IFDEF BIGMEM
+.IFDEF ELKS
+    cpx.w #27                ; CS reload: stash the NAIVE base in bCSc
+    bne _ub_nocs             ; BEFORE the fold — fetch and CS-override
+    lda.b 0,x                ; folds must start from naive space
+    sta bCSc
+    sep #$20
+    lda.b 2,x
+    sta bCSc+2
+    rep #$20
+_ub_nocs:
+.ENDIF
     jmp norm_base_x          ; fold a 108-172 KB base ($80) into SRAM
 .ENDIF
     rts
@@ -129,7 +140,12 @@ upd_bCS:
 opP26: lda #24
        sta ovSEG
        jmp step_fetch
-opP2E: lda #27
+opP2E:
+.IFDEF ELKS
+       lda #bCSc             ; CS override: read via the canonical fold
+.ELSE
+       lda #27
+.ENDIF
        sta ovSEG
        jmp step_fetch
 opP36: lda #30
@@ -345,7 +361,14 @@ do_int:
     beq _di_16
     cmp #$001A
     beq _di_1A
+.IFDEF ELKS
+    cmp #$0015
+    beq _di_15
+.ENDIF
     bra _di_guest
+.IFDEF ELKS
+_di_15: jmp hle_int15
+.ENDIF
 _di_10: jmp hle_int10
 _di_11: jmp hle_int11
 _di_12: jmp hle_int12
@@ -2717,9 +2740,18 @@ io_in8:                      ; A = port(16b) -> A = byte (0-extended)
     beq _io_p61
     cmp #$0331
     beq _io_mst
+.IFDEF ELKS
+    cmp #$0064
+    beq _io_p64
+.ENDIF
 .ENDIF
     lda #$00FF
     rts
+.IFDEF ELKS
+_io_p64:                     ; KBC status: idle. $FF reads as "always
+    lda #$0000               ; busy" and ELKS's A20/8042 probe spins.
+    rts
+.ENDIF
 .IFDEF DOSBIOS
 _io_mst:
     jmp midi_stat            ; free packet slots (SNES-MIDI interface)

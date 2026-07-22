@@ -1011,6 +1011,19 @@ hle_int12:
     sta gAX
     rts
 
+.IFDEF ELKS
+hle_int15:                   ; XT answer: cassette only -> unsupported.
+    lda gAX                  ; Falling through to the IRET stub makes
+    and #$00FF               ; ELKS's A20 query (AH=24h) "succeed" with
+    ora #$8600               ; garbage; CF=1/AH=86h is what a real XT
+    sta gAX                  ; BIOS says and what ELKS expects.
+    jsr flags_norm
+    lda fSTATIC
+    ora #$0001               ; CF=1
+    sta fSTATIC
+    rts
+.ENDIF
+
 hle_int1A:
     lda gAX
     xba
@@ -1189,6 +1202,10 @@ _h13_parm:                   ; AH=08: only the fixed disk answers
     and #$00FF
     cmp #$0080
     bne _h13_bad
+.IFDEF ELKS
+    bra _h13_bad             ; ELKS variant: no fixed disk (banks 14+
+                             ; hold the kernel/ROMFS images)
+.ENDIF
     lda #$6A11               ; CH=max cyl 106, CL=spt 17 (cyl hi bits 0)
     sta gCX
     lda #$0301               ; DH=max head 3, DL=1 fixed disk present
@@ -1199,7 +1216,13 @@ _h13_read:
     and #$00FF
     cmp #$0080
     bne _h13_flp
+.IFDEF ELKS
+    jmp _h13_bad             ; no fixed disk in the ELKS variant (banks
+                             ; 14+ are the kernel/ROMFS images) — CF=1,
+                             ; AH=01, same as runpc without -d
+.ELSE
     jmp _h13_hd              ; C: fixed disk: own geometry
+.ENDIF
 _h13_flp:
 .IFDEF FSBOOT
     ; FS1 booter floppy: 40 cyl / 1 head / 8 spt. LBA = cyl*8 + sec-1
@@ -2047,6 +2070,38 @@ _rst_bs:
     sta bSS+2
     sta bDS+2
     rep #$20
+.IFDEF ELKS
+    ; ELKS ROM boot: enter the option-ROM's INT 19h handler at E000:0014
+    ; (the 55AA init at :0003 only hooks INT 19h and RETFs to a BIOS we
+    ; don't have). bCS = folded base of segment E000 = kernel ROM bank 0
+    ; at its $8000 half — what EFOLD would produce for naive $8C:5000.
+    lda #$E000
+    sta gCS
+    lda #$0014
+    sta gIP
+    lda #$8000
+    sta bCS                  ; real folded pointer for the first fetch
+    lda #$5000
+    sta bCSc                 ; NAIVE E000 base ($7E5000+E0000 = $8C:5000)
+    sep #$20
+    lda.b #EK_B0
+    sta bCS+2
+    lda.b #$8C
+    sta bCSc+2
+    rep #$20
+    ; zero the SRAM guest RAM (banks $70/$71): Mesen powers it random and
+    ; persists .srm across runs; the C-core oracle (and a sane fresh
+    ; machine) sees zeros — keeps boots deterministic and lockstep exact
+    lda #$0000
+    ldx #$0000
+_rst_zsram:
+    sta.l $700000,x
+    sta.l $710000,x
+    inx
+    inx
+    cpx #$8000
+    bcc _rst_zsram
+.ENDIF
 
 .IFNDEF BIGMEM
     ; -- B: SRAM disk ($70:0000, 32 KB, battery-backed). Format from the
@@ -2213,25 +2268,76 @@ _rst_mv:
 
     ; -- run the 8086 forever
 .IFDEF TRACE
+; ELKS traces store records in the VBUF adapter RAM ($7E1000, host-owned;
+; only the on-screen text suffers) — the DOS location $7FA000+ is guest
+; linear 84-106K and LIVE ELKS memory (init code at CS=1A40 = 105K!):
+; records and guest corrupted each other, showing phantom one-register
+; divergences. Sentinels move with them ($7E4FF8/$7E4FFA).
+.IFDEF ELKS
+.DEFINE TRB  $7E2000
+.DEFINE TRBC $7E4FF8
+.DEFINE TRBM $7E4FFA
+.ELSE
+.DEFINE TRB  $7FA000
+.DEFINE TRBC $7FFFFA
+.DEFINE TRBM $7FFFFC
+.ENDIF
     stz snapPTR
+.IFDEF ELKS
+    lda #TRACE_SKIPL         ; deep windows: 32-bit skip = H*65536 + L
+    sta tSKIP                ; (high word lives in a VBUF cell)
+    lda #TRACE_SKIPH
+    sta.l $7E4FF6
+.ELSE
     lda #TRACE_SKIP
     sta tSKIP
+.ENDIF
     lda #TRACE_COUNT
     sta stepCNT
+.IFDEF ELKS
+    lda #15000
+    sta.l $7E4FF4            ; deterministic-tick countdown (VBUF cell)
+.ENDIF
 _rst_run:
     jsr x86step
+.IFDEF ELKS
+    lda.l $7E4FF4            ; every 15000 instructions: mirror runpc's
+    dec a                    ; x86_irq exactly (IF=0 -> dropped; IF=1 ->
+    sta.l $7E4FF4            ; wake HLT + vector INT 8)
+    bne _rst_notick
+    lda #15000
+    sta.l $7E4FF4
+    lda fSTATIC
+    and #$0200
+    beq _rst_notick
+    stz gHALT
+    lda #8
+    jsr do_int
+    sty gIP
+_rst_notick:
+.ENDIF
     lda tSKIP
-    beq _rst_snap
+    beq _rst_sk0
     dec tSKIP
     bra _rst_run
+_rst_sk0:
+.IFDEF ELKS
+    lda.l $7E4FF6
+    beq _rst_snap
+    dec a
+    sta.l $7E4FF6
+    lda #$FFFF               ; consume another 65536 (this iteration + FFFF)
+    sta tSKIP
+    bra _rst_run
+.ENDIF
 _rst_snap:
     jsr dsnap
     dec stepCNT
     bne _rst_run
     lda #TRACE_COUNT
-    sta.l $7FFFFA
+    sta.l TRBC
     lda #$CAFE
-    sta.l $7FFFFC
+    sta.l TRBM
 _rst_halt:
     wai
     bra _rst_halt
@@ -2239,33 +2345,33 @@ dsnap:
     jsr flags_norm
     ldx snapPTR
     lda gAX
-    sta.l $7FA000,x
+    sta.l TRB+$00,x
     lda gCX
-    sta.l $7FA002,x
+    sta.l TRB+$02,x
     lda gDX
-    sta.l $7FA004,x
+    sta.l TRB+$04,x
     lda gBX
-    sta.l $7FA006,x
+    sta.l TRB+$06,x
     lda gSP
-    sta.l $7FA008,x
+    sta.l TRB+$08,x
     lda gBP
-    sta.l $7FA00A,x
+    sta.l TRB+$0A,x
     lda gSI
-    sta.l $7FA00C,x
+    sta.l TRB+$0C,x
     lda gDI
-    sta.l $7FA00E,x
+    sta.l TRB+$0E,x
     lda gES
-    sta.l $7FA010,x
+    sta.l TRB+$10,x
     lda gCS
-    sta.l $7FA012,x
+    sta.l TRB+$12,x
     lda gSS
-    sta.l $7FA014,x
+    sta.l TRB+$14,x
     lda gDS
-    sta.l $7FA016,x
+    sta.l TRB+$16,x
     lda gIP
-    sta.l $7FA018,x
+    sta.l TRB+$18,x
     lda fSTATIC
-    sta.l $7FA01A,x
+    sta.l TRB+$1A,x
     txa
     clc
     adc #28
@@ -2291,6 +2397,12 @@ run_slow:                    ; gas exhausted (or HLT): service and refuel
     lda #8                   ; 18.2 Hz timer tick -> guest IVT[8]
     jsr do_int
     sty gIP
+.IFDEF ELKS
+    stz gHALT                ; 8086: interrupt delivery wakes HLT. Without
+                             ; this, HLT with a tick already pending vectors
+                             ; the handler but re-parks on gHALT=1 with the
+                             ; handler's IF=0 — machine freezes mid-boot.
+.ENDIF
 _rs_nirq:
     lda s9CD                 ; hold-off pending (the NMI counts it down)
     bne _rs_n9
@@ -2326,13 +2438,25 @@ _rs_9go:
     lda #9
     jsr do_int
     sty gIP
+.IFDEF ELKS
+    stz gHALT                ; same wake rule for IRQ1 delivery
+.ENDIF
 _rs_n9:
     lda gHALT
     bne _rst_halt
     jmp step_lean
 _rst_halt:
+.IFDEF ELKS
+    wai                      ; ELKS idles in HLT with IF=1: sleep to the
+    lda fSTATIC              ; next NMI, then rejoin run_slow — it delivers
+    and #$0200               ; any pending tick/key and resumes the guest
+    beq _rst_halt            ; after the HLT. IF=0 stays parked (real hang).
+    stz gHALT
+    jmp run_slow
+.ELSE
     wai
     bra _rst_halt
+.ENDIF
 .ENDIF
 
 
@@ -4131,11 +4255,15 @@ _gs_st:
 .INCLUDE "build/kbdlayout.asm"
 
 boot_banner:
+.IFDEF ELKS
+    .db "booting...", $0D, $0A, 0
+.ELSE
     .db "snes86: 8086 core up, 108KB guest RAM", $0D, $0A
 .IFDEF PCDOS
     .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
 .ELSE
     .db "booting MS-DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0
+.ENDIF
 .ENDIF
 
 .ENDS
@@ -4273,6 +4401,43 @@ zero_w:
 .ELSE
 .DEFINE HDIMG "build/hd_free.img"
 .ENDIF
+.IFDEF ELKS
+; sneslinux: no C: hard disk — banks 14+ carry the ELKS ROM-XIP images
+; instead (local artifacts, see ../../PLAN.md in the sneslinux tree):
+;   banks 14-15 (SNES $8E-$8F) = elks_rom.bin   (64 KB kernel, XIP @ E0000)
+;   banks 16-19 (SNES $90-$93) = elks_romfs.bin (root fs window @ 80000,
+;                                <= 128 KB; the tail bank INCBINs to EOF)
+.BANK 14 SLOT 0
+.ORG 0
+.SECTION "ElksK14" FORCE
+.INCBIN "build/elks_rom.bin" SKIP 0 READ 32768
+.ENDS
+.BANK 15 SLOT 0
+.ORG 0
+.SECTION "ElksK15" FORCE
+.INCBIN "build/elks_rom.bin" SKIP 32768 READ 32768
+.ENDS
+.BANK 16 SLOT 0
+.ORG 0
+.SECTION "ElksR16" FORCE
+.INCBIN "build/elks_romfs.bin" SKIP 0 READ 32768
+.ENDS
+.BANK 17 SLOT 0
+.ORG 0
+.SECTION "ElksR17" FORCE
+.INCBIN "build/elks_romfs.bin" SKIP 32768 READ 32768
+.ENDS
+.BANK 18 SLOT 0
+.ORG 0
+.SECTION "ElksR18" FORCE
+.INCBIN "build/elks_romfs.bin" SKIP 65536 READ 32768
+.ENDS
+.BANK 19 SLOT 0
+.ORG 0
+.SECTION "ElksR19" FORCE
+.INCBIN "build/elks_romfs.bin" SKIP 98304
+.ENDS
+.ELSE
 .BANK 14 SLOT 0
 .ORG 0
 .SECTION "HDisk14" FORCE
@@ -4843,3 +5008,4 @@ zero_w:
 .SECTION "HDisk127" FORCE
 .INCBIN HDIMG SKIP 3702784 READ 22528
 .ENDS
+.ENDIF

@@ -81,6 +81,18 @@ build/dosboot_big.o: dosboot_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm bu
 build/dosboot_big.sfc: build/dosboot_big.o linkfile_big
 	$(LD) -d -s -v -c linkfile_big build/dosboot_big.sfc
 
+# sneslinux: ELKS ROM-XIP variant (not a DOS boot, hence no dosboot_ prefix).
+# build/elks_rom.bin + build/elks_romfs.bin are local artifacts (the official
+# ELKS release ROM images, or our own build) dropped in by the sneslinux
+# tree — deliberately not fetched here.
+elks: build/elks.sfc
+
+build/elks.o: elks.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm build/elks_rom.bin build/elks_romfs.bin
+	$(AS) -o build/elks.o elks.asm
+
+build/elks.sfc: build/elks.o linkfile_elks
+	$(LD) -d -s -v -c linkfile_elks build/elks.sfc
+
 # --- MS-DOS boot floppy (A:).  msdos/msdos.img is a COMMITTED, free prebuilt
 # floppy: our IO.SYS + the MIT MSDOS.SYS/COMMAND.COM + AUTOEXEC.BAT.  The public
 # build just copies it.  Regenerating IO.SYS from io.asm is a developer step
