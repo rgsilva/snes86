@@ -51,11 +51,7 @@ All captured from snes86 running in Mesen.
 </tr>
 <tr>
 <td align="center"><img src="assets/gameboy.png" width="400"><br><sub>GB.COM — a Game Boy inside DOS inside a SNES: the boot logo, four machines deep</sub></td>
-<td align="center"><img src="assets/gameboy_fade.png" width="400"><br><sub>the same logo mid-fade — GB shades through CGA's palette, wrong on purpose</sub></td>
-</tr>
-<tr>
 <td align="center"><img src="assets/tetris.png" width="400"><br><sub>Tetris® (1989) title screen — a real cartridge running on GB.COM, on the SNES</sub></td>
-<td align="center"><img src="assets/tetris_copyright.png" width="400"><br><sub>the Elorg / Bullet-Proof / Pazhitnov copyright screen, four machines deep</sub></td>
 </tr>
 </table>
 
