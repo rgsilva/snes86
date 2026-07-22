@@ -91,27 +91,6 @@ Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | what runs, and the SNES-as-MIDI-synth feature |
 | [docs/FUTURE.md](docs/FUTURE.md) | where this could go next |
 
-## Layout
-
-```
-snes/            the SNES ROM: 8086 core (cpu.asm/cpu2.asm), HLE BIOS + machine
-                 (dosboot.asm), SPC-700 MIDI synth (spc_midi.asm), build tools.
-                 `make dosboot` -> build/dosboot.sfc; `make elks` -> build/elks.sfc
-core-c/          reference 8086 core in portable C; the correctness oracle and
-                 the `runpc` host PC emulator (also builds our IO.SYS).
-msdos/           the free MS-DOS 2.0 build: our IO.SYS, boot sector, disk builder,
-                 self-hosted link toolchain.
-disks/           guest disk images + our tools' sources (large blobs gitignored).
-docs/            documentation + the original design brief.
-```
-
-## Status
-
-Developed and tested against the cycle-accurate [Mesen](https://www.mesen.ca/)
-emulator, where it boots MS-DOS (and ELKS Linux) and runs a broad library of DOS
-software (see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). Real-hardware testing is still
-pending — if you flash it to a cart, we'd love a report or a video.
-
 ## Legal & credits
 
 MS-DOS 2.0 is MIT-licensed ([microsoft/MS-DOS](https://github.com/microsoft/MS-DOS)).
@@ -128,4 +107,10 @@ build time rather than committed here; ELKS's source lives upstream.
   which derives from reenigne's 8086 microcode disassembly.
 - Inspired by Daniel Palmer's LinuxMD (Linux on the Mega Drive).
 
-Built with the help of AI.
+## Disclaimer
+
+snes86 was built for fun, with the help of AI, and is provided **AS IS** — no
+warranty of any kind, express or implied; no guarantee it is correct, complete,
+or fit for any purpose. If you flash it, run it, or build on top of it, whatever
+happens — to your cartridge, your console, your save files, or your weekend — is
+on you.
