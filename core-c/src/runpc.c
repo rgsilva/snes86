@@ -15,6 +15,11 @@
  *   -v        log the first occurrence of every INT xx/AH=yy (incl. DOS 21h)
  *   -l N      stop after N guest instructions
  *   -w        write modified disk image back to file on exit
+ *   -kdelay N hold keyboard input until step N (ELKS: login's tty open
+ *             flushes anything typed during boot)
+ *   -rom F@S  map file F read-only at segment S (hex): ELKS ROMCODE kernel
+ *             + ROMFS windows in the 1 MB space; verified unwritten on exit
+ *   -entry S:O start execution at S:O (hex) instead of the boot sector
  * Interactive keys go straight to the guest (raw mode); quit with Ctrl-].
  */
 #include <stdio.h>
@@ -63,6 +68,15 @@ typedef struct {
     uint8_t s60;             /* port 60h latch */
     uint8_t s9q[4];          /* pending make/break codes */
     int s9n, s9i;
+    /* keyboard hold-off + jump-proof pump threshold (HLT idling makes
+     * steps skip forward, so "steps & mask == 0" gates can miss);
+     * s9next spaces INT9 deliveries so the guest ISR can't re-enter
+     * itself at its post-sti tail (the SNES side's s9CD, host edition) */
+    unsigned long long kdelay, next_pump, s9next;
+    int tickstep;            /* instructions per timer tick (-tick) */
+    /* -rom: read-only blobs mapped into the 1 MB space (ELKS ROMCODE) */
+    struct { const char *path; uint32_t base, len, sum; } rom[4];
+    int nrom;
     struct timeval t0;
 } Harness;
 
@@ -80,6 +94,9 @@ static uint8_t io_in8(X86 *c, uint16_t port)
     }
     if (port == 0x60 && g_h) return g_h->s60;    /* keyboard scancode latch */
     if (port == 0x61) return 0;                  /* 8255 port B */
+    if (port == 0x64) return 0;                  /* KBC status: idle. 0xFF reads
+                                                  * as "always busy" and ELKS's
+                                                  * A20/8042 probe spins forever */
     return 0xFF;
 }
 static int g_trace = 0;   /* -T: freeze INT 1Ah ticks for lockstep traces */
@@ -678,6 +695,13 @@ static int bios_hook(X86 *c, int n)
     case 0x11: c->r[X86_AX] = EQUIPMENT; return 1;
     case 0x12: c->r[X86_AX] = (uint16_t)h->mem_kb; return 1;
     case 0x13: return bios_disk(c, h);
+    case 0x15:                     /* XT BIOS: cassette only -> unsupported.
+                                    * Unhandled it vectors to the IRET stub and
+                                    * ELKS's A20 query (AH=24h) "succeeds" with
+                                    * garbage. CF=1/AH=86h is the real XT answer. */
+        sah(c, 0x86);
+        set_cf(c, 1);
+        return 1;
     case 0x16: return bios_kbd(c, h);
     case 0x19:
         h->exit_flag = 1;
@@ -797,11 +821,14 @@ int main(int argc, char **argv)
     memset(&h, 0, sizeof h);
     h.peek = -1;
     h.mem_kb = 256;
+    h.tickstep = 15000;
     h.cols = 80;
     h.vmode = 3;
     const char *img = NULL, *hdimg = NULL;
     long long limit = 0;
     int writeback = 0, trace = 0;
+    int entry_set = 0;
+    unsigned entry_cs = 0, entry_ip = 0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc)      h.mem_kb = atoi(argv[++i]);
@@ -812,30 +839,62 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-w"))                 writeback = 1;
         else if (!strcmp(argv[i], "-d") && i + 1 < argc) hdimg = argv[++i];
         else if (!strcmp(argv[i], "-cga") && i + 1 < argc) h.cga_out = argv[++i];
+        else if (!strcmp(argv[i], "-tick") && i + 1 < argc)
+            h.tickstep = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "-kdelay") && i + 1 < argc)
+            h.kdelay = (unsigned long long)atoll(argv[++i]);
+        else if (!strcmp(argv[i], "-rom") && i + 1 < argc) {
+            char *at = strchr(argv[++i], '@');
+            if (!at || h.nrom >= 4) {
+                fprintf(stderr, "-rom wants FILE@HEXSEG (max 4)\n");
+                return 2;
+            }
+            *at = 0;
+            h.rom[h.nrom].path = argv[i];
+            h.rom[h.nrom].base = (uint32_t)strtoul(at + 1, NULL, 16) << 4;
+            h.nrom++;
+        }
+        else if (!strcmp(argv[i], "-entry") && i + 1 < argc) {
+            unsigned s, o;
+            if (sscanf(argv[++i], "%x:%x", &s, &o) != 2) {
+                fprintf(stderr, "-entry wants HEXSEG:HEXOFF\n");
+                return 2;
+            }
+            entry_cs = s; entry_ip = o; entry_set = 1;
+        }
         else if (argv[i][0] != '-')                      img = argv[i];
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
-    if (!img) {
-        fprintf(stderr, "usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] image.img\n");
+    if (!img && !entry_set) {
+        fprintf(stderr, "usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] "
+                        "[-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] image.img\n");
         return 2;
     }
 
-    FILE *f = fopen(img, "rb");
-    if (!f) { perror(img); return 1; }
-    fseek(f, 0, SEEK_END);
-    h.disksz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    h.disk = malloc((size_t)h.disksz);
-    if (!h.disk || fread(h.disk, 1, (size_t)h.disksz, f) != (size_t)h.disksz) {
-        fprintf(stderr, "failed to read %s\n", img);
-        return 1;
+    if (img) {
+        FILE *f = fopen(img, "rb");
+        if (!f) { perror(img); return 1; }
+        fseek(f, 0, SEEK_END);
+        h.disksz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        h.disk = malloc((size_t)h.disksz);
+        if (!h.disk || fread(h.disk, 1, (size_t)h.disksz, f) != (size_t)h.disksz) {
+            fprintf(stderr, "failed to read %s\n", img);
+            return 1;
+        }
+        fclose(f);
+    } else {
+        /* -entry with no floppy (ELKS ROMFS boots diskless): blank 360K
+         * so stray INT 13h reads return zeros instead of crashing */
+        h.disksz = 368640;
+        h.disk = calloc(1, (size_t)h.disksz);
     }
-    fclose(f);
     if (disk_geometry(&h)) {
-        fprintf(stderr, "%s: unsupported image size %ld\n", img, h.disksz);
+        fprintf(stderr, "%s: unsupported image size %ld\n",
+                img ? img : "(blank)", h.disksz);
         return 1;
     }
-    if (h.disk[510] != 0x55 || h.disk[511] != 0xAA)
+    if (img && (h.disk[510] != 0x55 || h.disk[511] != 0xAA))
         fprintf(stderr, "warning: boot sector lacks 55AA signature\n");
 
     if (hdimg) {                       /* fixed disk: 17 spt, 4 heads */
@@ -868,13 +927,47 @@ int main(int argc, char **argv)
     c->ctx = &h;
     guest_bios_setup(c, &h);
 
-    /* boot: sector 0 -> 0000:7C00, jump there with DL = drive */
-    memcpy(c->mem + 0x7C00, h.disk, 512);
-    c->sr[X86_CS] = 0x0000;
-    c->ip = 0x7C00;
-    c->sr[X86_SS] = 0x0000;
-    c->r[X86_SP] = 0x7C00;
-    c->r[X86_DX] = 0x0000;                       /* DL = drive A: */
+    /* -rom blobs into the flat 1 MB space (read-only by contract: the C
+     * core can't trap writes, so a checksum is re-verified at exit) */
+    for (int i = 0; i < h.nrom; i++) {
+        FILE *rf = fopen(h.rom[i].path, "rb");
+        if (!rf) { perror(h.rom[i].path); return 1; }
+        fseek(rf, 0, SEEK_END);
+        long rl = ftell(rf);
+        fseek(rf, 0, SEEK_SET);
+        if (rl <= 0 || h.rom[i].base + (uint32_t)rl > (1u << 20)) {
+            fprintf(stderr, "%s: doesn't fit below 1 MB at %05X\n",
+                    h.rom[i].path, h.rom[i].base);
+            return 1;
+        }
+        if (fread(c->mem + h.rom[i].base, 1, (size_t)rl, rf) != (size_t)rl) {
+            fprintf(stderr, "failed to read %s\n", h.rom[i].path);
+            return 1;
+        }
+        fclose(rf);
+        h.rom[i].len = (uint32_t)rl;
+        uint32_t s = 0;
+        for (uint32_t j = 0; j < h.rom[i].len; j++)
+            s = s * 31 + c->mem[h.rom[i].base + j];
+        h.rom[i].sum = s;
+    }
+
+    if (entry_set) {
+        /* ROM image entry (ELKS CONFIG_ROMCODE setup segment) */
+        c->sr[X86_CS] = (uint16_t)entry_cs;
+        c->ip = (uint16_t)entry_ip;
+        c->sr[X86_SS] = 0x0000;
+        c->r[X86_SP] = 0x7C00;
+        c->r[X86_DX] = 0x0000;
+    } else {
+        /* boot: sector 0 -> 0000:7C00, jump there with DL = drive */
+        memcpy(c->mem + 0x7C00, h.disk, 512);
+        c->sr[X86_CS] = 0x0000;
+        c->ip = 0x7C00;
+        c->sr[X86_SS] = 0x0000;
+        c->r[X86_SP] = 0x7C00;
+        c->r[X86_DX] = 0x0000;                   /* DL = drive A: */
+    }
 
     h.tty = isatty(0);
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -887,8 +980,12 @@ int main(int argc, char **argv)
     while (!h.exit_flag && !g_stop) {
         x86_step(c);
         h.steps++;
-        if (h.steps % 15000 == 0)
-            x86_irq(c, 8);           /* 18.2 Hz timer tick (if IF set) */
+        if (h.steps % h.tickstep == 0)
+            x86_irq(c, 8);           /* timer tick (if IF set). Under -T this
+                                      * is DETERMINISTIC lockstep state: the
+                                      * ELKS TRACE build mirrors x86_irq on
+                                      * the same instruction count. -tick N
+                                      * changes the cadence. */
         if ((h.steps & 0xFFF) == 0) {
             /* keep the BDA tick count live (TP polls 40:6C directly).
              * Step-derived, not wall-clock: at ~200 MIPS a wall-clock
@@ -900,29 +997,38 @@ int main(int argc, char **argv)
             c->mem[0x46E] = (uint8_t)(tk >> 16);
             c->mem[0x46F] = (uint8_t)(tk >> 24);
         }
-        if ((h.steps & 0x3FFF) == 0) {
-            /* INT9 scancode pump: when the guest hooks INT 9 (IVT no
-             * longer our 0000:04F0 stub), stdin chars become make+break
-             * scancodes latched at port 60h and delivered as IRQ1.
-             * (INT16-polite programs keep the bios_kbd path instead.) */
+        if (h.steps >= h.next_pump) {
+            h.next_pump = h.steps + 16384;
+            /* INT9 scancode pump (refill half): when the guest hooks INT 9
+             * (IVT no longer our 0000:04F0 stub), stdin chars become
+             * make+break scancodes queued in s9q. (INT16-polite programs
+             * keep the bios_kbd path instead.) -kdelay holds input during
+             * boot (ELKS flushes the tty at login). */
             uint32_t v9;
             memcpy(&v9, &c->mem[9 * 4], 4);
-            if (v9 != 0x000004F0u) {
-                if (h.s9i >= h.s9n && kb_poll(&h)) {
-                    uint8_t sc = scancode((uint8_t)h.peek);
-                    h.peek = -1;
-                    if (sc) {
-                        h.s9q[0] = sc;
-                        h.s9q[1] = (uint8_t)(sc | 0x80);
-                        h.s9n = 2;
-                        h.s9i = 0;
-                    }
-                }
-                if (h.s9i < h.s9n && (c->flags & 0x0200)) {
-                    h.s60 = h.s9q[h.s9i++];
-                    x86_irq(c, 9);
+            if (v9 != 0x000004F0u && h.steps >= h.kdelay
+                && h.s9i >= h.s9n && kb_poll(&h)) {
+                uint8_t sc = scancode((uint8_t)h.peek);
+                h.peek = -1;
+                if (sc) {
+                    h.s9q[0] = sc;
+                    h.s9q[1] = (uint8_t)(sc | 0x80);
+                    h.s9n = 2;
+                    h.s9i = 0;
                 }
             }
+        }
+        /* delivery half, every iteration: hand over a queued code at the
+         * first IF=1 instruction. Delivering only at pump time starves an
+         * HLT-idling guest — the fast-forward jump pins pump fires to the
+         * post-wake IRQ-handler entry, where IF is systematically 0.
+         * The 5000-step spacing keeps a second code from re-entering the
+         * guest ISR at its post-sti tail before the first char reaches
+         * the tty queue (all codes "delivered", none surviving). */
+        if (h.s9i < h.s9n && (c->flags & 0x0200) && h.steps >= h.s9next) {
+            h.s60 = h.s9q[h.s9i++];
+            h.s9next = h.steps + 5000;
+            x86_irq(c, 9);
         }
         if (trace && h.steps <= (unsigned)trace)
             fprintf(stderr, "T %04X %04X %04X %04X %04X %04X %04X %04X "
@@ -930,7 +1036,21 @@ int main(int argc, char **argv)
                     c->r[0], c->r[1], c->r[2], c->r[3], c->r[4], c->r[5],
                     c->r[6], c->r[7], c->sr[0], c->sr[1], c->sr[2],
                     c->sr[3], c->ip, c->flags);
-        if (c->halted) { h.exit_reason = "guest HLT"; break; }
+        if (c->halted) {
+            /* ELKS idles in HLT with IF=1 — skip ahead to the next timer
+             * tick and wake it. HLT with IF=0 is a genuine hang: exit
+             * (preserves the old behavior for crashed boot sectors).
+             * Under -T stay frozen: the SNES TRACE build has no ticks. */
+            if (g_trace) {
+                /* deterministic trace: a halted CPU burns steps one at a
+                 * time (each = one identical trace line, matching the SNES
+                 * TRACE build's no-op x86step) until the tick wakes it */
+            } else {
+                if (!(c->flags & 0x0200)) { h.exit_reason = "guest HLT (IF=0)"; break; }
+                h.steps += 15000 - (h.steps % 15000);
+                x86_irq(c, 8);
+            }
+        }
         if (limit && h.steps >= (unsigned long long)limit) {
             h.exit_reason = "step limit";
             break;
@@ -943,11 +1063,22 @@ int main(int argc, char **argv)
     cga_dump(c, &h);                 /* -cga: keep the final graphics frame */
     print_stats(c, &h);
 
-    if (writeback && h.disk_dirty) {
-        f = fopen(img, "wb");
-        if (f) {
-            fwrite(h.disk, 1, (size_t)h.disksz, f);
-            fclose(f);
+    /* the -rom read-only contract: a well-behaved ROMCODE guest never
+     * writes its ROM windows; flag it loudly if this one did */
+    for (int i = 0; i < h.nrom; i++) {
+        uint32_t s = 0;
+        for (uint32_t j = 0; j < h.rom[i].len; j++)
+            s = s * 31 + c->mem[h.rom[i].base + j];
+        if (s != h.rom[i].sum)
+            fprintf(stderr, "WARNING: guest WROTE to ROM region %s@%05X\n",
+                    h.rom[i].path, h.rom[i].base);
+    }
+
+    if (writeback && h.disk_dirty && img) {
+        FILE *wf = fopen(img, "wb");
+        if (wf) {
+            fwrite(h.disk, 1, (size_t)h.disksz, wf);
+            fclose(wf);
             fprintf(stderr, "disk image written back\n");
         }
     }
