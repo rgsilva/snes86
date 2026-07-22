@@ -92,6 +92,48 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   kernel and apps executing in place from cart ROM on the BIGMEM machine (see
   [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
   BIGMEM speedups above a real customer: the ELKS boot pays the seam tax in full.
+- **FreeDOS 1.3 — proven on the core, waiting on a boot disk.** The official
+  720 KB floppy edition boots on `runpc` all the way to FreeCOM and the installer
+  prompt at `-m 172` — the BIGMEM machine's exact size (108 KB is too small: the
+  kernel dies during init). The kernel is 8086-clean and everything is GPL, so a
+  ROM could ship it. What the SNES port needs: a 360 KB FreeDOS boot disk (kernel
+  ~46 KB + FreeCOM fit trivially; the FAT12 boot sector's BPB needs re-patching
+  from 80×2×9 to 40×2×9), built into A: the way `msdos_a.img` is today, on a
+  BIGMEM base. The HLT wake rule (now in every build) covers FreeDOS's `IDLEHALT`.
+
+## Windows 1.01 — the next milestone
+
+Windows 3.0 is out of reach and stays out: its real mode — already the
+low-memory fallback — wants 640 KB installed / 384 KB free and DOS 3.1+, more
+than twice anything this cart can back (see the RAM levers above; even wiring
+every theoretical LoROM SRAM bank stays emulator-only fantasy). Windows 2.03
+(512 KB, DOS 3.0) sits on the same wrong side of the wall.
+
+**Windows 1.01 is a different story: 8088, 256 KB, CGA, DOS 2.0 — the exact DOS
+we already boot.** The plan, in ELKS-playbook order:
+
+1. **Prove it on runpc first**: `runpc -m 256` with Win 1.01 media (BYO — it's
+   still copyrighted, so like the dev C: it can never ship in a public ROM),
+   inventory what it actually touches (INT usage via `-v`, direct B800 access,
+   DOS calls).
+2. **Grow the guest past 172 KB**: wire SRAM banks `$72/$73` the same way
+   `$70/$71` back BIGMEM today — the cart header already declares 128 KB — for
+   236 KB; a 192 KB-SRAM emulator config (300 KB) clears the floor with room.
+   Real-cart plausibility ends around 128 KB SRAM, so this may stay a
+   Mesen-first milestone (like BIGMEM before it).
+3. **True 640×200 mode 6** (also listed under graphics above): Windows 1.x
+   draws CGA hi-res only. SNES mode 5 gives 512 wide; pan the rest like the
+   80-column text trick.
+4. **Survive the read-only C:** — WIN.INI writes fail; patch or shim (the B:
+   SRAM disk exists for exactly this kind of thing on non-BIGMEM builds, but
+   BIGMEM eats B:, so Windows' writable bits may need an INT 21h-level detour
+   or just tolerated failures).
+5. **SNES Mouse → INT 33h** (optional, delightful): the SNES Mouse exists, the
+   auto-read port is already polled, and Windows 1.x is fully usable without it
+   in the meantime.
+
+At 0.05–0.1× XT, MS-DOS Executive should paint in single-digit minutes —
+ELKS-boot territory, well inside the "it booted" bar below.
 
 ## Nested emulation (an emulator on the emulator)
 
