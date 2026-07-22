@@ -315,6 +315,21 @@ subdirs = [
     ("USER", user_files),
 ]
 
+# GB.COM (gbdos/, our own code) + CC0 Bootix boot ROMs + homebrew carts:
+# all freely redistributable, so the public C: gets them when built.
+GBD = os.path.join(DISKS, "..", "gbdos")
+if os.path.exists(os.path.join(GBD, "build", "GB.COM")):
+    gbfiles = [("GB.COM",
+                open(os.path.join(GBD, "build", "GB.COM"), "rb").read())]
+    for fn, rel in (("SMOKE.GB", ("build", "smoke.gb")),
+                    ("JOY.GB", ("build", "joy.gb")),
+                    ("DMGBOOT.BIN", ("roms", "dmg_boot_fast.bin")),
+                    ("DMGSLOW.BIN", ("roms", "dmg_boot.bin"))):
+        p = os.path.join(GBD, *rel)
+        if os.path.exists(p):
+            gbfiles.append((fn, open(p, "rb").read()))
+    subdirs.append(("GB", gbfiles))
+
 # ---- build the image (same layout math as mkhd.py) ----
 img = bytearray(TOTAL * 512)
 

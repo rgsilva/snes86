@@ -35,6 +35,20 @@ else
   FAIL=1
 fi
 
+echo "== gb smoke (GB.COM boot ROM -> cart handoff on C:) =="
+if [ -f ../gbdos/build/GB.COM ]; then
+  if printf 'cd gb\rgb -b -t smoke.gb\r' \
+       | ../core-c/build/runpc -m 108 -l 2500000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
+       | grep -q "SM83 ALIVE C=1"; then
+    echo "PASS gb-smoke"
+  else
+    echo "FAIL gb-smoke"
+    FAIL=1
+  fi
+else
+  echo "SKIP gb-smoke (gbdos not built)"
+fi
+
 TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_midi"
 [ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
 
