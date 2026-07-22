@@ -267,29 +267,6 @@ subdirs = [
                [(cn, cd) for cn, cd, _, _ in inf_games]),
 ]
 
-# GB.COM - the Game Boy emulator (gbdos/), when built: emulator + boot ROM
-# + homebrew test carts, plus any .gb the user drops in disks/gb/.
-GBD = os.path.join(DISKS, "..", "gbdos")
-if os.path.exists(os.path.join(GBD, "build", "GB.COM")):
-    gbfiles = [("GB.COM",
-                open(os.path.join(GBD, "build", "GB.COM"), "rb").read())]
-    for fn, rel in (("SMOKE.GB", ("build", "smoke.gb")),
-                    ("JOY.GB", ("build", "joy.gb")),
-                    # fast-paced boot ROM: same logo, short waits - at
-                    # snes86 speed the authentic pacing takes ~30 min
-                    ("DMGBOOT.BIN", ("roms", "dmg_boot_fast.bin")),
-                    ("DMGSLOW.BIN", ("roms", "dmg_boot.bin"))):
-        p = os.path.join(GBD, *rel)
-        if os.path.exists(p):
-            gbfiles.append((fn, open(p, "rb").read()))
-    gd = os.path.join(DISKS, "gb")
-    if os.path.isdir(gd):
-        for fn in sorted(os.listdir(gd)):
-            if fn.lower().endswith(".gb"):
-                gbfiles.append((fn.upper(),
-                                open(os.path.join(gd, fn), "rb").read()))
-    subdirs.append(("GB", gbfiles))
-
 # ---- build the image
 img = bytearray(TOTAL * 512)
 

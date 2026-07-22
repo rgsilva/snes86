@@ -67,14 +67,14 @@ All captured from snes86 running in Mesen.
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / BENCH / HELLO / CGATEST | ✅ shipped | our benchmarks + demos, with source |
-| | GB.COM | ✅ tested | our Game Boy emulator ([`gbdos/`](../gbdos)): Blargg's cpu_instrs 11/11, dmg-acid2 ~90%, boot-ROM logo above |
+| | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
 | Applications | WordStar 3.31 | ✅ tested | full-screen editor, overlays load from C: |
 | | Multiplan | ✅ tested | spreadsheet grid, `.LOD`/`.SYS` overlays |
 | Interactive fiction | Zork I–III, Planetfall, Leather Goddesses, Hitchhiker's Guide, Wishbringer | ✅ tested | Infocom's later 8086 interpreter |
 | Games | Rogue | ✅ tested* | *needs BIGMEM (see [Memory](#memory)) |
-| | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* GB.COM — playable on the host core, title screen captured on the SNES |
+| | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* [GB.COM](https://github.com/rgsilva/gameboy8086) — playable on the host core, title screen captured on the SNES |
 | | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make fs`), not a DOS program |
 | Benchmarks | Norton SI, CPUBENCH | ✅ tested | CPU/system info + timing loops |
 

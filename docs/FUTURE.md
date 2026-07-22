@@ -113,20 +113,16 @@ headless minutes (or hours) to paint one frame. Under that bar:
   Text-only, so CGA/MDA and RAM are fine. Interactive speed is glacial (~1/100
   real Z80), so it's a "boots and runs a command" trophy, not a daily driver.
 
-- **Game Boy — landed (`gbdos/`).** The payoff happened: the **Nintendo®
-  boot logo**, rendered by a real (CC0) boot ROM on our from-scratch
-  real-mode SM83 core, inside DOS, inside the SNES — the shot is in the
-  [compatibility gallery](COMPATIBILITY.md#gallery). `GB.COM` (8086
-  assembly) passes all 11 Blargg cpu_instrs ROMs and renders dmg-acid2
-  ~90% correct (BG + window + sprites with per-scanline register
-  logging); joypad works via INT 9. The whole GB address space sits flat
-  in one 8086 segment and fits the **default build** — no BIGMEM after
-  all. No-MBC **32 KB** carts only (drop one in `disks/gb/` locally and
-  it lands on `C:\GB`). Tetris runs: playable on the host core, and its
-  title + copyright screens are captured from the SNES build in the
-  [gallery](COMPATIBILITY.md#gallery). GB.COM + the homebrew carts ship
-  in the free public ROM. Still open: the deliberately absurd stretch of
-  assembling GB.COM *inside* the emulated PC with MS-DOS 2.0's own MASM.
+- **Game Boy — landed, then graduated.** The payoff happened here: the
+  **Nintendo® boot logo** and the **Tetris® title screen**, rendered by
+  our from-scratch real-mode SM83 core inside DOS inside the SNES — the
+  shots are in the [compatibility gallery](COMPATIBILITY.md#gallery).
+  The emulator now lives as its own project,
+  [gameboy8086](https://github.com/rgsilva/gameboy8086): pure 8086
+  assembly, Blargg cpu_instrs 11/11 (verified independently under
+  DOSBox-X locked to a real 8086 CPU model), dmg-acid2 ~90%. It still
+  runs on snes86 the bring-your-own-software way: build `GB.COM` there
+  and drop it plus a 32 KB cart into `userware/`.
 
 Noted, but not greenlit:
 
