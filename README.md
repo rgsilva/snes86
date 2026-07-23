@@ -49,9 +49,7 @@ prompt on a Super Nintendo. How the ROM-execute-in-place machine works is in
 [docs/INTERNALS.md](docs/INTERNALS.md#booting-linux-the-elks-machine).
 
 There's also a [FreeDOS 1.3 build](docs/COMPATIBILITY.md#freedos-on-the-snes)
-(`make freedos`), and — as a proof of concept on the reference core —
-[Windows 1.01 booting to the MS-DOS Executive](docs/COMPATIBILITY.md#windows-101--proof-of-concept),
-Reversi and all.
+(`make freedos`).
 
 ## How do we know it's correct?
 

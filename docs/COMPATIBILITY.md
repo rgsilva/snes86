@@ -72,7 +72,6 @@ All captured from snes86 running in Mesen.
 | | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — see [Linux on the SNES](#linux-on-the-snes-elks) |
 | | FreeDOS 1.3 | ✅ shipped | its own ROM (`make freedos`, BIGMEM): kernel + FreeCOM to `A:\>`, runs the C: tools — see [FreeDOS on the SNES](#freedos-on-the-snes) |
 | | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
-| GUI | Windows 1.01 / 1.04 | 🧪 proof of concept | boots to the **MS-DOS Executive** on the reference core; Reversi and the applets run — see [Windows on the SNES](#windows-101--proof-of-concept). SNES-side pending (renderer + RAM) |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / BENCH / HELLO / CGATEST | ✅ shipped | our benchmarks + demos, with source |
@@ -134,34 +133,6 @@ init at 108 KB, measured on the host core first).
 - **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release
   (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM
   into a 360 KB boot floppy. See [freedos/README.md](../freedos/README.md).
-
-## Windows 1.01 — proof of concept
-
-Yes, that Windows. Under MS-DOS 2.0, **Windows 1.01 (and 1.04) boots all the way to
-the MS-DOS Executive** — the real GUI — and the applets run.
-
-<table>
-<tr>
-<td align="center"><img src="assets/windows.png" width="440"><br><sub>MS-DOS Executive — the Windows 1.01 shell, CGA 640×200</sub></td>
-<td align="center"><img src="assets/windows_reversi.png" width="440"><br><sub>Reversi, a real Windows application, running</sub></td>
-</tr>
-</table>
-
-The honest caveats, because this one is not shipped:
-
-- **These shots are from the reference core (`runpc`), not the SNES.** The C core is
-  bit-identical to the 65C816 core (that's what parity testing proves), and the HLE
-  BIOS surface it uses is the same one the SNES ROM has — no missing interrupt was
-  hit — so the CPU and machine are proven sufficient. But the SNES-side renderer
-  still draws CGA mode 6 (640×200) squashed as mode 4, so a real ROM would show the
-  GUI horizontally wrong until that lands (M10p6 in [FUTURE.md](FUTURE.md)).
-- **Memory is one kilobyte short.** The measured floor is 237 KB; the SNES's
-  realistic ceiling is 236 KB (108 KB WRAM + a full 128 KB SRAM). Closing that gap
-  (run `WIN.COM` as the DOS shell to drop resident `COMMAND.COM`) is the milestone's
-  known-hard step. See the [Windows 1.01 milestone](FUTURE.md#windows-101--proof-of-concept-done-fit--renderer-next).
-- **Windows is copyrighted**, so nothing Microsoft is committed — no disk images, no
-  binaries, bring-your-own like the dev C:. These screenshots are our own captures of
-  the emulator running, exactly like the WordStar and Multiplan shots above.
 
 ## Linux on the SNES (ELKS)
 
