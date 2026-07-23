@@ -100,7 +100,7 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   arena is tight: FreeCOM stays fully resident without XMS, so big .COMs won't
   fit — the growth path is the same SRAM-bank lever as Windows 1.01 below.
 
-## Windows 1.01 — the next milestone
+## Windows 1.01 — proof of concept done, fit + renderer next
 
 Windows 3.0 is out of reach and stays out: its real mode — already the
 low-memory fallback — wants 640 KB installed / 384 KB free and DOS 3.1+, more
