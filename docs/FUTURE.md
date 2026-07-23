@@ -109,30 +109,45 @@ every theoretical LoROM SRAM bank stays emulator-only fantasy). Windows 2.03
 (512 KB, DOS 3.0) sits on the same wrong side of the wall.
 
 **Windows 1.01 is a different story: 8088, 256 KB, CGA, DOS 2.0 — the exact DOS
-we already boot.** The plan, in ELKS-playbook order:
+we already boot. Step 1 is done, and it worked better than hoped.**
 
-1. **Prove it on runpc first**: `runpc -m 256` with Win 1.01 media (BYO — it's
-   still copyrighted, so like the dev C: it can never ship in a public ROM),
-   inventory what it actually touches (INT usage via `-v`, direct B800 access,
-   DOS calls).
-2. **Grow the guest past 172 KB**: wire SRAM banks `$72/$73` the same way
-   `$70/$71` back BIGMEM today — the cart header already declares 128 KB — for
-   236 KB; a 192 KB-SRAM emulator config (300 KB) clears the floor with room.
-   Real-cart plausibility ends around 128 KB SRAM, so this may stay a
-   Mesen-first milestone (like BIGMEM before it).
-3. **True 640×200 mode 6** (also listed under graphics above): Windows 1.x
-   draws CGA hi-res only. SNES mode 5 gives 512 wide; pan the rest like the
-   80-column text trick.
-4. **Survive the read-only C:** — WIN.INI writes fail; patch or shim (the B:
-   SRAM disk exists for exactly this kind of thing on non-BIGMEM builds, but
-   BIGMEM eats B:, so Windows' writable bits may need an INT 21h-level detour
-   or just tolerated failures).
-5. **SNES Mouse → INT 33h** (optional, delightful): the SNES Mouse exists, the
-   auto-read port is already polled, and Windows 1.x is fully usable without it
+Both Windows **1.01 and 1.04** boot all the way to a working **MS-DOS
+Executive** — the real GUI, in CGA mode 6 (640×200) — on `runpc` (the C
+reference core, bit-identical to the SNES 65816 core, under MS-DOS 2.0 with a
+Windows install on C:). Menus, drive icons, the file listing, keyboard
+navigation: all there. The HLE BIOS surface (INT 10h/11h/12h/13h/16h/1Ah + the
+B800 framebuffer) is sufficient as-is; no missing interrupt was hit. So the
+CPU and the machine are proven — what's left is SNES-specific plumbing:
+
+1. **Memory — the tight part.** The measured floor is **237 KB**: at 236 KB the
+   `WIN` loader dies with "Program too big to fit in memory," at 237 KB the
+   Executive comes up. The SNES's realistic ceiling is **236 KB** (108 KB WRAM +
+   a full 128 KB SRAM, which the cart header already declares — today only 64 KB
+   is wired, banks `$72/$73` are the lever). That is *one kilobyte short* in the
+   naive layout. The kilobyte is recoverable: running `WIN.COM` as the DOS
+   `SHELL` drops resident `COMMAND.COM` (~2.6 KB) and clears 236 KB with room —
+   the catch is that Windows 1.x locates its startup files via the *current
+   directory*, so a `SHELL=` launch (CWD = boot-drive root) fails with "Cannot
+   find Windows startup files" until the install is laid out so the root is the
+   Windows directory. That layout work is the milestone's known-hard step.
+   (A 192 KB-SRAM *emulator* config — 300 KB guest — clears it trivially for a
+   Mesen-first demo, like BIGMEM before it.)
+2. **True 640×200 mode 6** (also under graphics above): Windows draws CGA hi-res,
+   and the host renders it at full 640; the SNES side still renders mode 6
+   squashed as mode 4 (see M10p6). SNES mode 5 gives 512 wide — pan the rest like
+   the 80-column text trick. Until then the GUI would show, but horizontally
+   wrong.
+3. **Survive the read-only C:** — Windows writes `WIN.INI` and temp files at
+   runtime; patch or shim them (BIGMEM eats the B: SRAM disk, so the writable
+   bits need an INT 21h-level detour or tolerated failures).
+4. **SNES Mouse → INT 33h** (optional, delightful): the SNES Mouse exists, the
+   auto-read port is already polled, and the Executive is fully keyboard-drivable
    in the meantime.
 
-At 0.05–0.1× XT, MS-DOS Executive should paint in single-digit minutes —
-ELKS-boot territory, well inside the "it booted" bar below.
+Speed: reaching the Executive is ~2–3 M guest instructions, so at snes86's
+~0.05–0.1× XT that's on the order of a minute or two — ELKS-boot territory, well
+inside the "it booted" bar below. (Windows media is copyrighted, so like the dev
+C: it can never ship in a public ROM — this stays a bring-your-own build.)
 
 ## Nested emulation (an emulator on the emulator)
 
