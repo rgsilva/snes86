@@ -63,9 +63,9 @@ jobs:
       # PCX decode path.
       - name: Smoke test — VIEW.COM paints the test cards
         run: |
-          printf '\r\rc:\rcd \\pics\rview card.bmp\rx\r' | core-c/build/runpc -c -l 3000000000 \
+          printf '\r\rc:\rcd \\view\rview card.bmp\rx\r' | core-c/build/runpc -c -l 3000000000 \
             -m 108 -d snes/build/hd_free.img -cga view.ppm msdos/msdos.img >/dev/null
-          printf '\r\rc:\rcd \\pics\rview card.pcx\rx\r' | core-c/build/runpc -c -l 3000000000 \
+          printf '\r\rc:\rcd \\view\rview card.pcx\rx\r' | core-c/build/runpc -c -l 3000000000 \
             -m 108 -d snes/build/hd_free.img -cga viewp.ppm msdos/msdos.img >/dev/null
           python3 -c 'd=open("view.ppm","rb").read().split(b"\n",3); w,h=map(int,d[1].split()); p=d[3]; assert (w,h)==(640,200); r=lambda y:[p[(y*640+x)*3] for x in range(0,640,7)]; assert max(r(5))==0; assert 0 in r(100) and 255 in r(100); assert open("viewp.ppm","rb").read()==open("view.ppm","rb").read(); print("VIEW OK")'
 

@@ -78,7 +78,7 @@ typedef struct {
      * steps skip forward, so "steps & mask == 0" gates can miss);
      * s9next spaces INT9 deliveries so the guest ISR can't re-enter
      * itself at its post-sti tail (the SNES side's s9CD, host edition) */
-    unsigned long long kdelay, next_pump, s9next;
+    unsigned long long kdelay, next_pump, s9next, next_key;
     int tickstep;            /* instructions per timer tick (-tick) */
     int pending_irq;         /* IRQ refused by the interrupt shadow (or by
                               * IF=0), retried each step; -1 = none */
@@ -564,6 +564,14 @@ static int kb_poll(Harness *h)
         return 1;
     if (h->eof)
         return 0;
+    if (!h->tty && h->steps < h->next_key)
+        return 0;               /* meter piped input to typing speed: a
+                                 * pipe otherwise looks like an instant
+                                 * burst and a type-ahead flush (TP3's
+                                 * startup) drains the whole script. The
+                                 * hooked-INT9 pump already meters at one
+                                 * key per 16384 steps; match it here for
+                                 * INT16-polite guests (our own IO.SYS). */
     fd_set fds;
     struct timeval tv = { 0, 0 };
     FD_ZERO(&fds);
@@ -577,6 +585,7 @@ static int kb_poll(Harness *h)
         return 0;
     }
     h->peek = kb_xlate(b);
+    h->next_key = h->steps + 16384;
     return 1;
 }
 

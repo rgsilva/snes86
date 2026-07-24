@@ -7,6 +7,7 @@ Layout: corner checkerboards, a vertical luminance gradient field, a
 central disc with rings, colour bars (exercises the mode-4 mapper), and
 1/2/4-pixel gratings across the bottom (exercises true 640-wide mode 6).
 """
+import os
 import struct
 import sys
 
@@ -121,6 +122,7 @@ for i in range(248):
     pcx += bytes((v, v, v))
 for r, g, b in BARS:
     pcx += bytes((r, g, b))
-pcxpath = sys.argv[1].replace("card.bmp", "card.pcx")
+stem, ext = os.path.splitext(sys.argv[1])
+pcxpath = stem + (".PCX" if ext.isupper() else ".pcx")
 open(pcxpath, "wb").write(pcx)
 print(f"card.pcx: {len(pcx)} bytes")

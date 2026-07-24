@@ -1,0 +1,3 @@
+PATH C:\;C:\DOS;C:\TED
+PROMPT $P$G
+C:

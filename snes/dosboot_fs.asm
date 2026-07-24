@@ -3,5 +3,5 @@
 ; instead of PC DOS. Same machine otherwise; FS1 replaces DOS entirely.
 ; Build: make fs -> build/dosboot_fs.sfc
 .DEFINE FSBOOT
-.DEFINE DEVHD
+.DEFINE APPSHD
 .INCLUDE "dosboot.asm"

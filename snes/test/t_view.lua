@@ -3,7 +3,7 @@
 -- Pascal runtime, INT 10h mode set and the M10p6 hires renderer.
 -- MANUAL test: a full paint takes ~10 emulated minutes (near-realtime
 -- in Mesen), so the suite covers VIEW with a runpc host leg instead.
--- Run:  Mesen --testrunner --timeout=2400 build/msdos_dev.sfc test/t_view.lua
+-- Run:  Mesen --testrunner --timeout=2400 build/msdos.sfc test/t_view.lua
 local frame = 0
 local t = 0
 local sent = false
@@ -43,7 +43,7 @@ emu.addEventCallback(function()
   frame = frame + 1
   if not sent and frame > 400 and frame % 10 == 0 and bufhas("C:\\>") then
     t = emu.read16(0x7E00D8, emu.memType.snesMemory)
-    inject("cd pics\rview card.bmp\r")
+    inject("cd view\rview card.bmp\r")
     sent = true
   end
   if sent and ingfx == 0 and emu.read16(0x7E07AE, emu.memType.snesMemory) == 1 then

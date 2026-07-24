@@ -28,7 +28,7 @@ emu.addEventCallback(function()
   frame = frame + 1
   if not sent and frame > 400 and frame % 10 == 0 and bufhas("C:\\>") then
     t = emu.read16(0x7E00D8, emu.memType.snesMemory)
-    inject("midplay\r")
+    inject("cd midi\rmidplay demo.snm\r")
     sent = true
   end
   if sent and frame % 20 == 0 then
@@ -43,7 +43,11 @@ emu.addEventCallback(function()
     samples = {}
   end
   if frame == 12000 then
-    print((nz > 20 and changes > 10) and "RESULT PASS t_midi" or "RESULT FAIL t_midi")
+    -- DEMO.SNM (the shipped CC0 tune) is a single legato voice: the
+    -- voicemask goes 0 -> 1 -> 0 over the song, so assert the driver
+    -- uploaded and the voice gated on AND off (>=2 transitions), not
+    -- the multi-voice flutter the old copyrighted test tune produced.
+    print((nz > 20 and changes >= 2) and "RESULT PASS t_midi" or "RESULT FAIL t_midi")
     emu.stop(0)
   end
 end, emu.eventType.endFrame)

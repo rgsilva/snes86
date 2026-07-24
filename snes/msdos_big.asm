@@ -3,5 +3,5 @@
 ; guest high RAM instead of B:. Revives Rogue; bigger guests don't
 ; currently run (see docs/FUTURE.md). Build: make big -> build/msdos_big.sfc
 .DEFINE BIGMEM
-.DEFINE DEVHD
+.DEFINE APPSHD
 .INCLUDE "dosboot.asm"

@@ -38,11 +38,12 @@ test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test clean msdos dev big fs freedos io
+.PHONY: all run test clean msdos apps big fs freedos io homebrew-stage
 
 # --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) + a
-# free C: (tools/mkhd_free.py; no copyrighted software).  `make dev` is the
-# same machine with the full local C: app library.  See docs/BUILDING.md.
+# free C: (tools/mkhd_free.py; no copyrighted software).  `make apps` is the
+# same machine with the copyrighted app-matrix fixture overlaid (for the
+# compatibility suite legs).  See docs/BUILDING.md.
 msdos: build/msdos.sfc
 
 build/msdos.o: msdos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
@@ -75,7 +76,7 @@ fs: build/dosboot_fs.sfc
 
 big: build/msdos_big.sfc
 
-build/msdos_big.o: msdos_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+build/msdos_big.o: msdos_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_apps.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
 	$(AS) -o build/msdos_big.o msdos_big.asm
 
 build/msdos_big.sfc: build/msdos_big.o linkfile_big
@@ -126,20 +127,32 @@ build/msdos_a.img: ../msdos/msdos.img
 io:
 	cd ../msdos && ./build_io.sh
 
-# --- free C: (public): our tools + Turbo Pascal source + a generated CC0 demo
-# + anything in userware/.  Built from committed files only.
-build/hd_free.img: tools/mkhd_free.py build/cgatest.com build/cga6tst.com ../disks/ted.com ../disks/TED.pas ../disks/java.com ../java/Hello.class ../java/README.md ../disks/midplay.com ../disks/midconv.com ../disks/sokoban.com ../disks/hello.com ../disks/sieve.com ../disks/view.com ../disks/midplay.pas ../disks/midconv.pas ../disks/sokoban.pas ../disks/HELLO.pas ../disks/VIEW.pas build/card.bmp build/card.pcx $(wildcard userware/*)
+# --- the C: drive. One packer (tools/mkhd_free.py): every staged
+# homebrew/<tool>/build/ becomes C:\<TOOL>, msdos/bin/ becomes C:\DOS,
+# user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
+HBTOOLS := view ted java midi sokoban bench
+
+homebrew-stage:
+	@for t in $(HBTOOLS); do $(MAKE) -s -C ../homebrew/$$t stage || exit 1; done
+
+build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*)
+	@mkdir -p build
 	python3 tools/mkhd_free.py build
 
-# --- DEVELOPER build: MS-DOS + the FULL local C: app library (tools/mkhd.py,
-# which pulls in copyrighted software present only on the dev machine).
-dev: build/msdos_dev.sfc
+# --- APPS build: the public machine + the copyrighted app-matrix fixture
+# (disks/appmatrix, generated once by disks/mkappmatrix.py on machines
+# with the local software). Exists for the compatibility suite legs.
+apps: build/msdos_apps.sfc
 
-build/msdos_dev.o: msdos_dev.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/msdos_dev.o msdos_dev.asm
+build/hd_apps.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../disks/appmatrix/*) $(wildcard ../msdos/bin/*)
+	@mkdir -p build
+	OVERLAYS=../disks/appmatrix python3 tools/mkhd_free.py build hd_apps.img
 
-build/msdos_dev.sfc: build/msdos_dev.o linkfile_dev
-	$(LD) -d -s -v -c linkfile_dev build/msdos_dev.sfc
+build/msdos_apps.o: msdos_apps.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_apps.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+	$(AS) -o build/msdos_apps.o msdos_apps.asm
+
+build/msdos_apps.sfc: build/msdos_apps.o linkfile_apps
+	$(LD) -d -s -v -c linkfile_apps build/msdos_apps.sfc
 
 # SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
 # Run: Mesen --testrunner build/sramtest.sfc test/sram.lua
@@ -148,7 +161,7 @@ build/sramtest.sfc: sramtest.asm linkfile_sramtest
 	$(AS) -o build/sramtest.o sramtest.asm
 	$(LD) -d -s linkfile_sramtest build/sramtest.sfc
 
-build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd_apps.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
 	$(AS) -o build/dosboot_fs.o dosboot_fs.asm
 
 build/dosboot_fs.sfc: build/dosboot_fs.o linkfile_fs
@@ -159,21 +172,6 @@ build/bdisk.bin: tools/mkbdisk.py
 
 build/kbdlayout.asm: tools/mkkbd.py
 	python3 tools/mkkbd.py build
-
-build/adisk.img: tools/mkadisk.py tools/autoexec.bat ../disks/pcdos200-disk1.img ../disks/pcdos200-disk2.img
-	python3 tools/mkadisk.py build
-
-build/hd.img: tools/mkhd.py tools/autoexec.bat ../disks/gwbasic.exe ../disks/zork1_snes.com ../disks/ws_installed.com ../disks/mp_com_compaq.bin ../disks/tp301.img ../disks/view.com ../disks/VIEW.pas ../disks/ted.com ../disks/TED.pas ../disks/java.com ../java/Hello.class build/cgatest.com build/cga6tst.com build/card.bmp build/card.pcx
-	python3 tools/mkhd.py build
-
-build/cgatest.com: tools/mkcgatest.py
-	python3 tools/mkcgatest.py build/cgatest.com
-
-build/cga6tst.com: tools/mkcga6test.py
-	python3 tools/mkcga6test.py build/cga6tst.com
-
-build/card.bmp build/card.pcx: tools/mkcard.py
-	python3 tools/mkcard.py build/card.bmp
 
 build/cgalut.bin: tools/mkcgalut.py
 	python3 tools/mkcgalut.py build/cgalut.bin

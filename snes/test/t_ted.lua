@@ -1,4 +1,7 @@
 -- suite test: t_ted — TED (our controller-first editor) edits a file on
+-- NOTE: suite runs delete the ROM's .srm before this leg (the
+-- user's B: drive for a same-named ROM) so stale saves cannot
+-- leak into the assertion — documented in test/suite.sh.
 -- B:, the battery-backed SRAM drive: launch, type (measuring keystroke
 -- latency), cursor with arrow scancodes, menu-save, quit, and TYPE the
 -- file back at the DOS prompt. Run with --timeout=300.

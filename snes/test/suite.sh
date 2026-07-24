@@ -1,21 +1,42 @@
 #!/bin/sh
 # snes86 regression suite: parity + host smoke + Mesen end-to-end tests.
 #
-#   test/suite.sh          full run (~10 min)
-#   test/suite.sh quick    parity + boot + zork (~3 min)
+#   test/suite.sh          full run
+#   test/suite.sh quick    parity + boot + cga (~3 min)
 #
 # Each Mesen test prints exactly one "RESULT PASS/FAIL name" line.
 #
-# Uses the DEV build (MS-DOS 2.0 + the full local C:): the app tests drive
-# GW-BASIC / WordStar / Multiplan / Zork, which live only on the dev C:
-# (build/hd.img via tools/mkhd.py). So this needs your local disks/ software.
+# Generic legs run against the PUBLIC ROM (build/msdos.sfc) — the exact
+# artifact that ships. The copyrighted app-matrix legs (t_zork t_gwb
+# t_ws t_mp t_m40) run against build/msdos_apps.sfc, and are SKIPPED
+# with a warning unless disks/appmatrix/ exists (generate it once with
+# disks/mkappmatrix.py on a machine that has the local software).
 cd "$(dirname "$0")/.."
 MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
-ROM="$(pwd)/build/msdos_dev.sfc"
+ROM="$(pwd)/build/msdos.sfc"
+APPSROM="$(pwd)/build/msdos_apps.sfc"
 FAIL=
 
+# Mesen is effectively single-instance: a --testrunner launch against a
+# running GUI can hand off, hang, or fail silently — and this suite
+# deletes msdos*.srm (see the t_ted leg), which would clobber a live
+# session's B: drive. Refuse to run while a GUI instance is open
+# (a Mesen process whose command line has no --testrunner).
+GUI=$(pgrep -f 'MacOS/Mesen' 2>/dev/null | while read -r p; do
+        ps -p "$p" -o args= 2>/dev/null | grep -q -- '--testrunner' || echo "$p"
+      done)
+if [ -n "$GUI" ]; then
+  echo "close the Mesen GUI first — testrunner and GUI collide (pid: $GUI)"
+  exit 1
+fi
+
 echo "== build =="
-make -s dev || { echo "FAIL build"; exit 1; }
+make -s msdos || { echo "FAIL build"; exit 1; }
+HAVE_APPS=
+if [ -d ../disks/appmatrix ]; then
+  make -s apps || { echo "FAIL apps build"; exit 1; }
+  HAVE_APPS=1
+fi
 
 echo "== parity (C core vs 65816 lockstep) =="
 if ./test/parity.sh 2>&1 | grep -q "PARITY OK"; then
@@ -52,8 +73,8 @@ fi
 
 echo "== host smoke (runpc boots DOS, reads C:) =="
 if printf 'type c:\\autoexec.bat\r' \
-     | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
-     | grep -q "PATH A:"; then
+     | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd_free.img build/msdos_a.img 2>/dev/null \
+     | grep -q "PATH C:"; then
   echo "PASS host-smoke"
 else
   echo "FAIL host-smoke"
@@ -61,8 +82,8 @@ else
 fi
 
 echo "== host smoke (CGA mode 6 renders true 640x200 on runpc) =="
-printf 'cga6tst\rx\r' \
-  | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img \
+printf 'cd bench\rcga6tst\rx\r' \
+  | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd_free.img \
       -cga build/cga6_host.ppm build/msdos_a.img >/dev/null 2>&1
 if python3 -c '
 import sys
@@ -83,11 +104,11 @@ echo "== host smoke (VIEW.COM paints the test cards on runpc) =="
 # is ~5 emulated minutes, so the Mesen leg - test/t_view.lua - is manual.
 # CARD.PCX carries the same pixels as CARD.BMP, so the two renders must
 # be bit-identical - one check covers the PCX decoder end to end.)
-printf 'cd pics\rview card.bmp\rx\r' \
-  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img \
+printf 'cd view\rview card.bmp\rx\r' \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd_free.img \
       -cga build/view_host.ppm build/msdos_a.img >/dev/null 2>&1
-printf 'cd pics\rview card.pcx\rx\r' \
-  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img \
+printf 'cd view\rview card.pcx\rx\r' \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd_free.img \
       -cga build/view_host2.ppm build/msdos_a.img >/dev/null 2>&1
 if python3 -c '
 import sys
@@ -107,7 +128,7 @@ fi
 
 echo "== host smoke (TED round-trips a file on runpc) =="
 python3 tools/mktedimg.py >/dev/null
-printf '\r\rted t.txt\rHello from TED on a SNES!\rline two here\033S\033Q\r' \
+printf 'ted t.txt\rHello from TED on a SNES!\rline two here\033S\033Q\r' \
   | ../core-c/build/runpc -m 108 -l 900000000 -w build/tedtest.img >/dev/null 2>&1
 python3 tools/mktedimg.py --extract T.TXT build/ted_host.txt >/dev/null 2>&1
 if python3 -c '
@@ -127,10 +148,10 @@ echo "== host smoke (JAVA runs javac bytecode on runpc) =="
 # HELLO.CLA is real javac --release 8 output; JAVA.COM interprets it.
 # FIB.CLA exercises the 32-bit int core + branches + a static method.
 printf 'cd java\rjava hello\r' \
-  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd_free.img build/msdos_a.img 2>/dev/null \
   | tr -d '\r' > build/java_host.log
 printf 'cd java\rjava fib\r' \
-  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd_free.img build/msdos_a.img 2>/dev/null \
   | tr -d '\r' >> build/java_host.log
 if grep -q "Hello from Java on a SNES" build/java_host.log \
    && grep -q "112358132134" build/java_host.log; then
@@ -140,10 +161,18 @@ else
   FAIL=1
 fi
 
-TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_cga6 t_midi"
-[ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
+# --- Mesen legs: generic tests drive the PUBLIC ROM ---
+TESTS="t_boot t_dirb t_kbd t_cga t_cga6 t_midi t_ted"
+[ "$1" = "quick" ] && TESTS="t_boot t_cga"
 
 for t in $TESTS; do
+  if [ "$t" = "t_ted" ]; then
+    # t_ted saves to B:; Mesen keys .srm files by ROM name, and stale B:
+    # contents from an earlier run would leak into the assertion.
+    # NOTE: this DELETES the user's B: drive for any same-named ROM
+    # (msdos.srm) — suite runs are destructive to B:, by design.
+    rm -f "$HOME/Library/Application Support/Mesen2/Saves/msdos.srm"
+  fi
   r=$("$MESEN" --testrunner "$ROM" "$(pwd)/test/$t.lua" 2>/dev/null | grep '^RESULT' | head -1)
   echo "${r:-RESULT FAIL $t (no output)}"
   case "$r" in
@@ -152,19 +181,22 @@ for t in $TESTS; do
   esac
 done
 
-# TED end-to-end: type into the editor on the SNES, cursor with arrow
-# scancodes, menu-save to B: (the battery-backed SRAM drive), quit, and
-# TYPE the file back. Starts from fresh SRAM: Mesen keys .srm files by
-# ROM name, so stale B: contents from any earlier run would leak in.
+# --- app-matrix legs: copyrighted software, local machines only ---
+APPTESTS="t_zork t_gwb t_ws t_mp t_m40"
 if [ "$1" != "quick" ]; then
-  rm -f "$HOME/Library/Application Support/Mesen2/Saves/msdos_dev.srm"
-  r=$("$MESEN" --testrunner --timeout=300 "$ROM" \
-      "$(pwd)/test/t_ted.lua" 2>/dev/null | grep '^RESULT' | head -1)
-  echo "${r:-RESULT FAIL t_ted (no output)}"
-  case "$r" in
-    *PASS*) ;;
-    *) FAIL=1 ;;
-  esac
+  if [ -n "$HAVE_APPS" ]; then
+    for t in $APPTESTS; do
+      r=$("$MESEN" --testrunner "$APPSROM" "$(pwd)/test/$t.lua" 2>/dev/null | grep '^RESULT' | head -1)
+      echo "${r:-RESULT FAIL $t (no output)}"
+      case "$r" in
+        *PASS*) ;;
+        *) FAIL=1 ;;
+      esac
+    done
+  else
+    echo "SKIP app-matrix legs ($APPTESTS): no disks/appmatrix/ -" \
+         "run disks/mkappmatrix.py on a machine with the local software"
+  fi
 fi
 
 # ELKS end-to-end (own ROM, own timeout: boot to login is ~2 emulated

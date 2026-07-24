@@ -4928,8 +4928,8 @@ zero_w:
 .ENDS
 .ENDIF                       ; IFNDEF ELKS (A: floppy banks)
 .ENDIF
-.IFDEF DEVHD
-.DEFINE HDIMG "build/hd.img"
+.IFDEF APPSHD
+.DEFINE HDIMG "build/hd_apps.img"
 .ELSE
 .DEFINE HDIMG "build/hd_free.img"
 .ENDIF

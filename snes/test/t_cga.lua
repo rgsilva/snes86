@@ -35,7 +35,7 @@ emu.addEventCallback(function()
   frame = frame + 1
   if not sent and frame > 400 and frame % 10 == 0 and bufhas("C:\\>") then
     t = emu.read16(0x7E00D8, emu.memType.snesMemory)
-    inject("cgatest\r")
+    inject("cd bench\rcgatest\r")
     sent = true
   end
   if sent and armed == 0 and emu.read16(0x7E07AE, emu.memType.snesMemory) == 1 then
@@ -65,7 +65,7 @@ emu.addEventCallback(function()
   end
   if exitchk > 0 and frame == exitchk then
     local tok = emu.read16(0x7E07AE, emu.memType.snesMemory) == 0
-                and bufhas("C:\\>")      -- gfx_exit + prompt back in text
+                and bufhas("C:\\bench>") -- gfx_exit + prompt back in text
     local ok = gok and tok
     print((ok and "RESULT PASS" or "RESULT FAIL") .. " t_cga" ..
           (tok and "" or " (gfx_exit failed)"))

@@ -35,9 +35,11 @@ def main():
     cmd = open(os.path.join(HERE, "COMMAND.COM"), "rb").read()
 
     # AUTOEXEC.BAT: its mere presence skips the DOS 2.0 date/time prompt;
-    # it also sets the PATH to the C: app library and drops to C:.
-    autoexec = (b"PATH C:\\;C:\\DOS;C:\\PASCAL;C:\\BENCH;C:\\GAMES;"
-                b"C:\\BASIC;C:\\MIDI;C:\\USER\r\nPROMPT $P$G\r\nC:\r\n")
+    # it sets the PATH and drops to C:. The content lives in autoexec.bat
+    # (single source of truth): the C: packer ships a byte-identical copy,
+    # because COMMAND.COM resumes batch processing BY BYTE OFFSET across
+    # the drive change — a C: copy longer than A:'s resumes into garbage.
+    autoexec = open(os.path.join(HERE, "autoexec.bat"), "rb").read()
 
     files = [("IO.SYS", io, 0x27), ("MSDOS.SYS", dos, 0x27),
              ("COMMAND.COM", cmd, 0x00),

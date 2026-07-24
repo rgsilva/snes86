@@ -1,33 +1,43 @@
 #!/usr/bin/env python3
-"""Build the FREE C: fixed-disk image (build/hd_free.img) for the public release.
+"""Build the C: fixed-disk image (build/hd_free.img) — THE packer.
 
-Unlike mkhd.py (the private developer build, which carries copyrighted DOS
-software), this image contains ONLY freely redistributable material:
+The layout is convention, not configuration:
 
-  * our own snes86 tools, shipped WITH Turbo Pascal source
-    (MIDPLAY/MIDCONV, SOKOBAN, SIEVE, HELLO, BENCH, CGATEST);
-  * a generated demo: a public-domain tune (Beethoven's "Ode to Joy",
-    1824) sequenced here as an original CC0 MIDI + its .SNM conversion;
-  * whatever the user drops into snes86/userware/  (bring-your-own DOS
-    software -> appears in C:\\USER).  Empty by default.
+  * every homebrew/<tool>/build/  ->  C:\\<TOOL>   (run `make stage` there
+    first; snes/Makefile's homebrew-stage target does them all)
+  * msdos/bin/                    ->  C:\\DOS      (MIT MS-DOS utilities)
+  * user/ at the repo root        ->  C:\\USER     (bring-your-own .COMs)
+  * C:\\AUTOEXEC.BAT is a byte-identical copy of A:'s (msdos/autoexec.bat):
+    COMMAND.COM resumes batch processing BY BYTE OFFSET across the A:->C:
+    drive change, so a C: copy longer than A:'s resumes into garbage.
 
-Same geometry as mkhd.py (107x4x17, FAT12 partition at LBA 17) so the same
-INT 13h driver + dosboot INCBIN work unchanged; the C: partition never boots
-(only A: does), so its boot sector is synthesized here instead of copied from
-a copyrighted DOS.
+OVERLAYS (env var: whitespace/comma-separated paths) merge extra trees
+into the image, last wins with a warning — plain directories (one level
+of subdirs) or FAT12 floppy images (flat, into the root). That is how
+the copyrighted app-matrix test fixture rides on top of the free image:
+
+    make msdos OVERLAYS=../disks/appmatrix
+
+Geometry: 107 cyl x 4 heads x 17 spt, FAT12 partition at LBA 17 — see
+the original derivation notes in git history (PC DOS 2.0's FDISK layout,
+verified against IBMBIO's INT 13h reads).
 """
 import os
 import struct
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DISKS = os.path.join(HERE, "..", "..", "disks")
-BUILD = os.path.join(HERE, "..", "build")
-JAVADIR = os.path.join(HERE, "..", "..", "java")
-USERWARE = os.path.join(HERE, "..", "userware")
+ROOTDIR = os.path.abspath(os.path.join(HERE, "..", ".."))
+HOMEBREW = os.path.join(ROOTDIR, "homebrew")
+DOSBIN = os.path.join(ROOTDIR, "msdos", "bin")
+USERDIR = os.path.join(ROOTDIR, "user")
+AUTOEXEC_SRC = os.path.join(ROOTDIR, "msdos", "autoexec.bat")
 OUT = sys.argv[1] if len(sys.argv) > 1 else "build"
 
-# --- geometry (identical to mkhd.py) ---
+sys.path.insert(0, HOMEBREW)
+import fatimg                                    # noqa: E402
+
+# --- geometry ---
 SPT, HEADS, CYLS = 17, 4, 107
 TOTAL = SPT * HEADS * CYLS
 PSTART = SPT
@@ -35,309 +45,93 @@ PSECS = TOTAL - PSTART
 SPC, SFAT, ROOTN = 4, 6, 256
 RS = ROOTN * 32 // 512
 DATA0 = 1 + 2 * SFAT + RS
-NCLUST = (PSECS - DATA0) // SPC      # data clusters (indices 2..NCLUST+1)
+NCLUST = (PSECS - DATA0) // SPC
 
 
-def rd(*p):
-    return open(os.path.join(*p), "rb").read()
+def valid83(nm):
+    n, _, ext = nm.partition(".")
+    return (nm == nm.upper() and 1 <= len(n) <= 8 and len(ext) <= 3
+            and "." not in ext)
 
 
-# ---- inline Turbo Pascal sources for the tiny demos (ours, CC0) ----
-SIEVE_PAS = b"""program Sieve;  { BYTE benchmark, 10 iterations }\r
-const Size = 8190;\r
-var flags: array[0..Size] of boolean;\r
-    i, prime, k, count, iter: integer;\r
-begin\r
-  WriteLn('BYTE Sieve, 10 iterations');\r
-  for iter := 1 to 10 do begin\r
-    count := 0;\r
-    FillChar(flags, SizeOf(flags), 1);\r
-    for i := 0 to Size do\r
-      if flags[i] then begin\r
-        prime := i + i + 3;\r
-        k := i + prime;\r
-        while k <= Size do begin\r
-          flags[k] := false;\r
-          k := k + prime;\r
-        end;\r
-        count := count + 1;\r
-      end;\r
-  end;\r
-  WriteLn(count, ' primes (expect 1899)');\r
-end.\r
-"""
-
-BENCH_PAS = b"""program Bench;  { self-timing micro-benchmarks via DOS clock }\r
-type Regs = record AX,BX,CX,DX,BP,SI,DI,DS,ES,Flags: integer; end;\r
-var r: Regs;\r
-    t0, t1: real;\r
-    i, k, n, acc: integer;\r
-    flags: array[0..8190] of boolean;\r
-function Clock: real;\r
-begin\r
-  r.AX := $2C00; MsDos(r);\r
-  Clock := Hi(r.CX)*3600.0 + Lo(r.CX)*60.0 + Hi(r.DX) + Lo(r.DX)/100.0;\r
-end;\r
-begin\r
-  WriteLn('snes86 benchmark suite');\r
-  t0 := Clock;\r
-  for n := 1 to 3 do begin\r
-    for i := 0 to 8190 do flags[i] := true;\r
-    for i := 0 to 8190 do\r
-      if flags[i] then begin\r
-        k := i + i + 3 + i;\r
-        while k <= 8190 do begin flags[k] := false; k := k + i + i + 3; end;\r
-      end;\r
-  end;\r
-  t1 := Clock;\r
-  WriteLn('Sieve x3:    ', (t1-t0):7:2, ' s');\r
-  t0 := Clock; acc := 1;\r
-  for i := 1 to 10000 do begin acc := acc * 13; acc := acc div 7; end;\r
-  t1 := Clock;\r
-  WriteLn('MulDiv 10k:  ', (t1-t0):7:2, ' s');\r
-  t0 := Clock;\r
-  for i := 1 to 200 do Write('.');\r
-  WriteLn;\r
-  t1 := Clock;\r
-  WriteLn('Console 200: ', (t1-t0):7:2, ' s');\r
-  WriteLn('(IBM PC/XT 4.77MHz for scale: ~2s / ~0.4s / ~0.1s)');\r
-end.\r
-"""
-
-README_TXT = b"""snes86 - MS-DOS 2.0 on a stock SNES.  Free public release.\r
-\r
-This C: drive ships only free software: our own snes86 tools (with Turbo\r
-Pascal source) plus a generated demo.  No copyrighted DOS applications are\r
-included -- add your own with the "bring your own software" step below.\r
-\r
-WHAT'S HERE\r
-  C:\\MIDI    MIDPLAY / MIDCONV (SNES-MIDI tools) + DEMO.MID / DEMO.SNM\r
-  C:\\BENCH   SIEVE, BENCH, HELLO, CGATEST, CGA6TST  (+ .PAS source)\r
-  C:\\GAMES   SOKOBAN  (+ .PAS source)\r
-  C:\\JAVA    JAVA (a Java class-file interpreter) + sample .CLA/.JAV\r
-  C:\\PICS    VIEW (BMP/PCX picture viewer, + .PAS source) + test cards\r
-  C:\\TED.COM the TED text editor (TED.PAS = its source)\r
-  C:\\USER    your own DOS software (see below)\r
-\r
-TRY IT\r
-  C:\\> PLAY          play the demo tune on the SNES-MIDI synth\r
-  C:\\> CD GAMES      then:  SOKOBAN\r
-  C:\\> CD BENCH      then:  SIEVE   or   CGATEST\r
-  C:\\> TED B:NOTE.TXT  edit a file on B: - it lives in battery-\r
-                     backed cartridge SRAM and survives power-off\r
-  C:\\> CD PICS       then:  VIEW CARD.BMP      (640x200 halftone)\r
-                       or:   VIEW CARD.PCX 4    (320x200 colour)\r
-                       or:   VIEW *.*           (slideshow, ESC quits)\r
-\r
-BRING YOUR OWN SOFTWARE\r
-  Drop .COM/.EXE files into  snes86/userware/  on your PC and rebuild the\r
-  ROM (make msdos).  They appear here in C:\\USER, which is on the PATH,\r
-  so you can run them from anywhere.  See BUILDING.md.\r
-"""
-
-PLAY_BAT = b"MIDPLAY C:\\MIDI\\DEMO.SNM\r\n"
-
-# A: already sets PATH + PROMPT and drops to C:; this C:\AUTOEXEC.BAT only
-# needs to exist so COMMAND.COM's batch processing survives the drive change.
-AUTOEXEC = (b"PATH C:\\;C:\\MIDI;C:\\BENCH;C:\\GAMES;C:\\USER\r\n"
-            b"PROMPT $P$G\r\n")
+# ---- collect the tree: {None: [(name, bytes)...], "SUBDIR": [...]} ----
+tree = {None: []}
+warn = lambda m: print("mkhd_free.py: " + m, file=sys.stderr)
 
 
-# ---- generate the CC0 demo: "Ode to Joy" (Beethoven, 1824, public domain) ----
-def gen_demo_mid():
-    """Return a format-0 Standard MIDI File of the Ode to Joy melody."""
-    DIV = 480
-    Q = DIV                      # quarter note
-    H = DIV * 2                  # half note
-    DQ = DIV * 3 // 2            # dotted quarter
-    E = DIV // 2                 # eighth
-    # (semitone, duration) - E4=64 F4=65 G4=67 A4=69 D4=62 C4=60
-    melody = [
-        (64, Q), (64, Q), (65, Q), (67, Q),
-        (67, Q), (65, Q), (64, Q), (62, Q),
-        (60, Q), (60, Q), (62, Q), (64, Q),
-        (64, DQ), (62, E), (62, H),
-        (64, Q), (64, Q), (65, Q), (67, Q),
-        (67, Q), (65, Q), (64, Q), (62, Q),
-        (60, Q), (60, Q), (62, Q), (64, Q),
-        (62, DQ), (60, E), (60, H),
-    ]
-
-    def vlq(n):
-        out = bytearray([n & 0x7F])
-        n >>= 7
-        while n:
-            out.insert(0, (n & 0x7F) | 0x80)
-            n >>= 7
-        return bytes(out)
-
-    trk = bytearray()
-    trk += vlq(0) + bytes([0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20])   # 500000 us/qn
-    for note, dur in melody:
-        trk += vlq(0) + bytes([0x90, note, 100])    # note on
-        trk += vlq(dur) + bytes([0x80, note, 0])    # note off
-    trk += vlq(0) + bytes([0xFF, 0x2F, 0x00])       # end of track
-
-    hdr = b"MThd" + struct.pack(">IHHH", 6, 0, 1, DIV)
-    return hdr + b"MTrk" + struct.pack(">I", len(trk)) + bytes(trk)
+def place(sub, name, data, origin):
+    name = name.upper()
+    assert valid83(name), f"{origin}: {name} is not a valid 8.3 name"
+    bucket = tree.setdefault(sub, [])
+    for i, (nm, _) in enumerate(bucket):
+        if nm == name:
+            where = sub or "C:\\"
+            warn(f"overlay overwrites {where}\\{name} ({origin})")
+            bucket[i] = (name, data)
+            return
+    bucket.append((name, data))
 
 
-def mid_to_snm(mid):
-    """Port of MIDCONV.PAS: format-0 SMF -> .SNM 4-byte packet stream."""
-    p = [0]
+place(None, "AUTOEXEC.BAT", open(AUTOEXEC_SRC, "rb").read(), "autoexec")
 
-    def nb():
-        b = mid[p[0]] if p[0] < len(mid) else 0xFF
-        p[0] += 1
-        return b
+# homebrew tools, by convention
+for tool in sorted(os.listdir(HOMEBREW)):
+    b = os.path.join(HOMEBREW, tool, "build")
+    if not os.path.isdir(b):
+        continue
+    files = sorted(f for f in os.listdir(b)
+                   if os.path.isfile(os.path.join(b, f)))
+    if not files:
+        raise SystemExit(f"homebrew/{tool}/build/ is empty — "
+                         f"run `make -C homebrew/{tool} stage`")
+    for f in files:
+        place(tool.upper(), f, open(os.path.join(b, f), "rb").read(),
+              f"homebrew/{tool}")
 
-    def readvar():
-        v = 0
-        for _ in range(4):
-            b = nb()
-            v = v * 128 + (b & 0x7F)
-            if b < 0x80:
-                break
-        return v
+# C:\DOS — the MIT MS-DOS 2.0 utilities (msdos/bin/, when present)
+if os.path.isdir(DOSBIN):
+    for f in sorted(os.listdir(DOSBIN)):
+        if f.upper().endswith((".COM", ".EXE")):
+            place("DOS", f, open(os.path.join(DOSBIN, f), "rb").read(),
+                  "msdos/bin")
 
-    # header
-    for _ in range(8):
-        nb()                                    # MThd + length
-    nb(); nb()                                  # format (0)
-    nb(); nb()                                  # ntrks
-    division = nb() * 256 + nb()
-    for _ in range(8):
-        nb()                                    # MTrk + length
+# C:\USER — bring-your-own software from user/ at the repo root
+userfiles = []
+if os.path.isdir(USERDIR):
+    for f in sorted(os.listdir(USERDIR)):
+        p = os.path.join(USERDIR, f)
+        if (os.path.isfile(p) and not f.startswith(".")
+                and f.upper() not in ("README.MD", "README.TXT")):
+            userfiles.append(f)
+for f in userfiles:
+    place("USER", f, open(os.path.join(USERDIR, f), "rb").read(), "user/")
+if not userfiles:
+    place("USER", "READ.ME",
+          b"Put your own DOS .COM/.EXE files in user/ at the repo root\r\n"
+          b"and run 'make msdos'.  They will appear here.\r\n", "user/")
 
-    out = bytearray()
-    npk = [0]
-
-    def sendpk(d, s, d1, d2):
-        out.extend([d & 0xFF, s & 0xFF, d1 & 0xFF, d2 & 0xFF])
-        npk[0] += 1
-
-    scale = [500000.0 / (division * 16667.0)]
-    pending = [0]
-    carry = [0.0]
-
-    def emit(s, d1, d2):
-        while pending[0] > 255:
-            sendpk(255, 0, 0, 0)
-            pending[0] -= 255
-        sendpk(pending[0], s, d1, d2)
-        pending[0] = 0
-
-    def adddelta(ticks):
-        fd = ticks * scale[0] + carry[0]
-        pending[0] += int(fd)
-        carry[0] = fd - int(fd)
-
-    rstatus = 0
-    while True:
-        adddelta(readvar())
-        if p[0] > len(mid):
-            break
-        b = nb()
-        if b >= 0x80:
-            if b < 0xF0:
-                rstatus = b
-                b = nb()
-            elif b == 0xFF:
-                mt = nb()
-                ln = readvar()
-                if mt == 0x2F:
-                    break
-                if mt == 0x51:
-                    tmp = 0
-                    for _ in range(ln):
-                        tmp = tmp * 256 + nb()
-                    scale[0] = tmp / (division * 16667.0)
-                else:
-                    for _ in range(ln):
-                        nb()
-                rstatus = 0
+# overlays: directories (one subdir level) or FAT12 floppies (flat root)
+for ov in os.environ.get("OVERLAYS", "").replace(",", " ").split():
+    ov = os.path.abspath(ov)
+    if os.path.isdir(ov):
+        for entry in sorted(os.listdir(ov)):
+            p = os.path.join(ov, entry)
+            if entry.startswith("."):
                 continue
-            else:
-                ln = readvar()
-                for _ in range(ln):
-                    nb()
-                rstatus = 0
-                continue
-        if rstatus >= 0x80:
-            hi = rstatus >> 4
-            if hi in (0x8, 0x9, 0xA, 0xB, 0xE):
-                d1 = b
-                b = nb()
-                if hi in (0x8, 0x9):
-                    emit(rstatus, d1, b)
-            elif hi in (0xC, 0xD):
-                if hi == 0xC:
-                    emit(rstatus, b, 0)
+            if os.path.isfile(p):
+                place(None, entry, open(p, "rb").read(), ov)
+            elif os.path.isdir(p):
+                for f in sorted(os.listdir(p)):
+                    fp = os.path.join(p, f)
+                    if os.path.isfile(fp) and not f.startswith("."):
+                        place(entry.upper(), f, open(fp, "rb").read(), ov)
+    elif os.path.isfile(ov):
+        for nm, data in sorted(fatimg.read_img(ov).items()):
+            place(None, nm, data, ov)
+    else:
+        raise SystemExit(f"overlay not found: {ov}")
 
-    sendpk(0, 0xFF, 0, 0)                        # all notes off
-    while (len(out) // 4) % 32:                  # pad to a 128-byte block
-        sendpk(0, 0, 0, 0)
-    return bytes(out)
-
-
-def collect_userware():
-    """Flat .COM/.EXE/.BAT/etc from userware/ -> list[(NAME, bytes)]."""
-    SKIP = {"README.MD", "README.TXT"}
-    files = []
-    if os.path.isdir(USERWARE):
-        for nm in sorted(os.listdir(USERWARE)):
-            fp = os.path.join(USERWARE, nm)
-            if (os.path.isfile(fp) and not nm.startswith(".")
-                    and nm.upper() not in SKIP):
-                files.append((nm.upper(), open(fp, "rb").read()))
-    return files
-
-
-demo_mid = gen_demo_mid()
-demo_snm = mid_to_snm(demo_mid)
-
-user_files = collect_userware()
-if not user_files:
-    user_files = [("READ.ME", b"Put your own DOS .COM/.EXE files in "
-                              b"snes86/userware/ and run 'make msdos'.\r\n"
-                              b"They will appear here, on the PATH.\r\n")]
-
-rootfiles = [
-    ("AUTOEXEC.BAT", AUTOEXEC),
-    ("TED.COM", rd(DISKS, "ted.com")),
-    ("TED.PAS", rd(DISKS, "TED.pas")),
-    ("README.TXT", README_TXT),
-    ("PLAY.BAT", PLAY_BAT),
-]
-subdirs = [
-    ("MIDI", [("MIDPLAY.COM", rd(DISKS, "midplay.com")),
-              ("MIDPLAY.PAS", rd(DISKS, "midplay.pas")),
-              ("MIDCONV.COM", rd(DISKS, "midconv.com")),
-              ("MIDCONV.PAS", rd(DISKS, "midconv.pas")),
-              ("DEMO.MID", demo_mid),
-              ("DEMO.SNM", demo_snm)]),
-    ("BENCH", [("SIEVE.COM", rd(DISKS, "sieve.com")),
-               ("SIEVE.PAS", SIEVE_PAS),
-               ("BENCH.PAS", BENCH_PAS),
-               ("HELLO.COM", rd(DISKS, "hello.com")),
-               ("HELLO.PAS", rd(DISKS, "HELLO.pas")),
-               ("CGATEST.COM", rd(BUILD, "cgatest.com")),
-               ("CGA6TST.COM", rd(BUILD, "cga6tst.com"))]),
-    ("GAMES", [("SOKOBAN.COM", rd(DISKS, "sokoban.com")),
-               ("SOKOBAN.PAS", rd(DISKS, "sokoban.pas"))]),
-    ("JAVA", [("JAVA.COM", rd(DISKS, "java.com")),
-              ("README.TXT", rd(JAVADIR, "README.md"))] +
-             [(base.upper() + ext, rd(JAVADIR, base + src))
-              for base in ("Hello", "Fib", "Sieve", "Concat", "Guess")
-              for ext, src in ((".CLA", ".class"), (".JAV", ".java"))]),
-    ("PICS", [("VIEW.COM", rd(DISKS, "view.com")),
-              ("VIEW.PAS", rd(DISKS, "VIEW.pas")),
-              ("CARD.BMP", rd(BUILD, "card.bmp")),
-              ("CARD.PCX", rd(BUILD, "card.pcx"))]),
-    ("USER", user_files),
-]
-
-# ---- build the image (same layout math as mkhd.py) ----
+# ---- emit the image ----
 img = bytearray(TOTAL * 512)
 
 mbr = bytearray(512)
@@ -416,12 +210,15 @@ def mkent(nm, attr, clus, size):
 
 
 idx = 0
-for nm, data in rootfiles:
+for nm, data in tree[None]:
     assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {nm}"
     root[idx * 32:idx * 32 + 32] = put(nm, data)
     idx += 1
-for dname, files in subdirs:
+for dname in sorted(k for k in tree if k is not None):
+    files = tree[dname]
     assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {dname}"
+    assert len(files) <= (SPC * 512) // 32 - 2, \
+        f"C:\\{dname}: {len(files)} files exceed a one-cluster directory"
     ents = [put(fn, data) for fn, data in files]
     dclus = nc[0]
     dirdata = bytearray(SPC * 512)
@@ -441,10 +238,12 @@ img[fo + SFAT * 512:fo + 2 * SFAT * 512] = fat
 ro = (PSTART + 1 + 2 * SFAT) * 512
 img[ro:ro + len(root)] = root
 
-path = os.path.join(OUT, "hd_free.img")
-open(path, "wb").write(img)
+path = os.path.join(OUT, sys.argv[2] if len(sys.argv) > 2 else "hd_free.img")
+img = bytes(img)
+if not (os.path.exists(path) and open(path, "rb").read() == img):
+    open(path, "wb").write(img)
 used = (nc[0] - 2) * SPC * 512
-free = ((PSECS - DATA0) // SPC * SPC * 512) - used
-print(f"hd_free.img: {idx} root entries, {len(user_files)} user file(s), "
-      f"demo {len(demo_mid)}B MID / {len(demo_snm)}B SNM, "
+free = (NCLUST * SPC * 512) - used
+dirs = ", ".join(sorted(k for k in tree if k is not None))
+print(f"{os.path.basename(path)}: [{dirs}] {idx} root entries, "
       f"{used} bytes used, {free} free")

@@ -10,27 +10,19 @@ core-c/tests/vectors/metadata.json
 releases/
 snake_im.zip
 
-# disks/ holds bring-your-own copyrighted DOS software: kept locally for testing
-# and screenshots, never committed. Only our own free tools are tracked — whitelist
-# them explicitly so nothing copyrighted can be re-added by accident.
+# disks/ holds bring-your-own copyrighted DOS software and the generated
+# app-matrix test fixture: local-only, never committed. Our own software
+# lives in homebrew/ now; the only tracked file here is mkappmatrix.py.
 disks/*
-!disks/midplay.com
-!disks/midplay.pas
-!disks/midconv.com
-!disks/midconv.pas
-!disks/sieve.com
-!disks/hello.com
-!disks/HELLO.pas
-!disks/sokoban.com
-!disks/sokoban.pas
-!disks/view.com
-!disks/VIEW.pas
-!disks/ted.com
-!disks/TED.pas
-!disks/java.com
-!disks/JAVA.pas
-!disks/JAVA1.INC
-!disks/JAVA2.INC
-!disks/JAVA3.INC
+!disks/mkappmatrix.py
+
+# homebrew: staged image content and the fetched (never redistributed)
+# Turbo Pascal 3 live outside git
+homebrew/*/build/
+homebrew/cache/
+
+# user/ -> C:\USER: bring-your-own software, never committed
+user/*
+!user/README.md
 __pycache__/
 snes/test/shot.lua
