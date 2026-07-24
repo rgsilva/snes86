@@ -112,26 +112,36 @@ the rest are queued.
 Show a photo fullscreen on the SNES — decoded by a DOS program on the
 emulated 8086, not pre-baked by the build. The plan:
 
-1. **Output is CGA mode 4** (320×200×4): nearest-neighbor scale with
-   letterboxing, then a 4×4 ordered (Bayer) dither into the fixed CGA
-   palette — integer math only. Mode 6 (640×200 mono) would double the
-   resolution but waits on the true-640 renderer (M10p6, in the Windows
-   section below): the SNES currently draws mode 6 squashed through the
-   mode-4 path.
-2. **Formats: BMP first** (8-bit palettized and 24-bit uncompressed), then
+1. **Step 0 is the M10p6 renderer** — true 640×200 CGA mode 6 on the SNES
+   (today mode 6 draws squashed through the mode-4 path). The 80-column
+   text console already proves the hard parts: it is SNES hi-res with L/R
+   panning, a 512-pixel window over a 640-pixel logical screen. The missing
+   piece is the graphics half — a 1bpp-CGA-byte → SNES-tile conversion path
+   with dirty tracking, plus un-forcing the mode-set switch. Landing it
+   here un-squashes every bring-your-own mode-6 program and retires the
+   Windows 1.01 renderer prerequisite (below) as a side effect — and the
+   viewer is the perfect test payload for it.
+2. **Two output modes**: CGA mode 4 (320×200×4 — color, 4×4 ordered
+   Bayer-dithered into the fixed palette) and mode 6 (640×200 —
+   double-resolution mono halftone, newspaper style). Integer math only,
+   nearest-neighbor scale, letterboxed. A viewer nicety: VIEW can center
+   photos in a 512-wide region of mode 6, so the whole image is visible
+   with no panning at all.
+3. **Formats: BMP first** (8-bit palettized and 24-bit uncompressed), then
    **GIF87a** — LZW is period-perfect, and its ~20 KB decode tables fit the
    default 108 KB machine with room to spare. JPEG is a stretch goal
    (integer IDCT + Huffman is period-plausible; expect minutes per image).
-3. **Turbo Pascal 3 with inline asm** for the dither/blit inner loop,
+4. **Turbo Pascal 3 with inline asm** for the dither/blit inner loop,
    source shipped — like SOKOBAN and MIDPLAY before it.
-4. **Row-streaming decode**: one scanline in flight, so RAM use stays flat
+5. **Row-streaming decode**: one scanline in flight, so RAM use stays flat
    regardless of source image size.
-5. **Content licensing, the usual rule**: the build generates an original
+6. **Content licensing, the usual rule**: the build generates an original
    CC0 test-card image (the demo-tune precedent), and real photos are
    bring-your-own via `userware/`. Gallery screenshots come from Mesen,
    as always.
-6. **Slideshow controls**: any key advances, ESC quits; L/R could toggle
-   the two CGA palettes (cyan/magenta/white vs green/red/brown).
+7. **Slideshow controls**: any key advances, ESC quits; L/R pans in
+   mode 6, and toggles the two CGA palettes in mode 4
+   (cyan/magenta/white vs green/red/brown).
 
 Development loop: iterate against `runpc -cga` PPM dumps, finish in Mesen.
 
@@ -202,9 +212,10 @@ CPU and the machine are proven — what's left is SNES-specific plumbing:
    Mesen-first demo, like BIGMEM before it.)
 2. **True 640×200 mode 6** (also under graphics above): Windows draws CGA hi-res,
    and the host renders it at full 640; the SNES side still renders mode 6
-   squashed as mode 4 (see M10p6). SNES mode 5 gives 512 wide — pan the rest like
-   the 80-column text trick. Until then the GUI would show, but horizontally
-   wrong.
+   squashed as mode 4. SNES mode 5 gives 512 wide — pan the rest like the
+   80-column text trick. This is M10p6, now first in line as step 0 of the
+   image-viewer milestone above — so by the time Windows is attempted, it
+   should already be done.
 3. **Survive the read-only C:** — Windows writes `WIN.INI` and temp files at
    runtime; patch or shim them (BIGMEM eats the B: SRAM disk, so the writable
    bits need an INT 21h-level detour or tolerated failures).
