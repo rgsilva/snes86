@@ -38,21 +38,24 @@ rejects the old OMF; JWasm chokes on `DOSMAC.ASM`'s old macros). So:
 printf '\r\r\r' | ../core-c/build/runpc -m 256 msdos.img -l 60000000
 # SNES ROM (reproducible; builds IO.SYS + msdos.img + the ROM):
 (cd ../snes && make msdos)    # -> snes/build/msdos.sfc  (PUBLIC: free C:)
-(cd ../snes && make dev)        # -> the full local C: app library (dev only)
+(cd ../snes && make apps)     # -> + the local app-matrix fixture (dev only)
 ```
 
-`make msdos` is the public build: MS-DOS 2.0 + a free C: (see
+`make msdos` is the public build: MS-DOS 2.0 + the free C: (see
 `snes/tools/mkhd_free.py`). A: comes from `build/msdos_a.img` (this
-`msdos.img`). `make dev` is the same MS-DOS machine but with the full local
-C: app library. PC-DOS is retained only behind `.IFDEF PCDOS` in
-`dosboot.asm` (no build target).
+`msdos.img`); its `AUTOEXEC.BAT` content lives in `autoexec.bat` here —
+the C: packer ships a byte-identical copy, because COMMAND.COM resumes
+batch files BY BYTE OFFSET across the drive change. `bin/` holds the
+MIT MS-DOS 2.0 utilities that ship as `C:\DOS` (see `bin/ORIGIN.md`).
+PC-DOS is retained only behind `.IFDEF PCDOS` in `dosboot.asm` (no
+build target).
 
 ## Status
 
 - ✅ Boots to `A>`/`C:\>`, VER/DIR work, on runpc **and** the SNES.
 - ✅ 3-unit disk driver (A: floppy, B: SRAM floppy, C: hard disk) — the C: app
   library is reachable; `AUTOEXEC.BAT` sets PATH + drops to C:.
-- ✅ Reproducible ROM: `make msdos` (public, free C:) / `make dev` (full C:).
+- ✅ Reproducible ROM: `make msdos` (public, free C:) / `make apps` (+ fixture).
 - ✅ App matrix re-run under MS-DOS on the SNES: GW-BASIC 3.23, WordStar 3.31,
   Multiplan, Zork/Infocom, Sokoban (CGA), CPUBENCH all load & run. Rogue needs
   ~120 KB (BIGMEM) — a memory-size edge, not an MS-DOS regression (MS-DOS

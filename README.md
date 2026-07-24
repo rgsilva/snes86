@@ -72,10 +72,11 @@ such as [Mesen](https://www.mesen.ca/). You boot straight to `C:\>`. For Linux,
 flash `snes/build/elks.sfc` instead and log in as `root`. There's also a
 FreeDOS 1.3 build (`freedos.sfc`) for the 172 KB machine.
 
-The public ROM ships only free software: our own snes86 tools (with Turbo Pascal
-source) — a MIDI player, a Sokoban game, a BMP picture viewer, benchmarks — plus a
-generated demo tune. To
-run your own DOS programs, drop them in `snes/userware/` and rebuild (see
+The public ROM ships only free software, all of it ours or MIT: the TED
+text editor, the VIEW picture viewer, a Java class-file interpreter, the
+MIDI player, Sokoban, benchmarks (sources in [homebrew/](homebrew/)) and
+the original MS-DOS 2.0 utilities as `C:\DOS` — plus a generated demo
+tune. To run your own DOS programs, drop them in `user/` and rebuild (see
 [docs/BUILDING.md](docs/BUILDING.md)).
 
 ## Build
@@ -88,6 +89,15 @@ cd snes && make elks         # -> build/elks.sfc      (Linux: the ELKS ROM)
 
 Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in
 [docs/BUILDING.md](docs/BUILDING.md).
+
+## Repo layout
+
+`snes/` the 65C816 emulator + HLE BIOS and its build; `core-c/` the C
+reference core and `runpc`; `homebrew/` our DOS software, one folder per
+tool, compiled by Turbo Pascal *inside the emulator*; `msdos/` the
+self-hosted MS-DOS 2.0 boot floppy (our IO.SYS) + the MIT utilities;
+`freedos/` the FreeDOS fetcher; `user/` bring-your-own DOS programs;
+`disks/` local-only copyrighted media (never committed).
 
 ## Docs
 
@@ -102,7 +112,9 @@ Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are
 
 MS-DOS 2.0 is MIT-licensed ([microsoft/MS-DOS](https://github.com/microsoft/MS-DOS)).
 The public ROM contains only freely redistributable software — no copyrighted DOS
-applications. Our own tools ship with source. The ELKS ROM bundles the unmodified
+applications. Our own tools live in `homebrew/` with source; Turbo Pascal 3, which
+compiles them *inside the emulator*, is fetched at build time and never
+redistributed (Borland retains all rights). The ELKS ROM bundles the unmodified
 official [ELKS](https://github.com/ghaerr/elks) release images (GPL-2.0), fetched at
 build time rather than committed here; ELKS's source lives upstream.
 

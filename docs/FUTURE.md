@@ -84,7 +84,7 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
 
 ## More software and OSes
 
-- The bring-your-own path (`userware/` → `C:\USER`) already lets anyone add their
+- The bring-your-own path (`user/` → `C:\USER`) already lets anyone add their
   own DOS programs without touching the build.
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
   build already proves a non-DOS boot works via `make fs`), are open territory.
@@ -111,8 +111,8 @@ the rest are queued.
 
 Show a photo fullscreen on the SNES — decoded by a DOS program on the
 emulated 8086, not pre-baked by the build. **Landed**: `VIEW.COM` ships
-in `C:\PICS` on both C: images — a Turbo Pascal 3 program (source
-alongside, compiled by `tools/tpcompile.sh` driving TP3 *on the emulated
+in `C:\VIEW` on the C: image — a Turbo Pascal 3 program (source
+alongside, compiled by `homebrew/tpcompile.sh` driving TP3 *on the emulated
 8086*) that renders 8/24/32-bit BMPs (top-down or bottom-up) **and
 8-bit RLE PCX** — the native DOS image format of the era — with
 aspect-correct fit and 4×4 ordered dither: `VIEW PIC.BMP` for 640×200
@@ -120,7 +120,7 @@ halftone (mode 6), `VIEW PIC.PCX 4` for 320×200 four-colour, and
 `VIEW *.BMP` for a wildcard slideshow (any key advances, ESC quits —
 the world's slowest digital photo frame). The build generates
 `CARD.BMP` *and* `CARD.PCX`, the same original CC0 test card in both
-formats (`tools/mkcard.py`), and the suite + CI assert the two renders
+formats (`homebrew/view/mkcard.py`), and the suite + CI assert the two renders
 are bit-identical — one compare covers the whole PCX decoder. Fun TP3
 fact: it has no 32-bit integers, so VIEW never seeks backward — target
 rows are walked in the order the file stores them, read in buffered
@@ -169,14 +169,22 @@ toggle. The original plan:
 
 Development loop: iterate against `runpc -cga` PPM dumps, finish in Mesen.
 
-### A C compiler on (and in) the ROM — queued
+### The dev workstation — queued (B: on spare SRAM + Small-C)
 
-Turbo Pascal 3 proves a compiler runs on this machine, but TP3 is
-copyrighted and can't ship. **Small-C** (Hendrix) is public domain, was born
-on 64 KB CP/M machines, and its companion Small Assembler is PD too — a
-fully redistributable C toolchain that fits the 108 KB build. Land it and
-every flashcart becomes a self-contained C dev machine out of the box.
-(Fallback candidate: Dunfield's MICRO-C; licensing to verify for either.)
+The verified-but-held milestone. Small-C 2.2 + Small Assembler (both
+public domain) + the MIT `LINK.EXE` already **compile, assemble, link
+and run C programs inside our emulated DOS 2.0** — proven end to end on
+runpc. What holds it: the toolchain needs the 172 KB BIGMEM machine
+(the assembler doesn't fit in 108 KB), and BIGMEM eats B:, so there is
+no writable drive to compile onto. The milestone, in order: (1) move
+B: onto the spare SRAM banks `$72/$73` (the cart header already
+declares 128 KB — this is also pre-work the Windows 1.01 plan wants),
+(2) a public BIGMEM ROM variant, (3) `freeware/smallc/` with provenance
+docs and `C:\CC` carrying the toolchain plus `HELLO.C`/`SIEVE.C`
+samples and a `CC.BAT` driver (~15 minutes per compile at SNES speed —
+period-perfect). End state: write C in TED, compile with Small-C, run
+it, all on the console. After that: more Java opcodes, and maybe —
+maybe — C ports of TED/VIEW once the toolchain can build them.
 
 ### The editor — SHIPPED as TED (vi declined)
 
@@ -228,14 +236,18 @@ three-language benchmark table, Java vs Pascal vs C, is one Small-C away).
 Open extensions if anyone wants them: `long` (a second pair), `switch`
 tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 
-### Repo housekeeping — queued, last
+### Repo housekeeping — DONE
 
-After the wave above: the repository layout has grown organically and
-deserves a pass — the `msdos/` toolchain tree next to the MS-DOS disk image
-is confusing at first contact, and `disks/` would read better split into
-categories (`disks/bench/`, `disks/midi/`, `disks/hello/`, …). Pure
-reorganization, no behavior change; deliberately queued behind everything
-else so it never preempts the fun stuff.
+The great reorg landed: our software lives in `homebrew/<tool>/` (one
+folder per tool, per-tool Makefiles staging exactly what ships as
+`C:\<TOOL>`), the packer walks it by convention, `disks/` is purely
+bring-your-own media (zero gitignore exceptions), `user/` at the repo
+root is the BYO drop-in, TP3 is fetched-not-committed for the
+`recompile` pipeline, the MIT MS-DOS utilities ship as `C:\DOS`, and
+the copyrighted dev C: became the `make apps` test fixture overlay.
+A `freeware/` directory (third-party PD/MIT tools, provenance-documented)
+is defined but deliberately not created until its first tenant arrives —
+which will be Small-C, below.
 
 ## Windows 1.01 — proof of concept done, fit + renderer next
 

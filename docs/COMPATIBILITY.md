@@ -6,7 +6,7 @@ period programs generally just work. This page lists what's been exercised.
 Two things to keep in mind:
 
 - The public ROM ships only free software (our own tools + a demo). Everything else
-  below is bring-your-own: drop it in `snes/userware/` and rebuild (see
+  below is bring-your-own: drop it in `user/` and rebuild (see
   [BUILDING.md](BUILDING.md)). A "✅ tested" mark means the emulator runs it, not that
   it's included.
 - Everything here was verified against the cycle-accurate Mesen emulator. Real
@@ -85,7 +85,7 @@ All captured from snes86 running in Mesen.
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / BENCH / HELLO / CGATEST / CGA6TST | ✅ shipped | our benchmarks + demos, with source |
 | | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source): modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
-| | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\PICS` ships generated test cards |
+| | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\VIEW` ships generated test cards |
 | | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
@@ -119,7 +119,7 @@ into an 8-voice General MIDI synthesizer, and exposes a small MIDI card to the g
   stream MIDPLAY plays. (The conversion does slow real-number math once, so playback
   can be a fast dumb loop.)
 - The public ROM includes a generated demo tune — a public-domain melody sequenced by
-  the build as an original CC0 MIDI. Type `PLAY` at `C:\>`.
+  the build as an original CC0 MIDI: `CD MIDI` then `MIDPLAY DEMO.SNM`.
 - Even the PC speaker is wired to the synth, so programs that beep make sound.
 
 Both tools ship with Turbo Pascal source in `C:\MIDI`. See

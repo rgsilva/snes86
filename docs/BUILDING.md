@@ -31,8 +31,8 @@ drive, and two of them change the memory size or what boots at all.
 | `make msdos` | `build/msdos.sfc` | free — our tools + a demo | no — builds from the repo |
 | `make freedos` | `build/freedos.sfc` | free (same as `msdos`) | no — FreeDOS auto-fetched |
 | `make elks` | `build/elks.sfc` | — (boots Linux, not DOS) | no — ELKS images auto-fetched |
-| `make dev` | `build/msdos_dev.sfc` | the full local app library | yes — your `disks/` software |
-| `make big` | `build/msdos_big.sfc` | full library, 172 KB guest | yes |
+| `make apps` | `build/msdos_apps.sfc` | public C: + the app-matrix fixture | yes — `disks/appmatrix/` |
+| `make big` | `build/msdos_big.sfc` | apps C:, 172 KB guest | yes |
 | `make fs` | `build/dosboot_fs.sfc` | — (self-booting disk) | yes — the FS1 image |
 
 What each one actually is:
@@ -45,14 +45,18 @@ What each one actually is:
   copied over `build/elks_rom.bin` / `build/elks_romfs.bin` and wins. See
   [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine) and
   [COMPATIBILITY.md](COMPATIBILITY.md#linux-on-the-snes-elks).
-- `make msdos` — the public ROM (this is the one you flash). Its C: is built by
-  `tools/mkhd_free.py` from committed, freely-redistributable files only: our
-  MIDPLAY / MIDCONV MIDI tools, the SOKOBAN game, the TED text editor, the VIEW
-  picture viewer (with generated CC0 test cards, BMP and PCX, in `C:\PICS`), the
-  JAVA class-file interpreter (`C:\JAVA`), and the SIEVE / HELLO /
-  CGATEST / CGA6TST benchmarks (with source), plus a generated CC0 demo tune and
-  `PLAY.BAT`. Anything you drop in `snes/userware/` is added under `C:\USER`.
-  Builds with nothing but what's in this repo.
+- `make msdos` — the public ROM (this is the one you flash). Its C: is
+  assembled by convention (`tools/mkhd_free.py`): every staged
+  `homebrew/<tool>/build/` becomes `C:\<TOOL>` (MIDI, BENCH, SOKOBAN,
+  VIEW, TED, JAVA — see [homebrew/README.md](../homebrew/README.md)),
+  `msdos/bin/` (the MIT MS-DOS utilities: CHKDSK, DEBUG, EDLIN, MORE,
+  FIND, SORT) becomes `C:\DOS`, and `user/` at the repo root becomes
+  `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED` — everything else
+  is a `CD` away. Builds with nothing but what's in this repo.
+
+  Extra content can be overlaid onto the C: at build time:
+  `make msdos OVERLAYS="path/to/dir path/to/floppy.img"` merges each
+  overlay's tree into the image (last wins, with a warning).
 
 - `make freedos` — the same machine on the 172 KB BIGMEM base, booting
   [FreeDOS](https://www.freedos.org/) 1.3 to FreeCOM instead of MS-DOS.
@@ -63,24 +67,26 @@ What each one actually is:
   kernel dies during init at 108 KB — so there is no non-BIGMEM variant, and
   BIGMEM's B: drive is absent by design. See [freedos/README.md](../freedos/README.md).
 
-- `make dev` — the same machine with the *full* C: (`tools/mkhd.py`): the complete
-  local library used for compatibility testing (GW-BASIC, WordStar, Multiplan, the
-  Infocom games, and so on). Those programs are copyrighted and are **not** in the
-  repo — `mkhd.py` reads them straight out of your local `disks/` folder, so this
-  target only builds on a machine that already has them. This is the day-to-day
-  development ROM.
+- `make apps` — the public machine plus the copyrighted app-matrix TEST
+  FIXTURE overlaid on C: (GW-BASIC, WordStar, Multiplan, the Infocom
+  games, MODE.COM...). Those programs are **not** in the repo: generate
+  the fixture once with `python3 disks/mkappmatrix.py` on a machine that
+  has the local software in `disks/`, and the suite's app legs use this
+  ROM — or skip, with a warning, when the fixture is absent. Nothing
+  from it ships; nobody browses it; its root is a period-authentic mess.
 
-- `make big` — `dev` plus BIGMEM: the guest grows from ~108 KB to 172 KB by backing
-  the extra conventional RAM with cartridge SRAM, which revives the memory-hungry
-  Rogue. Same full C: as `dev`. It's an experiment —
+- `make big` — `apps` plus BIGMEM: the guest grows from ~108 KB to 172 KB
+  by backing the extra conventional RAM with cartridge SRAM, which
+  revives the memory-hungry Rogue. It's an experiment —
   see BIGMEM in [INTERNALS.md](INTERNALS.md) and [FUTURE.md](FUTURE.md).
 
 - `make fs` — boots the Microsoft Flight Simulator 1 self-booting disk directly
   instead of MS-DOS (FS1 skipped DOS and drove the hardware itself). Not a DOS
   program at all; a separate experiment. Needs the FS1 disk image locally.
 
-Only `make msdos` builds from committed, freely-redistributable files; the rest
-pull in software that lives only on a developer's machine (see
+Only `make msdos`, `make freedos` and `make elks` build from committed or
+auto-fetched free software; the rest pull in software that lives only on a
+developer's machine (see
 [COMPATIBILITY.md](COMPATIBILITY.md)). PC-DOS is no longer a build target; the code
 path survives behind `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
 
@@ -88,16 +94,13 @@ path survives behind `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
 
 The public C: drive is deliberately small. To add your own DOS programs:
 
-1. Drop `.COM` / `.EXE` files (and any data they need) into `snes/userware/`.
+1. Drop `.COM` / `.EXE` files (and any data they need) into `user/` at the
+   repo root.
 2. `make msdos` again.
 
-They land in `C:\USER`, which is on the DOS `PATH`, so you can run them from
-anywhere at the `C:\>` prompt. The contents of `userware/` are git-ignored, so your
-software never ends up in the repo.
-
-Under the hood the free C: image is built by `snes/tools/mkhd_free.py`; the demo
-tune (a public-domain melody sequenced as a CC0 MIDI + its `.SNM` conversion) is
-generated at build time.
+They land in `C:\USER` (`CD USER` to get there). The contents of `user/`
+are git-ignored, so your software never ends up in the repo. For anything
+bigger, build an overlay: `make msdos OVERLAYS=path/to/your-tree`.
 
 ## The MS-DOS toolchain (self-hosted)
 
