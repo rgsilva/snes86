@@ -237,6 +237,12 @@ for bn in ("repbench.com", "cpubench.com"):
         print(f"mkhd.py: build/{bn} missing (no source in repo) - skipped",
               file=sys.stderr)
 
+pics_extra = []                       # local-only test images, never committed
+for pn in ("msdos.bmp",):
+    pp = os.path.join(DISKS, pn)
+    if os.path.exists(pp):
+        pics_extra.append((pn.upper(), open(pp, "rb").read()))
+
 rootfiles = [
     ("AUTOEXEC.BAT", AUTOEXEC),
     ("CA.BAT", CA_BAT),
@@ -278,6 +284,12 @@ subdirs = [
                ("ELITE.EXE", elite_exe), ("ELITETRN.COM", elite_trn),
                ("SGLIDER.EXE", sglider_exe)] +
                [(cn, cd) for cn, cd, _, _ in inf_games]),
+    ("PICS", [("VIEW.COM", open(os.path.join(DISKS, "view.com"),
+                                "rb").read()),
+              ("VIEW.PAS", open(os.path.join(DISKS, "VIEW.pas"),
+                                "rb").read()),
+              ("CARD.BMP", open(os.path.join(OUT, "card.bmp"),
+                                "rb").read())] + pics_extra),
 ]
 
 # ---- build the image

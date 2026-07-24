@@ -23,5 +23,7 @@ disks/*
 !disks/HELLO.pas
 !disks/sokoban.com
 !disks/sokoban.pas
+!disks/view.com
+!disks/VIEW.pas
 __pycache__/
 snes/test/shot.lua

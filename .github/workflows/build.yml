@@ -56,6 +56,14 @@ jobs:
             -m 108 -d snes/build/hd_free.img -cga cga6.ppm msdos/msdos.img >/dev/null
           python3 -c 'd=open("cga6.ppm","rb").read().split(b"\n",3); w,h=map(int,d[1].split()); p=d[3]; assert (w,h)==(640,200),(w,h); assert all(p[x*3]==(255,0)[x%2] for x in range(8)); assert p[96*640*3]==255; print("CGA6 OK")'
 
+      # End-to-end smoke: VIEW.COM (our TP3 BMP viewer, a committed binary)
+      # decodes the generated test card and paints CGA mode 6 on runpc.
+      - name: Smoke test — VIEW.COM paints the test card
+        run: |
+          printf '\r\rc:\rcd \\pics\rview card.bmp\rx\r' | core-c/build/runpc -c -l 3000000000 \
+            -m 108 -d snes/build/hd_free.img -cga view.ppm msdos/msdos.img >/dev/null
+          python3 -c 'd=open("view.ppm","rb").read().split(b"\n",3); w,h=map(int,d[1].split()); p=d[3]; assert (w,h)==(640,200); r=lambda y:[p[(y*640+x)*3] for x in range(0,640,7)]; assert max(r(5))==0; assert 0 in r(100) and 255 in r(100); print("VIEW OK")'
+
       # The ELKS ROM: Linux (well, the Embeddable Linux Kernel Subset) on a
       # SNES. The kernel + ROMFS images are fetched from the official ELKS
       # v0.9.1 release by test/fetch_elks.sh (GPL software - fetched at build

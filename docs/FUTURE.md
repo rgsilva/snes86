@@ -107,10 +107,24 @@ virtue: all four would be ours or public domain, so unlike the copyrighted
 classics in the gallery they can ship **in the public ROM**. One is greenlit,
 the rest are queued.
 
-### VIEW.COM — an image viewer (greenlit, in progress)
+### VIEW.COM — an image viewer (SHIPPED; GIF/JPEG still open)
 
 Show a photo fullscreen on the SNES — decoded by a DOS program on the
-emulated 8086, not pre-baked by the build. The plan:
+emulated 8086, not pre-baked by the build. **Landed**: `VIEW.COM` ships
+in `C:\PICS` on both C: images — a Turbo Pascal 3 program (source
+alongside, compiled by `tools/tpcompile.sh` driving TP3 *on the emulated
+8086*) that renders 8/24/32-bit BMPs, top-down or bottom-up, with
+aspect-correct fit and 4×4 ordered dither: `VIEW PIC.BMP` for 640×200
+halftone (mode 6), `VIEW PIC.BMP 4` for 320×200 four-colour. The build
+generates `CARD.BMP`, an original CC0 test card (`tools/mkcard.py`), and
+`t_view` regression-guards the whole path end-to-end. Fun TP3 fact: it
+has no 32-bit integers, so VIEW never seeks backward — target rows are
+walked in the order the file stores them and every seek is a small
+forward skip. Still open from the plan below: GIF87a, JPEG, wildcard
+slideshows, a palette toggle — and speed: TP3's per-pixel call overhead
+makes a full 640×200 paint take ~15 minutes at SNES speed (watching it
+crawl up the screen is honestly part of the charm, but an inline-asm
+dither loop could cut it several-fold). The original plan:
 
 1. **Step 0, the M10p6 renderer — DONE.** CGA mode 6 (640×200 mono) now
    renders true-width on the SNES: the whole frame stays in SNES hi-res
