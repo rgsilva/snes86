@@ -289,6 +289,8 @@ subdirs = [
               ("VIEW.PAS", open(os.path.join(DISKS, "VIEW.pas"),
                                 "rb").read()),
               ("CARD.BMP", open(os.path.join(OUT, "card.bmp"),
+                                "rb").read()),
+              ("CARD.PCX", open(os.path.join(OUT, "card.pcx"),
                                 "rb").read())] + pics_extra),
 ]
 

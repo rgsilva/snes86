@@ -113,7 +113,7 @@ WHAT'S HERE\r
   C:\\MIDI    MIDPLAY / MIDCONV (SNES-MIDI tools) + DEMO.MID / DEMO.SNM\r
   C:\\BENCH   SIEVE, BENCH, HELLO, CGATEST, CGA6TST  (+ .PAS source)\r
   C:\\GAMES   SOKOBAN  (+ .PAS source)\r
-  C:\\PICS    VIEW (BMP picture viewer, + .PAS source) + CARD.BMP\r
+  C:\\PICS    VIEW (BMP/PCX picture viewer, + .PAS source) + test cards\r
   C:\\USER    your own DOS software (see below)\r
 \r
 TRY IT\r
@@ -121,7 +121,8 @@ TRY IT\r
   C:\\> CD GAMES      then:  SOKOBAN\r
   C:\\> CD BENCH      then:  SIEVE   or   CGATEST\r
   C:\\> CD PICS       then:  VIEW CARD.BMP      (640x200 halftone)\r
-                       or:   VIEW CARD.BMP 4    (320x200 colour)\r
+                       or:   VIEW CARD.PCX 4    (320x200 colour)\r
+                       or:   VIEW *.*           (slideshow, ESC quits)\r
 \r
 BRING YOUR OWN SOFTWARE\r
   Drop .COM/.EXE files into  snes86/userware/  on your PC and rebuild the\r
@@ -319,7 +320,8 @@ subdirs = [
                ("SOKOBAN.PAS", rd(DISKS, "sokoban.pas"))]),
     ("PICS", [("VIEW.COM", rd(DISKS, "view.com")),
               ("VIEW.PAS", rd(DISKS, "VIEW.pas")),
-              ("CARD.BMP", rd(BUILD, "card.bmp"))]),
+              ("CARD.BMP", rd(BUILD, "card.bmp")),
+              ("CARD.PCX", rd(BUILD, "card.pcx"))]),
     ("USER", user_files),
 ]
 

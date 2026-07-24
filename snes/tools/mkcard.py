@@ -83,3 +83,44 @@ dib = struct.pack("<IiiHHIIiiII", 40, W, H, 1, 8, 0, len(data),
                   2835, 2835, 256, 0)
 open(sys.argv[1], "wb").write(hdr + dib + pal + data)
 print(f"card.bmp: {ofs + len(data)} bytes")
+
+# --- the same card as a v5 PCX (8-bit RLE, top-down rows, palette at
+# EOF), so `VIEW CARD.PCX` must render bit-identically to CARD.BMP ---
+pcx = bytearray(128)
+pcx[0] = 0x0A
+pcx[1] = 5
+pcx[2] = 1                            # RLE
+pcx[3] = 8                            # 8 bits per pixel
+struct.pack_into("<HHHH", pcx, 4, 0, 0, W - 1, H - 1)
+struct.pack_into("<HH", pcx, 12, 72, 72)
+pcx[65] = 1                           # one plane
+struct.pack_into("<H", pcx, 66, W)    # bytes per line (640 is even)
+struct.pack_into("<H", pcx, 68, 1)
+
+
+def idxrow(y):
+    return [index(px[(y * W + x) * 3], px[(y * W + x) * 3 + 1],
+                  px[(y * W + x) * 3 + 2]) for x in range(W)]
+
+
+for y in range(H):                    # top-down, as PCX stores rows
+    row = idxrow(y)
+    x = 0
+    while x < W:
+        v = row[x]
+        n = 1
+        while x + n < W and row[x + n] == v and n < 63:
+            n += 1
+        if n > 1 or (v & 0xC0) == 0xC0:
+            pcx.append(0xC0 | n)
+        pcx.append(v)
+        x += n
+pcx.append(0x0C)                      # palette marker + RGB triples
+for i in range(248):
+    v = i * 255 // 247
+    pcx += bytes((v, v, v))
+for r, g, b in BARS:
+    pcx += bytes((r, g, b))
+pcxpath = sys.argv[1].replace("card.bmp", "card.pcx")
+open(pcxpath, "wb").write(pcx)
+print(f"card.pcx: {len(pcx)} bytes")
