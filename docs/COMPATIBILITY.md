@@ -59,6 +59,9 @@ All captured from snes86 running in Mesen.
 <tr>
 <td align="center" colspan="2"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 172 KB machine, reading the C: tools (<code>make freedos</code>)</sub></td>
 </tr>
+<tr>
+<td align="center" colspan="2"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes about ten minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
+</tr>
 </table>
 
 > 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
