@@ -78,12 +78,17 @@ else
   FAIL=1
 fi
 
-echo "== host smoke (VIEW.COM paints the test card on runpc) =="
+echo "== host smoke (VIEW.COM paints the test cards on runpc) =="
 # (the SNES-side render path is t_cga6's job; a full paint at SNES speed
-# is ~10 emulated minutes, so the Mesen leg - test/t_view.lua - is manual)
+# is ~5 emulated minutes, so the Mesen leg - test/t_view.lua - is manual.
+# CARD.PCX carries the same pixels as CARD.BMP, so the two renders must
+# be bit-identical - one check covers the PCX decoder end to end.)
 printf 'cd pics\rview card.bmp\rx\r' \
   | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img \
       -cga build/view_host.ppm build/msdos_a.img >/dev/null 2>&1
+printf 'cd pics\rview card.pcx\rx\r' \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img \
+      -cga build/view_host2.ppm build/msdos_a.img >/dev/null 2>&1
 if python3 -c '
 import sys
 d = open("build/view_host.ppm","rb").read().split(b"\n",3)
@@ -92,6 +97,7 @@ ok = (w,h) == (640,200)
 row = lambda y: [p[(y*640+x)*3] for x in range(0,640,7)]
 ok = ok and max(row(5)) == 0                 # letterbox: 480-tall fits 160
 ok = ok and 0 in row(100) and 255 in row(100)   # dithered content
+ok = ok and open("build/view_host2.ppm","rb").read() == open("build/view_host.ppm","rb").read()
 sys.exit(0 if ok else 1)' 2>/dev/null; then
   echo "PASS view-host"
 else
