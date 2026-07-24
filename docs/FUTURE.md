@@ -178,6 +178,15 @@ CHIP-8 and GB.COM already establish that we like nested VMs; this one's
 headline is *"write once, run anywhere" — verified on a Super Nintendo*.
 Bonus deliverable: SIEVE in Java vs Pascal vs C, all timed on the console.
 
+### Repo housekeeping — queued, last
+
+After the wave above: the repository layout has grown organically and
+deserves a pass — the `msdos/` toolchain tree next to the MS-DOS disk image
+is confusing at first contact, and `disks/` would read better split into
+categories (`disks/bench/`, `disks/midi/`, `disks/hello/`, …). Pure
+reorganization, no behavior change; deliberately queued behind everything
+else so it never preempts the fun stuff.
+
 ## Windows 1.01 — proof of concept done, fit + renderer next
 
 Windows 3.0 is out of reach and stays out: its real mode — already the
