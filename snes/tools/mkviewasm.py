@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""VIEW inner loops, take 2. TP3 keeps SS<>DS, so [bp] is out: output
-goes through ES:DI STOSB (ES set to DS on entry), thresholds walk a
-per-phase row via BX. Two passes per row:
+"""VIEW inner loops. TP3 keeps SS<>DS, so [bp] is out: output goes
+through ES:DI STOSB (ES set to DS on entry), thresholds walk a
+per-phase row via BX. The row pipeline:
 
 A: luma+DDA   src(SI) --xlat(BX=lut)--> LumTgt (ES:DI stosb), DDA in mem
 B: pack       LumTgt(SI lodsb) vs ThrRow(BX) -> bits -> Row (ES:DI)
+blit          Row -> B800:[VBlt], 40 words, REP MOVSW
+rle           PCX decode: Buf window (SI) -> row buffer (DI), runs via
+              REP STOSB, run state carried across rows AND across buffer
+              refills (PRun/PVal); stops on row-full or buffer-empty
 
-Globals: VSrc, VLut, VCnt, VSw, VTw, VErr, VDst, VThrRow, LumTgt.
+Globals: VSrc, VLut, VCnt, VSw, VTw, VErr, VDst, VThrRow, VBlt, LumTgt,
+Row, PSrc, PSrcEnd, PDst, PDstEnd, PRun, PVal.
 """
 def mk(emit_fn):
     code, lab = [], {}
@@ -99,7 +104,70 @@ def passB(e, var, label, rel8, lab, pos):
     label("bf")
     e(0x07)                      # pop es
 
+def passBlit(e, var, label, rel8, lab, pos):
+    e(0x06)                      # push es
+    e(0xB8, 0x00, 0xB8)          # mov ax,$B800
+    e(0x8E, 0xC0)                # mov es,ax
+    e(0xBE); var("Row")          # mov si,Ofs(Row)
+    e(0x8B, 0x3E); var("VBlt")   # mov di,[VBlt]
+    e(0xFC)                      # cld
+    e(0xB9, 0x28, 0x00)          # mov cx,40
+    e(0xF3, 0xA5)                # rep movsw
+    e(0x07)                      # pop es
+
+def passRle(e, var, label, rel8, lab, pos):
+    e(0x06)                      # push es
+    e(0x1E, 0x07)                # push ds / pop es
+    e(0xFC)                      # cld
+    e(0x8B, 0x36); var("PSrc")   # mov si,[PSrc]
+    e(0x8B, 0x3E); var("PDst")   # mov di,[PDst]
+    label("flush")
+    e(0x8B, 0x0E); var("PRun")   # mov cx,[PRun]
+    e(0xE3); rel8("readl")       # jcxz readl
+    e(0xA1); var("PDstEnd")      # mov ax,[PDstEnd]
+    e(0x2B, 0xC7)                # sub ax,di      room left in the row
+    e(0x74); rel8("done")        # jz done        row full, run pends
+    e(0x3B, 0xC8)                # cmp cx,ax
+    e(0x76); rel8("f2")          # jbe f2
+    e(0x8B, 0xC8)                # mov cx,ax      clamp run to room
+    label("f2")
+    e(0x29, 0x0E); var("PRun")   # sub [PRun],cx
+    e(0xA0); var("PVal")         # mov al,[PVal]
+    e(0xF3, 0xAA)                # rep stosb
+    label("readl")
+    e(0x3B, 0x3E); var("PDstEnd")# cmp di,[PDstEnd]
+    e(0x73); rel8("done")        # jae done       row complete
+    e(0x3B, 0x36); var("PSrcEnd")# cmp si,[PSrcEnd]
+    e(0x73); rel8("done")        # jae done       need a refill
+    e(0xAC)                      # lodsb
+    e(0x8A, 0xE0)                # mov ah,al
+    e(0x80, 0xE4, 0xC0)          # and ah,$C0
+    e(0x80, 0xFC, 0xC0)          # cmp ah,$C0
+    e(0x75); rel8("lit")         # jne lit
+    e(0x3B, 0x36); var("PSrcEnd")# cmp si,[PSrcEnd]  value byte in buf?
+    e(0x72); rel8("hv")          # jb hv
+    e(0x4E)                      # dec si         un-read the count byte
+    e(0xEB); rel8("done")        # jmp done       refill mid-pair
+    label("hv")
+    e(0x24, 0x3F)                # and al,$3F
+    e(0x98)                      # cbw            AL<64 so AH=0
+    e(0xA3); var("PRun")         # mov [PRun],ax
+    e(0xAC)                      # lodsb
+    e(0xA2); var("PVal")         # mov [PVal],al
+    e(0xEB); rel8("flush")       # jmp flush
+    label("lit")
+    e(0xAA)                      # stosb
+    e(0xEB); rel8("readl")       # jmp readl
+    label("done")
+    e(0x89, 0x36); var("PSrc")   # mov [PSrc],si
+    e(0x89, 0x3E); var("PDst")   # mov [PDst],di
+    e(0x07)                      # pop es
+
 print("{ pass A: luma + DDA }")
 print(mk(passA))
 print("{ pass B: dither + pack }")
 print(mk(passB))
+print("{ blit: Row -> B800 }")
+print(mk(passBlit))
+print("{ rle: PCX decode step }")
+print(mk(passRle))
