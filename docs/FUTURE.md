@@ -112,15 +112,18 @@ the rest are queued.
 Show a photo fullscreen on the SNES — decoded by a DOS program on the
 emulated 8086, not pre-baked by the build. The plan:
 
-1. **Step 0 is the M10p6 renderer** — true 640×200 CGA mode 6 on the SNES
-   (today mode 6 draws squashed through the mode-4 path). The 80-column
-   text console already proves the hard parts: it is SNES hi-res with L/R
-   panning, a 512-pixel window over a 640-pixel logical screen. The missing
-   piece is the graphics half — a 1bpp-CGA-byte → SNES-tile conversion path
-   with dirty tracking, plus un-forcing the mode-set switch. Landing it
-   here un-squashes every bring-your-own mode-6 program and retires the
-   Windows 1.01 renderer prerequisite (below) as a side effect — and the
-   viewer is the perfect test payload for it.
+1. **Step 0, the M10p6 renderer — DONE.** CGA mode 6 (640×200 mono) now
+   renders true-width on the SNES: the whole frame stays in SNES hi-res
+   mode 5 with the bitmap on BG2, shown as a 512-pixel window that L/R
+   pan across the 640 — same trick as 80-column text. The conversion is
+   cheaper than mode 4 (a 1bpp CGA byte *is* the SNES plane-0 byte), the
+   char-index ceiling is beaten by HDMA-rebanding the BG2 character base
+   per row group, and the on-screen keyboard survives untouched. Every
+   bring-your-own mode-6 program is un-squashed, and the Windows 1.01
+   renderer prerequisite (below) is retired as a side effect. Covered by
+   `test/t_cga6.lua` (Mesen) + a runpc PPM check in the suite and CI;
+   `CGA6TST.COM` ships in `C:\BENCH`. (See INTERNALS.md for the how —
+   including the native-stack lesson it re-taught.)
 2. **Two output modes**: CGA mode 4 (320×200×4 — color, 4×4 ordered
    Bayer-dithered into the fixed palette) and mode 6 (640×200 —
    double-resolution mono halftone, newspaper style). Integer math only,
@@ -219,12 +222,10 @@ CPU and the machine are proven — what's left is SNES-specific plumbing:
    Windows directory. That layout work is the milestone's known-hard step.
    (A 192 KB-SRAM *emulator* config — 300 KB guest — clears it trivially for a
    Mesen-first demo, like BIGMEM before it.)
-2. **True 640×200 mode 6** (also under graphics above): Windows draws CGA hi-res,
-   and the host renders it at full 640; the SNES side still renders mode 6
-   squashed as mode 4. SNES mode 5 gives 512 wide — pan the rest like the
-   80-column text trick. This is M10p6, now first in line as step 0 of the
-   image-viewer milestone above — so by the time Windows is attempted, it
-   should already be done.
+2. **True 640×200 mode 6 — DONE** (landed as step 0 of the image-viewer
+   milestone above): the SNES now renders mode 6 on hi-res BG2 as a
+   512-pixel window with L/R panning the remaining 128. Windows' GUI
+   would display correctly today; this prerequisite is retired.
 3. **Survive the read-only C:** — Windows writes `WIN.INI` and temp files at
    runtime; patch or shim them (BIGMEM eats the B: SRAM disk, so the writable
    bits need an INT 21h-level detour or tolerated failures).

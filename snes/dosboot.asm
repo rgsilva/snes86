@@ -55,9 +55,12 @@ kPAN     dw                  ; horizontal pan (0-16), L/R buttons
 scanROW  dw                  ; scanner round-robin row
 .ENDE
 
-.DEFINE CQBASE $0800         ; 1 KB VRAM write queue (native WRAM; kbd-only
-.DEFINE CQMASK $03FF         ; traffic since M8 — $0C00-$0FFF spare, and
-                             ; $1000-$4FFF is the CGA adapter RAM)
+.DEFINE CQBASE $0800         ; 512 B VRAM write queue (native WRAM; kbd-only
+.DEFINE CQMASK $01FF         ; traffic since M8, so 128 entries is plenty —
+                             ; halved for the mode-6 staging buffer below.
+                             ; $1000-$4FFF is the CGA adapter RAM, and the
+                             ; NATIVE STACK works down from $0FFF: nothing
+                             ; may live above $0DFF (see Reset)
 .DEFINE BLANKE $2040         ; space glyph pair | priority
 
 ; ANSI/CSI parser + INT 10h scroll scratch ($0700-$073F kb ring,
@@ -117,9 +120,20 @@ mVCE     dw                  ; voice chosen for the current note-on
 ; $0530, vNote[8] at $0538 ($FF = voice free), FIFO $0540-$06FF (112
 ; four-byte packets: [delta-frames][status][d1][d2]).
 
-.DEFINE STG   $0C00          ; gfx staging buffer: one tile row, 640 bytes
+.DEFINE STG   $0A00          ; gfx staging buffer: one tile row — 640 bytes
+                             ; (mode 4/5) or 1024 (mode 6, to $0DFF). Must
+                             ; stay below $0E00: the native stack owns the
+                             ; top of this page (a lesson paid for twice)
 .DEFINE CGMAP $2800          ; BG3 64x32 tilemap (VRAM word addr)
 .DEFINE CGTIL $5000          ; BG3 2bpp tile data: 1000 tiles, 8000 words
+; CGA mode 6 (M10p6): 640x200x1 on hires BG2 (SNES mode 5), shown as a
+; 512px window panned by re-render like the 80-col text console. The
+; window is 64 chars x 25 rows = 1600 2bpp chars — past the 1024-char
+; index ceiling of one base — so HDMA ch6 rebands $210B per row group
+; (mode 6 needs no $2105 raster split; the whole frame stays mode 5):
+.DEFINE CG6B1 $5000          ; rows 0-15: chars 0-1023 at base $5000
+.DEFINE CG6B2 $7000          ; rows 16-23: chars 0-511 at base $7000
+.DEFINE CG6B3 $2C00          ; row 24: chars 384-447 at base $2000
 
 .BANK 0 SLOT 0
 .ORG 0
@@ -815,8 +829,19 @@ _h10_mode:                   ; AH=0 set mode: 0/1=40col 2/3=80col 4/5/6=CGA gfx
     bcc _h10_mtxt
     cmp #7
     bcs _h10_mtxt
-    lda #40                  ; graphics (mode 6 renders as 4 until M10p6)
+    cmp #6                   ; M10p6: mode 6 = true 640x200 on hires BG2
+    bne _h10_m45
+    lda #80                  ; 80 text columns; pan window 16, like text
     sta cWID
+    lda #$001E               ; 3D8 shadow: 80col|gfx|video|640 (pal_apply
+    sta s3D8                 ; keys the mono palette off bit4)
+    bra _h10_mgo
+_h10_m45:
+    lda #40
+    sta cWID
+    lda #$000A               ; 3D8 shadow: gfx|video
+    sta s3D8
+_h10_mgo:
     stz kPAN
     jsr gfx_enter
     lda gAX
@@ -1693,7 +1718,9 @@ _vb_notick:
 _vb_nbeep:
     jsr midi_frame           ; beep flags + the 60Hz MIDI sequencer
     lda cGFX
-    beq _vb_ngfx
+    bne _vb_gfx1
+    brl _vb_ngfx             ; (the mode-6 upload grew past beq range)
+_vb_gfx1:
     sep #$20                 ; BG3HOFS = kPAN*8 (0 or 64: left/right window)
     lda kPAN
     asl a
@@ -1703,9 +1730,40 @@ _vb_nbeep:
     stz $2111
     rep #$20
     lda gSTG                 ; staged tile row -> VRAM (ch1: ch0 is INT13's)
-    beq _vb_nstg
+    bne _vb_stg1
+    brl _vb_nstg
+_vb_stg1:
     dec a
-    sta kT0                  ; row: VMADD = CGTIL + row*320
+    sta kT0
+    lda cMODE
+    cmp #6
+    bne _vb_s45
+    lda kT0                  ; mode 6: banded rows, 512 words each
+    cmp #16
+    bcs _vb_s6b
+    xba                      ; row*256 (high byte was clear)
+    asl a                    ; row*512
+    clc
+    adc #CG6B1
+    bra _vb_s6w
+_vb_s6b:
+    cmp #24
+    bcs _vb_s6c
+    sec
+    sbc #16
+    xba
+    asl a                    ; (row-16)*512
+    clc
+    adc #CG6B2
+    bra _vb_s6w
+_vb_s6c:
+    lda #CG6B3
+_vb_s6w:
+    sta $2116
+    lda #1024
+    bra _vb_sgo
+_vb_s45:
+    lda kT0                  ; VMADD = CGTIL + row*320
     asl a
     asl a
     asl a
@@ -1721,6 +1779,9 @@ _vb_nbeep:
     clc
     adc #CGTIL
     sta $2116
+    lda #640
+_vb_sgo:
+    sta kT1                  ; DMA byte count
     sep #$20
     lda.b #$01               ; DMA ch1: mode 1 -> $2118/19
     sta $4310
@@ -1730,7 +1791,7 @@ _vb_nbeep:
     rep #$20
     lda #STG
     sta $4312
-    lda #640
+    lda kT1
     sta $4315
     sep #$20
     lda.b #$02
@@ -1788,6 +1849,12 @@ _vb_done:
     pla
     rti
 _vb_vofs:
+    lda cGFX                 ; mode 6: ch3's data is the bitmap's constant
+    beq _vbv_ok              ; -1 — a queued terminal-scroll vofs must not
+    lda cMODE                ; clobber it (still consume the entry)
+    cmp #6
+    beq _vb_next
+_vbv_ok:
     lda.w CQBASE+2,x
     sep #$20
     sta $0741
@@ -1815,8 +1882,11 @@ _rst_fast:
     ldx #$0FFF               ; native stack BELOW the CGA adapter RAM!
     txs                      ; ($1000-$4FFF is framebuffer: a 16 KB clear
                              ; at $1FFF ate a live return address once —
-                             ; cost a full debugging session. Staging ends
-                             ; $0E7F; worst native depth is ~40 bytes.)
+                             ; cost a full debugging session. And the
+                             ; mode-6 staging buffer reaching $0FFF ate
+                             ; the NMI's saved frame — cost another one.
+                             ; Staging now ends $0DFF; worst native depth
+                             ; is ~40 bytes.)
     lda #$0000
     tcd
     ; -- zero all of bank-0 low WRAM ($0000-$1FFF) up front. Mesen's
@@ -3365,6 +3435,16 @@ _kt_gfx:
     ; screens, 2-byte data) tables: the CGA split (HDMA on while cGFX).
     ; Regions: mode 1 BG3-only bitmap to line 200 (184 with kbd), then
     ; mode-5 kbd (TM=TS=BG1|BG2, the hires pair) or a backdrop border.
+    ; CGA mode 6 (M10p6) instead keeps the whole frame in SNES mode 5
+    ; and rebands the BG2 char base ($210B) on ch6 — see _kt_m6.
+    rep #$20
+    lda cGFX
+    beq _kt_m45
+    lda cMODE
+    cmp #6
+    beq _kt_m6
+_kt_m45:
+    sep #$20
     lda.b #128
     sta.w $0500
     sta.w $0510
@@ -3412,12 +3492,92 @@ _kt_g5:
     rep #$20
     rts
 
+_kt_m6:                      ; CGA mode 6: ch6 rebands $210B (BG2 chars);
+    sep #$20                 ; BG1 nibble stays 3 so the kbd font lives
+    lda.b #$80               ; lines 0-127 -> chars $5000
+    sta.w $0500
+    lda.b #$53
+    sta.w $0501
+    lda kVIS
+    beq _k6_nv
+    lda.b #56                ; 128-183 -> chars $7000 (kbd hides row 24)
+    sta.w $0502
+    lda.b #$73
+    sta.w $0503
+    lda.b #40
+    sta.w $0504
+    lda.b #$13               ; kbd region: the text fonts
+    sta.w $0505
+    stz.w $0506
+    bra _k6_c7
+_k6_nv:
+    lda.b #64                ; 128-191 -> chars $7000
+    sta.w $0502
+    lda.b #$73
+    sta.w $0503
+    lda.b #8                 ; 192-199: row 24 in the $2C00 gap
+    sta.w $0504
+    lda.b #$23
+    sta.w $0505
+    lda.b #24                ; border: back to the text fonts
+    sta.w $0506
+    lda.b #$13
+    sta.w $0507
+    stz.w $0508
+_k6_c7:
+    lda.b #$80               ; ch7: bitmap = BG2 on main AND sub (hires
+    sta.w $0510              ; pairs even/odd dots across the screens)
+    lda.b #$02
+    sta.w $0511
+    sta.w $0512
+    lda kVIS
+    bne _k6_v7
+    lda.b #72                ; to line 200
+    sta.w $0513
+    lda.b #$02
+    sta.w $0514
+    sta.w $0515
+    lda.b #24                ; border: no layers -> backdrop
+    sta.w $0516
+    stz.w $0517
+    stz.w $0518
+    stz.w $0519
+    bra _k6_sc
+_k6_v7:
+    lda.b #56                ; to line 184
+    sta.w $0513
+    lda.b #$02
+    sta.w $0514
+    sta.w $0515
+    lda.b #40                ; mode-5 kbd: BG1+BG2
+    sta.w $0516
+    lda.b #$03
+    sta.w $0517
+    sta.w $0518
+    stz.w $0519
+_k6_sc:
+    lda.b #$28               ; ch5 d1/d2: BG2SC = the bitmap map ($2800)
+    sta.w $0771              ; over the bitmap (kbd entry keeps $08)
+    sta.w $0773
+    lda.b #$FF               ; ch3 d1/d2: BG2VOFS = the bitmap's -1
+    sta.w $0751              ; (kbd entry keeps its own scroll)
+    sta.w $0754
+    lda.b #$03
+    sta.w $0752
+    sta.w $0755
+    rep #$20
+    rts
+
 ;----------------------------------------------------------------------
-; CGA graphics (M10): mode 4/5. The adapter RAM at VBUF doubles as the
-; live framebuffer; the NMI converts one 40-tile row per frame into
+; CGA graphics (M10): modes 4/5/6. The adapter RAM at VBUF doubles as
+; the live framebuffer; the NMI converts one tile row per frame into
 ; SNES 2bpp planar tiles (round-robin, full repaint every 25 frames).
-; PPU: HDMA ch6/7 split the frame into a mode-1 BG3 bitmap region and
-; the mode-5 text/keyboard region (tables built by kbd_tables).
+; Modes 4/5: HDMA ch6/7 split the frame into a mode-1 BG3 bitmap region
+; (320px: 256 shown + 64 by hw scroll) and the mode-5 text/keyboard
+; region. Mode 6 (M10p6): the whole frame stays SNES mode 5 and the
+; 640x200x1 bitmap lives on hires BG2 as a 512px window panned by
+; re-render; ch6 rebands the BG2 char base ($210B) per row group and
+; ch5/ch3 data is overridden for the bitmap (tables: kbd_tables).
 ;----------------------------------------------------------------------
 
 _sk_3d9:                     ; CGA color select -> palette dirty
@@ -3431,11 +3591,30 @@ _sk_3d8:                     ; CGA mode select: bit1 = graphics (GW-BASIC
     sta s3D8
     and #$0002
     beq _sk_txt
-    lda cGFX
-    bne _sk_dn
+    lda s3D8                 ; bit4 = 640x200 mono -> mode 6
+    and #$0010
+    beq _sk_g4
+    lda #6
+    bra _sk_gt
+_sk_g4:
     lda #4
+_sk_gt:
+    sta cT0
+    lda cGFX
+    beq _sk_gen
+    lda cMODE                ; already in gfx: only a 4<->6 flip re-enters
+    cmp cT0
+    beq _sk_dn
+_sk_gen:
+    lda cT0
     sta cMODE
+    cmp #6
+    bne _sk_gw4
+    lda #80
+    bra _sk_gww
+_sk_gw4:
     lda #40
+_sk_gww:
     sta cWID
     stz kPAN
     jmp gfx_enter            ; no clear: programs clear B800 themselves
@@ -3804,6 +3983,9 @@ _hpa_dn:
     rts
 
 gfx_pofs:                    ; gCX=x gDX=y -> X = fb byte offset, cT1 = shift
+    lda cMODE
+    cmp #6
+    beq _gpo_m6
     lda gDX
     lsr a                    ; y>>1, carry = y&1
     sta cT0
@@ -3840,21 +4022,72 @@ _gpo_e:
     sbc cT0                  ; shift = 6 - 2*(x&3)
     sta cT1
     rts
+_gpo_m6:                     ; mode 6, 1bpp: byte = x>>3, shift = 7-(x&7)
+    lda gDX
+    lsr a                    ; y>>1, carry = y&1
+    sta cT0
+    lda #$0000
+    bcc _gp6_e
+    lda #$2000               ; odd scanlines: second bank
+_gp6_e:
+    sta aT0
+    lda cT0
+    asl a
+    asl a
+    asl a
+    asl a                    ; *16
+    sta cT0
+    asl a
+    asl a                    ; *64
+    clc
+    adc cT0                  ; (y>>1)*80
+    clc
+    adc aT0
+    sta aT0
+    lda gCX
+    lsr a
+    lsr a
+    lsr a                    ; x>>3
+    clc
+    adc aT0
+    tax
+    lda gCX
+    and #$0007
+    sta cT0
+    lda #7
+    sec
+    sbc cT0                  ; shift = 7 - (x&7)
+    sta cT1
+    rts
 
 _h10_pset:                   ; AH=0C: write pixel AL at (CX,DX); bit7 = XOR
     lda cGFX
     beq _hps_r
-    lda gCX
-    cmp #320
-    bcs _hps_r
     lda gDX
     cmp #200
+    bcs _hps_r
+    lda cMODE
+    cmp #6
+    beq _hps_x6
+    lda gCX
+    cmp #320
     bcs _hps_r
     jsr gfx_pofs
     lda gAX
     and #$0003
     sta cT0                  ; value at pixel position
     lda #$0003
+    sta aT0                  ; mask
+    bra _hps_sh
+_hps_x6:
+    lda gCX
+    cmp #640
+    bcs _hps_r
+    jsr gfx_pofs
+    lda gAX
+    and #$0001
+    sta cT0                  ; 1bpp value
+    lda #$0001
     sta aT0                  ; mask
 _hps_sh:
     lda cT1
@@ -3887,12 +4120,19 @@ _hps_r:
 _h10_pget:                   ; AH=0D: read pixel (CX,DX) -> AL
     lda cGFX
     beq _hps_r
-    lda gCX
-    cmp #320
-    bcs _hps_r
     lda gDX
     cmp #200
     bcs _hps_r
+    lda gCX
+    cmp #320
+    bcc _hpg_bi
+    lda cMODE                ; only mode 6 reaches x = 320-639
+    cmp #6
+    bne _hps_r
+    lda gCX
+    cmp #640
+    bcs _hps_r
+_hpg_bi:
     jsr gfx_pofs
     lda.l VBUF,x
     and #$00FF
@@ -3903,7 +4143,14 @@ _hpg_sh:
     lsr a
     bra _hpg_sh
 _hpg_go:
+    ldx cMODE
+    cpx #6
+    bne _hpg_m4
+    and #$0001
+    bra _hpg_msk
+_hpg_m4:
     and #$0003
+_hpg_msk:
     sta cT0
     lda gAX
     and #$FF00
@@ -3934,8 +4181,18 @@ _pa_bgw:
     xba
     sta.l $002122
     rep #$20
-    ldy #1                   ; entries 1-3: idx = v*2 + pal + bright*8
-_pa_c:
+    ldy #1                   ; entries 1-3: idx = v*2 + pal + bright*8;
+_pa_c:                       ; mode 6 (3D8 bit4): fg = 3D9's low nibble
+    lda s3D8
+    and #$0010
+    beq _pa_c45
+    lda s3D9
+    and #$000F
+    asl a
+    tax
+    lda.l cga_pal16,x
+    bra _pa_cw
+_pa_c45:
     lda s3D9
     and #$0020
     lsr a
@@ -3957,6 +4214,7 @@ _pa_c:
     asl a                    ; word index
     tax
     lda.l cga_pal16,x
+_pa_cw:
     sep #$20
     sta.l $002122
     xba
@@ -3982,9 +4240,12 @@ gfx_enter:                   ; guest ctx: switch the PPU to the gfx split.
     sta cGFX
     stz gROW
     stz gSTG
+    stz cPALD
+    lda cMODE
+    cmp #6
+    beq _ge_m6               ; M10p6: the hires BG2 machine
     lda #$0030               ; default: bright cyan/magenta/white, black bg
     sta s3D9
-    stz cPALD
     jsr pal_apply
     ; BG3 tilemap: (r,c) -> tile r*40+c; cols 0-31 in screen A at CGMAP,
     ; cols 32-39 in screen B at CGMAP+$400 (cols 40-63 never visible)
@@ -4014,27 +4275,13 @@ _ge_cb:
     lda cT1
     cmp #32
     bcc _ge_rb
-    ; zero the tile region: DMA ch0 fixed-source, 16000 bytes
+    ; zero the tile region
     lda #CGTIL
     sta.l $002116
-    sep #$20
-    lda.b #$09               ; mode 1, fixed A-address
-    sta.l $004300
-    lda.b #$18
-    sta.l $004301
-    rep #$20
-    lda #zero_w
-    sta.l $004302
-    sep #$20
-    lda.b #:zero_w
-    sta.l $004304
-    rep #$20
     lda #16000
-    sta.l $004305
-    sep #$20
-    lda.b #$01
-    sta.l $00420B
+    jsr _ge_zero
     ; BG3 registers
+    sep #$20
     lda.b #$29               ; map $2800, 64x32
     sta.l $002109
     lda.b #$05               ; chars $5000
@@ -4046,7 +4293,64 @@ _ge_cb:
     sta.l $002112            ; VOFS -1
     lda.b #$03
     sta.l $002112
+    lda.b #$13               ; $210B + ch6 back from a mode-6 stint
+    sta.l $00210B
+    lda.b #$05               ; ch6 -> $2105 (the mode-4 raster split)
+    sta.l $004361
     rep #$20
+    bra _ge_fin
+
+_ge_m6:                      ; CGA mode 6: 512px window on hires BG2
+    lda #$003F               ; BIOS mode-6 default: fg white in 3D9 low
+    sta s3D9
+    lda s3D8
+    ora #$0010               ; ensure the mono bit for pal_apply
+    sta s3D8
+    jsr pal_apply
+    ; BG2 32x32 map at CGMAP: rows 0-15 char r*64+c*2 (band $5000),
+    ; rows 16-23 char (r-16)*64+c*2 (band $7000), row 24 char 384+c*2
+    ; (band $2000 -> $2C00). Rows 25+ sit under the kbd/border regions.
+    lda #CGMAP
+    sta.l $002116
+    stz cT1                  ; r
+_g6_r:
+    ldx #0                   ; c
+_g6_c:
+    jsr _g6_tile
+    inx
+    cpx #32
+    bcc _g6_c
+    inc cT1
+    lda cT1
+    cmp #32
+    bcc _g6_r
+    ; zero the char bands
+    lda #CG6B1
+    sta.l $002116
+    lda #24576               ; $5000-$7FFF (bands 1+2)
+    jsr _ge_zero
+    lda #CG6B3
+    sta.l $002116
+    lda #1024                ; the row-24 block
+    jsr _ge_zero
+    sep #$20
+    lda.b #$28               ; BG2 map $2800, 32x32
+    sta.l $002108
+    lda.b #$53               ; BG2 chars $5000 (ch6 rebands per region)
+    sta.l $00210B
+    lda.b #$00
+    sta.l $00210F            ; BG2HOFS 0: the window pans by re-render
+    sta.l $00210F
+    lda.b #$FF
+    sta.l $002110            ; BG2VOFS -1 (ch3's data holds it there too)
+    lda.b #$03
+    sta.l $002110
+    lda.b #$05               ; SNES mode 5 for the whole frame — ch6 is
+    sta.l $002105            ; free to reband $210B instead of $2105
+    lda.b #$0B
+    sta.l $004361
+    rep #$20
+_ge_fin:
     jsr kbd_tables           ; rebuild HDMA tables (gfx split boundaries)
     sep #$20
     lda.b #$FC               ; HDMA: kbd ch2-5 + gfx split ch6/7
@@ -4084,6 +4388,64 @@ _get_w:
     sta.l $002118
     rts
 
+_g6_tile:                    ; cT1 = r, X = c: one BG2 bitmap map entry
+    lda cT1
+    cmp #16
+    bcs _g6t_b2
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; r*64
+    bra _g6t_c
+_g6t_b2:
+    cmp #24
+    bcs _g6t_b3
+    sec
+    sbc #16
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; (r-16)*64
+    bra _g6t_c
+_g6t_b3:
+    cmp #25
+    bcs _g6t_z
+    lda #384                 ; row 24 lives in the $2C00 gap
+_g6t_c:
+    sta cT0
+    txa
+    asl a                    ; c*2: a 16px hires tile = chars (c, c+1)
+    clc
+    adc cT0
+    bra _g6t_w
+_g6t_z:
+    lda #0
+_g6t_w:
+    sta.l $002118
+    rts
+
+_ge_zero:                    ; fixed-source zero A bytes at VMADD (ch0,
+    sta.l $004305            ; forced blank; A 16-bit in and out)
+    sep #$20
+    lda.b #$09               ; mode 1, fixed A-address
+    sta.l $004300
+    lda.b #$18
+    sta.l $004301
+    rep #$20
+    lda #zero_w
+    sta.l $004302
+    sep #$20
+    lda.b #:zero_w
+    sta.l $004304
+    lda.b #$01
+    sta.l $00420B
+    rep #$20
+    rts
+
 gfx_exit:                    ; guest ctx: back to the mode-5 text console
     phy
     sep #$20
@@ -4098,6 +4460,10 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     lda.b #$03               ; TM+TS: BG1+BG2 (mode-5 hires pair)
     sta.l $00212C
     sta.l $00212D
+    lda.b #$13               ; $210B + ch6 back from a mode-6 stint
+    sta.l $00210B
+    lda.b #$05
+    sta.l $004361
     lda.b #$00               ; CGRAM 0-2: backdrop black, pair0 black/green
     sta.l $002121
     sta.l $002122
@@ -4129,6 +4495,11 @@ gfx_glyph:                   ; A = char, aT1 = color 0-3, at cROW/cCOL.
     asl a
     asl a
     sta aT0                  ; font byte index = char*8
+    lda cMODE
+    cmp #6
+    bne _gg_m45
+    brl _gg_m6
+_gg_m45:
     lda cROW
     asl a
     asl a                    ; row*4
@@ -4190,6 +4561,55 @@ _gg_bn:
     sta aT2
     rts
 
+_gg_m6:                      ; mode 6: the cell is one byte per line and
+    lda cROW                 ; the font byte IS the bitmap byte (runpc
+    asl a                    ; draws glyphs the same way)
+    asl a                    ; row*4
+    sta cT0
+    asl a
+    asl a                    ; row*16
+    clc
+    adc cT0                  ; row*20
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*320
+    clc
+    adc cCOL
+    sta cT1                  ; fb offset of the cell's even line 0
+    lda #4
+    sta cT2n                 ; 4 line pairs
+_gg6_pair:
+    ldx aT0
+    lda.l cgafont,x          ; even line
+    inc aT0
+    and #$00FF
+    ldx cT1
+    sep #$20
+    sta.l VBUF,x
+    rep #$20
+    ldx aT0
+    lda.l cgafont,x          ; odd line (second bank)
+    inc aT0
+    and #$00FF
+    pha
+    lda cT1
+    clc
+    adc #$2000
+    tax
+    pla
+    sep #$20
+    sta.l VBUF,x
+    rep #$20
+    lda cT1
+    clc
+    adc #80
+    sta cT1
+    dec cT2n
+    bne _gg6_pair
+    ply
+    rts
+
 gfx_nlscr:                   ; graphics newline at row 24: scroll the
     phy                      ; bitmap up 8 scanlines, clear the bottom
     phx
@@ -4239,7 +4659,22 @@ _nlg_c:
     sta.w STG+SOFS,x
 .ENDM
 
+; mode-6 line: one CGA byte (8 px, 1bpp) IS the SNES plane-0 byte (same
+; MSB-left bit order); plane 1 stays 0. Cheaper than mode 4 — no LUTs.
+.MACRO GLINE6 ARGS OFS, SOFS
+    ldx kT1
+    lda.l $7E0000+VBOFS+OFS,x
+    and #$00FF
+    ldx kT2
+    sta.w STG+SOFS,x
+.ENDM
+
 gfx_scan:                    ; NMI tail: convert tile row gROW -> staging
+    lda cMODE
+    cmp #6
+    bne _gs_m45
+    brl gfx_scan6
+_gs_m45:
     lda gROW
     asl a
     asl a
@@ -4285,6 +4720,54 @@ _gs_rdone:
     bcc _gs_st               ; advance round-robin: 0..24
     lda #0
 _gs_st:
+    sta gROW
+    rts
+
+gfx_scan6:                   ; mode 6: 64 chars of the 512px window; the
+    lda gROW                 ; window starts kPAN bytes into each line,
+    asl a                    ; so a pan repaints itself within 25 frames
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*64
+    sta kT1
+    lda gROW
+    xba
+    and #$FF00               ; row*256
+    clc
+    adc kT1
+    clc
+    adc kPAN                 ; src = row*320 + kPAN
+    sta kT1
+    stz kT2
+    lda #64
+    sta nCNT
+_g6s_tile:
+    GLINE6 $0000, 0
+    GLINE6 $2000, 2
+    GLINE6 $0050, 4
+    GLINE6 $2050, 6
+    GLINE6 $00A0, 8
+    GLINE6 $20A0, 10
+    GLINE6 $00F0, 12
+    GLINE6 $20F0, 14
+    inc kT1
+    lda kT2
+    clc
+    adc #16
+    sta kT2
+    dec nCNT
+    beq _g6s_done
+    jmp _g6s_tile            ; loop body > bra range (8 unrolled GLINE6s)
+_g6s_done:
+    lda gROW
+    inc a
+    sta gSTG                 ; converted row + 1, awaiting DMA
+    cmp #25
+    bcc _g6s_st
+    lda #0
+_g6s_st:
     sta gROW
     rts
 

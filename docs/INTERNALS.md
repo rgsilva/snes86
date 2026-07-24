@@ -120,12 +120,22 @@ window into the full-width buffer and lets you pan it: the L/R shoulder buttons 
 from 0 to 16, moving the window across the 80 columns. The buffer always holds the true
 80×25; you're just seeing 64 of them at a time.
 
-CGA graphics. The graphics modes (4/5/6 — 320×200 four-colour, 640×200 mono) switch the
-display to a third layer, BG3, with its own 2bpp tilemap and tiles in VRAM. The guest's
-bitmap in adapter RAM is blitted into those tiles, the four-colour CGA palette goes to
-CGRAM, and `INT 10h` teletype in a graphics mode blits font glyphs straight into the bitmap;
-scrolling shifts the whole bitmap up eight scanlines. (Mode 6's 640-wide mono currently
-renders like mode 4.)
+CGA graphics. The four-colour modes (4/5 — 320×200) switch the display to a third layer,
+BG3, with its own 2bpp tilemap and tiles in VRAM: 256 of the 320 pixels are on screen and
+L/R hardware-scroll to the rest. The guest's bitmap in adapter RAM is blitted into the
+tiles one tile row per frame (a full repaint every 25 frames), the four-colour CGA palette
+goes to CGRAM, and `INT 10h` teletype in a graphics mode blits font glyphs straight into
+the bitmap; scrolling shifts the whole bitmap up eight scanlines.
+
+Mode 6 — CGA's 640×200 hi-res mono — gets its own machine. The whole frame stays in SNES
+mode 5 (the same 512px hi-res the text console uses) with the bitmap on BG2 as 2bpp tiles,
+shown as a 512-pixel window that L/R pan across the 640 by re-render, exactly like 80-column
+text. The conversion is almost free — a 1bpp CGA byte *is* the SNES plane-0 byte, so unlike
+mode 4 there are no lookup tables — but the window is 1,600 tiles and a 2bpp layer can only
+address 1,024 from one char base, so the HDMA channel that splits the screen for mode 4
+(no longer needed: there's no mode split) is repurposed to re-point the BG2 character base
+per band of tile rows. The on-screen keyboard survives untouched: its maps and fonts stay
+resident, and the keyboard region's HDMA entries simply point BG2 back at the text font.
 
 ### The SNES is your sound card
 

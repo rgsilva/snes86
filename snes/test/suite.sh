@@ -60,7 +60,25 @@ else
   FAIL=1
 fi
 
-TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_midi"
+echo "== host smoke (CGA mode 6 renders true 640x200 on runpc) =="
+printf 'cga6tst\rx\r' \
+  | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd.img \
+      -cga build/cga6_host.ppm build/msdos_a.img >/dev/null 2>&1
+if python3 -c '
+import sys
+d = open("build/cga6_host.ppm","rb").read().split(b"\n",3)
+w,h = map(int, d[1].split()); p = d[3]
+ok = (w,h) == (640,200)                                # true 640-wide
+ok = ok and all(p[x*3] == (255,0)[x%2] for x in range(8))   # 1px stripes
+ok = ok and p[96*640*3] == 255                         # white band
+sys.exit(0 if ok else 1)' 2>/dev/null; then
+  echo "PASS cga6-host"
+else
+  echo "FAIL cga6-host"
+  FAIL=1
+fi
+
+TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_cga6 t_midi"
 [ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
 
 for t in $TESTS; do

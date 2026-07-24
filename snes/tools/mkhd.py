@@ -267,6 +267,8 @@ subdirs = [
               bench_extra +
               [("CGATEST.COM", open(os.path.join(
                    BUILD, "cgatest.com"), "rb").read()),
+               ("CGA6TST.COM", open(os.path.join(
+                   BUILD, "cga6tst.com"), "rb").read()),
                ("SIEVE.PAS", sieve),
                ("SIEVE.COM", sieve_com),
                ("BENCH.PAS", bench)]),

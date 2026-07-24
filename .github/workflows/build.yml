@@ -47,6 +47,15 @@ jobs:
             -m 108 -d snes/build/hd_free.img msdos/msdos.img | tee boot.log
           grep -q "MS-DOS version 2.00" boot.log
 
+      # End-to-end smoke: the M10p6 CGA mode-6 path. Run the test card from
+      # the free C: and verify runpc's dump is true 640x200 with 1px stripes
+      # and the white band (the SNES side is covered by test/t_cga6.lua).
+      - name: Smoke test — CGA mode 6 (640x200)
+        run: |
+          printf '\r\rc:\rcd \\bench\rcga6tst\rx\r' | core-c/build/runpc -c -l 500000000 \
+            -m 108 -d snes/build/hd_free.img -cga cga6.ppm msdos/msdos.img >/dev/null
+          python3 -c 'd=open("cga6.ppm","rb").read().split(b"\n",3); w,h=map(int,d[1].split()); p=d[3]; assert (w,h)==(640,200),(w,h); assert all(p[x*3]==(255,0)[x%2] for x in range(8)); assert p[96*640*3]==255; print("CGA6 OK")'
+
       # The ELKS ROM: Linux (well, the Embeddable Linux Kernel Subset) on a
       # SNES. The kernel + ROMFS images are fetched from the official ELKS
       # v0.9.1 release by test/fetch_elks.sh (GPL software - fetched at build
