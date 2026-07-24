@@ -48,7 +48,8 @@ What each one actually is:
 - `make msdos` — the public ROM (this is the one you flash). Its C: is built by
   `tools/mkhd_free.py` from committed, freely-redistributable files only: our
   MIDPLAY / MIDCONV MIDI tools, the SOKOBAN game, the TED text editor, the VIEW
-  picture viewer (with generated CC0 test cards, BMP and PCX, in `C:\PICS`), and the SIEVE / HELLO /
+  picture viewer (with generated CC0 test cards, BMP and PCX, in `C:\PICS`), the
+  JAVA class-file interpreter (`C:\JAVA`), and the SIEVE / HELLO /
   CGATEST / CGA6TST benchmarks (with source), plus a generated CC0 demo tune and
   `PLAY.BAT`. Anything you drop in `snes/userware/` is added under `C:\USER`.
   Builds with nothing but what's in this repo.

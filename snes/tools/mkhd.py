@@ -237,6 +237,23 @@ for bn in ("repbench.com", "cpubench.com"):
         print(f"mkhd.py: build/{bn} missing (no source in repo) - skipped",
               file=sys.stderr)
 
+JAVADIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "..", "..", "java")
+
+
+def java_files():
+    out = [("JAVA.COM", open(os.path.join(DISKS, "java.com"), "rb").read()),
+           ("README.TXT", open(os.path.join(JAVADIR, "README.md"),
+                               "rb").read())]
+    for base in ("Hello", "Fib", "Sieve", "Concat", "Guess"):
+        nm = base.upper()
+        out.append((nm + ".CLA", open(os.path.join(
+            JAVADIR, base + ".class"), "rb").read()))
+        out.append((nm + ".JAV", open(os.path.join(
+            JAVADIR, base + ".java"), "rb").read()))
+    return out
+
+
 pics_extra = []                       # local-only test images, never committed
 for pn in ("msdos.bmp",):
     pp = os.path.join(DISKS, pn)
@@ -286,6 +303,7 @@ subdirs = [
                ("ELITE.EXE", elite_exe), ("ELITETRN.COM", elite_trn),
                ("SGLIDER.EXE", sglider_exe)] +
                [(cn, cd) for cn, cd, _, _ in inf_games]),
+    ("JAVA", java_files()),
     ("PICS", [("VIEW.COM", open(os.path.join(DISKS, "view.com"),
                                 "rb").read()),
               ("VIEW.PAS", open(os.path.join(DISKS, "VIEW.pas"),

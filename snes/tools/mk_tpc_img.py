@@ -137,6 +137,12 @@ def build(name):
         idx += 1
     root[idx * 32:idx * 32 + 32] = put(name + ".PAS", src)
     idx += 1
+    # {$I} include files: pack disks/<NAME>*.INC alongside the source
+    import glob
+    for inc in sorted(glob.glob(os.path.join(DISKS, name + "*.INC"))):
+        root[idx * 32:idx * 32 + 32] = put(
+            os.path.basename(inc).upper(), open(inc, "rb").read())
+        idx += 1
 
     img[512:512 + SFAT * 512] = fat
     img[512 + SFAT * 512:512 + 2 * SFAT * 512] = fat

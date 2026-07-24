@@ -63,6 +63,9 @@ All captured from snes86 running in Mesen.
 <td align="center" colspan="2"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub></td>
 </tr>
 <tr>
+<td align="center" colspan="2"><img src="assets/java.png" width="480"><br><sub>JAVA.COM — real <code>javac --release 8</code> bytecode running on the emulated 8086: "write once, run anywhere," verified on a Super Nintendo (<code>C:\JAVA</code>)</sub></td>
+</tr>
+<tr>
 <td align="center" colspan="2"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes a few minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
 </tr>
 </table>
@@ -83,6 +86,7 @@ All captured from snes86 running in Mesen.
 | | SIEVE / BENCH / HELLO / CGATEST / CGA6TST | ✅ shipped | our benchmarks + demos, with source |
 | | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source): modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
 | | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\PICS` ships generated test cards |
+| | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
@@ -141,6 +145,36 @@ init at 108 KB, measured on the host core first).
 - **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release
   (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM
   into a 360 KB boot floppy. See [freedos/README.md](../freedos/README.md).
+
+## Java on the SNES
+
+`JAVA.COM` (in `C:\JAVA`) is a Java class-file interpreter: it runs the
+bytecode a real `javac` produces. Compile on any modern machine with
+`javac --release 8`, rename the `.class` to `.CLA` (DOS 8.3 can't hold
+`.class`), and:
+
+    C:\JAVA> JAVA HELLO
+    Hello from Java on a SNES!
+
+"Write once, run anywhere" — anywhere apparently including a Super
+Nintendo. It is a genuine bytecode interpreter, not a source translator:
+`javac` on the desktop, the JVM on the 8086, in the spirit of Infocom's
+Z-machine (compiled on a mainframe, interpreted on the PC).
+
+- **Scope**: static methods of one class, 32-bit `int` arithmetic
+  (hi/lo 16-bit pairs, with the hot ops hand-written in 8086),
+  `int[]`/`boolean[]` arrays, `String` literals, `StringBuilder`
+  concatenation (`"n=" + i`), `System.out.println/print`,
+  `System.in.read()`. No `long`/`float`, no user-defined objects, no
+  exceptions, no garbage collector (nothing lives long enough to need
+  one). Unsupported bytecode stops with a message naming the opcode.
+- **Samples** in `C:\JAVA` (source `.JAV` alongside): `HELLO`, `FIB`
+  (Fibonacci), `SIEVE` (the BYTE sieve — one pass), `CONCAT` (string
+  building), `GUESS` (reads the keyboard). Each prints its elapsed BIOS
+  ticks on exit, the house benchmark currency.
+- Built with `javac --release 8` — newer targets emit `invokedynamic`
+  string concatenation, which is deliberately out of scope. The compiled
+  class files are committed, so the ROM builds without a JDK.
 
 ## Linux on the SNES (ELKS)
 
