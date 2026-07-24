@@ -60,6 +60,9 @@ All captured from snes86 running in Mesen.
 <td align="center" colspan="2"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 172 KB machine, reading the C: tools (<code>make freedos</code>)</sub></td>
 </tr>
 <tr>
+<td align="center" colspan="2"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub></td>
+</tr>
+<tr>
 <td align="center" colspan="2"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes a few minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
 </tr>
 </table>
@@ -78,6 +81,7 @@ All captured from snes86 running in Mesen.
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / BENCH / HELLO / CGATEST / CGA6TST | ✅ shipped | our benchmarks + demos, with source |
+| | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source): modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
 | | VIEW | ✅ shipped | our BMP picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour; `C:\PICS` ships a generated test card |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |

@@ -245,6 +245,8 @@ for pn in ("msdos.bmp",):
 
 rootfiles = [
     ("AUTOEXEC.BAT", AUTOEXEC),
+    ("TED.COM", open(os.path.join(DISKS, "ted.com"), "rb").read()),
+    ("TED.PAS", open(os.path.join(DISKS, "TED.pas"), "rb").read()),
     ("CA.BAT", CA_BAT),
     ("L1.BAT", L1_BAT),
     ("WS.COM", ws_com),
