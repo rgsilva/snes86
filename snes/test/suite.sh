@@ -99,6 +99,23 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (JAVA runs javac bytecode on runpc) =="
+# HELLO.CLA is real javac --release 8 output; JAVA.COM interprets it.
+# FIB.CLA exercises the 32-bit int core + branches + a static method.
+printf 'cd java\rjava hello\r' \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
+  | tr -d '\r' > build/java_host.log
+printf 'cd java\rjava fib\r' \
+  | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd.img build/msdos_a.img 2>/dev/null \
+  | tr -d '\r' >> build/java_host.log
+if grep -q "Hello from Java on a SNES" build/java_host.log \
+   && grep -q "112358132134" build/java_host.log; then
+  echo "PASS java-host"
+else
+  echo "FAIL java-host"
+  FAIL=1
+fi
+
 TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_cga6 t_midi"
 [ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
 

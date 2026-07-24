@@ -64,6 +64,18 @@ jobs:
             -m 108 -d snes/build/hd_free.img -cga view.ppm msdos/msdos.img >/dev/null
           python3 -c 'd=open("view.ppm","rb").read().split(b"\n",3); w,h=map(int,d[1].split()); p=d[3]; assert (w,h)==(640,200); r=lambda y:[p[(y*640+x)*3] for x in range(0,640,7)]; assert max(r(5))==0; assert 0 in r(100) and 255 in r(100); print("VIEW OK")'
 
+      # End-to-end smoke: JAVA.COM interprets real javac --release 8
+      # bytecode (HELLO.CLA + FIB.CLA are committed class files) inside
+      # emulated DOS - "write once, run anywhere", verified on the 8086.
+      - name: Smoke test - JAVA runs javac bytecode
+        run: |
+          printf 'cd java\rjava hello\r' | core-c/build/runpc -c -l 3000000000 \
+            -m 108 -d snes/build/hd_free.img msdos/msdos.img | tr -d '\r' > java.log
+          printf 'cd java\rjava fib\r' | core-c/build/runpc -c -l 3000000000 \
+            -m 108 -d snes/build/hd_free.img msdos/msdos.img | tr -d '\r' >> java.log
+          grep -q "Hello from Java on a SNES" java.log
+          grep -q "112358132134" java.log
+
       # The ELKS ROM: Linux (well, the Embeddable Linux Kernel Subset) on a
       # SNES. The kernel + ROMFS images are fetched from the official ELKS
       # v0.9.1 release by test/fetch_elks.sh (GPL software - fetched at build

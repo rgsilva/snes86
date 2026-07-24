@@ -23,6 +23,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DISKS = os.path.join(HERE, "..", "..", "disks")
 BUILD = os.path.join(HERE, "..", "build")
+JAVADIR = os.path.join(HERE, "..", "..", "java")
 USERWARE = os.path.join(HERE, "..", "userware")
 OUT = sys.argv[1] if len(sys.argv) > 1 else "build"
 
@@ -113,6 +114,7 @@ WHAT'S HERE\r
   C:\\MIDI    MIDPLAY / MIDCONV (SNES-MIDI tools) + DEMO.MID / DEMO.SNM\r
   C:\\BENCH   SIEVE, BENCH, HELLO, CGATEST, CGA6TST  (+ .PAS source)\r
   C:\\GAMES   SOKOBAN  (+ .PAS source)\r
+  C:\\JAVA    JAVA (a Java class-file interpreter) + sample .CLA/.JAV\r
   C:\\PICS    VIEW (BMP picture viewer, + .PAS source) + CARD.BMP\r
   C:\\USER    your own DOS software (see below)\r
 \r
@@ -317,6 +319,11 @@ subdirs = [
                ("CGA6TST.COM", rd(BUILD, "cga6tst.com"))]),
     ("GAMES", [("SOKOBAN.COM", rd(DISKS, "sokoban.com")),
                ("SOKOBAN.PAS", rd(DISKS, "sokoban.pas"))]),
+    ("JAVA", [("JAVA.COM", rd(DISKS, "java.com")),
+              ("README.TXT", rd(JAVADIR, "README.md"))] +
+             [(base.upper() + ext, rd(JAVADIR, base + src))
+              for base in ("Hello", "Fib", "Sieve", "Concat", "Guess")
+              for ext, src in ((".CLA", ".class"), (".JAV", ".java"))]),
     ("PICS", [("VIEW.COM", rd(DISKS, "view.com")),
               ("VIEW.PAS", rd(DISKS, "VIEW.pas")),
               ("CARD.BMP", rd(BUILD, "card.bmp"))]),

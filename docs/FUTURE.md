@@ -186,16 +186,31 @@ Together with Small-C this becomes the real milestone: the **self-hosted
 dev workstation** — write `HELLO.C` in vi, compile it, run it, entirely on
 the console.
 
-### A JVM — queued
+### A JVM — SHIPPED
 
-Not a real JVM (the class library alone dwarfs 172 KB) — a **class-file
-interpreter that runs real `javac` output**: a constant-pool parser, an
-operand-stack loop (~50 opcodes covers integer arithmetic and control
-flow), `invokestatic`, `System.out.println` as a native shim, and a bump
-allocator instead of a GC. `HelloWorld.class` is ~400 bytes. The Z-machine,
-CHIP-8 and GB.COM already establish that we like nested VMs; this one's
-headline is *"write once, run anywhere" — verified on a Super Nintendo*.
-Bonus deliverable: SIEVE in Java vs Pascal vs C, all timed on the console.
+`JAVA.COM` runs real `javac --release 8` bytecode on the emulated 8086
+(and therefore on a SNES): a class-file interpreter, `javac` on the
+desktop and the JVM on the guest, exactly the Z-machine split the repo
+already celebrates. Ships in `C:\JAVA` on both C: images with five
+samples and their sources; the compiled class files are committed so
+the ROM builds without a JDK.
+
+Written in Turbo Pascal 3 (`disks/JAVA.pas` + three `.INC` includes),
+with the 32-bit `int` arithmetic — every Java `int` is a hi/lo pair on
+this 16-bit machine — done in hand-written 8086 via `inline()`. Scope,
+deliberately small: static methods of one class, ints, `int[]`/
+`boolean[]`, `String` + `StringBuilder` concat, `System.out.println/
+print`, `System.in.read()`. No `long`/`float`/`double`, no user objects,
+no exceptions, no GC. About 40 bytecodes plus a dozen `java/lang` HLE
+shims cover the samples; an unsupported opcode or method stops with a
+message naming the culprit.
+
+Speed is interpreted-bytecode-on-an-interpreted-CPU: HelloWorld is
+instant, Fibonacci a blink, and one BYTE-sieve pass is a few minutes of
+honest thinking on the SNES (it prints its BIOS-tick count on exit — the
+three-language benchmark table, Java vs Pascal vs C, is one Small-C away).
+Open extensions if anyone wants them: `long` (a second pair), `switch`
+tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 
 ### Repo housekeeping — queued, last
 
