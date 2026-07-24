@@ -100,6 +100,74 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   arena is tight: FreeCOM stays fully resident without XMS, so big .COMs won't
   fit — the growth path is the same SRAM-bank lever as Windows 1.01 below.
 
+## Homegrown userware: VIEW, a C toolchain, vi, a JVM
+
+A wave of "what's the dumbest thing it could run" ideas with one shared
+virtue: all four would be ours or public domain, so unlike the copyrighted
+classics in the gallery they can ship **in the public ROM**. One is greenlit,
+the rest are queued.
+
+### VIEW.COM — an image viewer (greenlit, in progress)
+
+Show a photo fullscreen on the SNES — decoded by a DOS program on the
+emulated 8086, not pre-baked by the build. The plan:
+
+1. **Output is CGA mode 4** (320×200×4): nearest-neighbor scale with
+   letterboxing, then a 4×4 ordered (Bayer) dither into the fixed CGA
+   palette — integer math only. Mode 6 (640×200 mono) would double the
+   resolution but waits on the true-640 renderer (M10p6, in the Windows
+   section below): the SNES currently draws mode 6 squashed through the
+   mode-4 path.
+2. **Formats: BMP first** (8-bit palettized and 24-bit uncompressed), then
+   **GIF87a** — LZW is period-perfect, and its ~20 KB decode tables fit the
+   default 108 KB machine with room to spare. JPEG is a stretch goal
+   (integer IDCT + Huffman is period-plausible; expect minutes per image).
+3. **Turbo Pascal 3 with inline asm** for the dither/blit inner loop,
+   source shipped — like SOKOBAN and MIDPLAY before it.
+4. **Row-streaming decode**: one scanline in flight, so RAM use stays flat
+   regardless of source image size.
+5. **Content licensing, the usual rule**: the build generates an original
+   CC0 test-card image (the demo-tune precedent), and real photos are
+   bring-your-own via `userware/`. Gallery screenshots come from Mesen,
+   as always.
+6. **Slideshow controls**: any key advances, ESC quits; L/R could toggle
+   the two CGA palettes (cyan/magenta/white vs green/red/brown).
+
+Development loop: iterate against `runpc -cga` PPM dumps, finish in Mesen.
+
+### A C compiler on (and in) the ROM — queued
+
+Turbo Pascal 3 proves a compiler runs on this machine, but TP3 is
+copyrighted and can't ship. **Small-C** (Hendrix) is public domain, was born
+on 64 KB CP/M machines, and its companion Small Assembler is PD too — a
+fully redistributable C toolchain that fits the 108 KB build. Land it and
+every flashcart becomes a self-contained C dev machine out of the box.
+(Fallback candidate: Dunfield's MICRO-C; licensing to verify for either.)
+
+### vi — queued
+
+Not vim — even the 16-bit DOS builds of vim want most of 640 KB. The port
+target is **levee**, the tiny vi clone ELKS already ships, with the
+public-domain **Stevie** as fallback; cross-compile with gcc-ia16 + libi86
+or Open Watcom. It wants the *standard* build, and that's a feature: BIGMEM
+eats the B: SRAM drive, and B: is the whole point — `:wq` writes to
+battery-backed cartridge SRAM, so edits survive power-off like a game save.
+First step when picked up: build it, boot it, prove `:wq` round-trips.
+Together with Small-C this becomes the real milestone: the **self-hosted
+dev workstation** — write `HELLO.C` in vi, compile it, run it, entirely on
+the console.
+
+### A JVM — queued
+
+Not a real JVM (the class library alone dwarfs 172 KB) — a **class-file
+interpreter that runs real `javac` output**: a constant-pool parser, an
+operand-stack loop (~50 opcodes covers integer arithmetic and control
+flow), `invokestatic`, `System.out.println` as a native shim, and a bump
+allocator instead of a GC. `HelloWorld.class` is ~400 bytes. The Z-machine,
+CHIP-8 and GB.COM already establish that we like nested VMs; this one's
+headline is *"write once, run anywhere" — verified on a Super Nintendo*.
+Bonus deliverable: SIEVE in Java vs Pascal vs C, all timed on the console.
+
 ## Windows 1.01 — proof of concept done, fit + renderer next
 
 Windows 3.0 is out of reach and stays out: its real mode — already the
