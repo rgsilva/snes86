@@ -25,5 +25,10 @@ disks/*
 !disks/sokoban.pas
 !disks/view.com
 !disks/VIEW.pas
+!disks/java.com
+!disks/JAVA.pas
+!disks/JAVA1.INC
+!disks/JAVA2.INC
+!disks/JAVA3.INC
 __pycache__/
 snes/test/shot.lua
