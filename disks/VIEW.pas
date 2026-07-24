@@ -163,7 +163,7 @@ begin
          PB := Pal[O, 0]; PG := Pal[O, 1]; PR := Pal[O, 2];
        end;
     24: begin
-          O := SX * 3;
+          O := SX + SX + SX;   { TP3 compiles *3 to a real 8086 MUL }
           PB := Buf[O]; PG := Buf[O + 1]; PR := Buf[O + 2];
         end;
     32: begin
@@ -250,7 +250,9 @@ begin
     if TopDown then K := SYImg else K := SrcH - 1 - SYImg;
     if K > PrevK then
     begin
-      for I := 1 to K - PrevK - 1 do SkipBytes(RowBytes);
+      { skip unused rows by READING them: DOS 2.0 re-walks the whole
+        FAT chain after every lseek, so sequential reads are cheaper }
+      for I := 1 to K - PrevK - 1 do ReadBytes(Ofs(Buf), RowBytes);
       ReadBytes(Ofs(Buf), RowBytes);
       PrevK := K;
     end;
