@@ -1257,6 +1257,8 @@ _h13_read:
 .ELSE
     jmp _h13_hd              ; C: fixed disk: own geometry
 .ENDIF
+_h13_badn:
+    jmp _h13_bad
 _h13_flp:
 .IFDEF FSBOOT
     ; FS1 booter floppy: 40 cyl / 1 head / 8 spt. LBA = cyl*8 + sec-1
@@ -1289,23 +1291,23 @@ _h13_flp:
     ; floppy validation: DL<2, DH<2 (B: also needs DH=0), 1<=sec<=9, cyl<40
     lda gDX
     and #$FE00
-    bne _h13_badj
+    bne _h13_badn
     lda gDX
     and #$00FF
     cmp #2
-    bcs _h13_badj
+    bcs _h13_badn
     lda gCX
     and #$003F
-    beq _h13_badj
+    beq _h13_badn
     cmp #10
-    bcs _h13_badj
+    bcs _h13_badn
     dec a
     sta cT0                  ; sec-1
     lda gCX
     xba
     and #$00FF               ; cyl
     cmp #40
-    bcs _h13_badj
+    bcs _h13_badn
     sta cT1                  ; cyl
     asl a                    ; cyl*2
     sta cT2n
@@ -1556,12 +1558,9 @@ _h13_badj2:
 
     ; ---- drive B: SRAM disk (LBA 0-63, 32 KB), read/write, persistent
 _h13_vdisk:
-    lda gDX
-    and #$FF00
-    bne _h13_vbad            ; B: is single-sided
-    lda cT0
-    clc
-    adc cT1
+    lda cT0                  ; IO.SYS's DPB addresses B: as 2-sided 9-spt
+    clc                      ; (same as A:), so head 1 is legitimate -
+    adc cT1                  ; the LBA math above already folded it in
     cmp #65
     bcs _h13_vbad
 _h13_vsec:
