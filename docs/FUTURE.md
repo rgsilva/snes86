@@ -178,18 +178,29 @@ fully redistributable C toolchain that fits the 108 KB build. Land it and
 every flashcart becomes a self-contained C dev machine out of the box.
 (Fallback candidate: Dunfield's MICRO-C; licensing to verify for either.)
 
-### vi — queued
+### The editor — SHIPPED as TED (vi declined)
 
-Not vim — even the 16-bit DOS builds of vim want most of 640 KB. The port
-target is **levee**, the tiny vi clone ELKS already ships, with the
-public-domain **Stevie** as fallback; cross-compile with gcc-ia16 + libi86
-or Open Watcom. It wants the *standard* build, and that's a feature: BIGMEM
-eats the B: SRAM drive, and B: is the whole point — `:wq` writes to
-battery-backed cartridge SRAM, so edits survive power-off like a game save.
-First step when picked up: build it, boot it, prove `:wq` round-trips.
-Together with Small-C this becomes the real milestone: the **self-hosted
-dev workstation** — write `HELLO.C` in vi, compile it, run it, entirely on
-the console.
+`TED.COM` ships at `C:\` on both images, with its Turbo Pascal source:
+a modeless, controller-first editor — d-pad moves, typing inserts, and
+the Y button (Esc) opens a status-row menu (Save / save As / Load /
+seaRch / Goto / Undo line / Quit) navigated by d-pad + START, so
+commands cost zero on-screen-keyboard trips. Measured on the SNES:
+**3 frames (~50 ms) per keystroke** — live typing in pure TP3, no
+inline asm needed. Line-table buffer (2000 lines × 255 chars), TABs
+preserved, long lines pan under the cursor. The flagship trick: saving
+to `B:` writes battery-backed cartridge SRAM, so your edits survive
+power-off like a game save (`TED B:NOTE.TXT`). Shipping it also fixed a
+real machine bug: B: *writes* had never worked — the INT 13h vdisk
+rejected the two-sided addressing our own IO.SYS generates ("Disk error
+writing drive B" since day one; nothing had ever tested a B: write).
+`t_ted` (Mesen) and `ted-host` (runpc) regression-guard it.
+
+A vi port (levee/Stevie) was evaluated and declined: no cross-toolchain
+on hand, unverifiable levee licensing, and modal editing is
+gamepad-hostile — every `i`/`Esc`/`:wq` is an on-screen-keyboard
+expedition. Together with Small-C, TED still completes the
+**self-hosted dev workstation**: write `HELLO.C` in TED, compile it,
+run it, entirely on the console.
 
 ### A JVM — queued
 

@@ -105,6 +105,24 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (TED round-trips a file on runpc) =="
+python3 tools/mktedimg.py >/dev/null
+printf '\r\rted t.txt\rHello from TED on a SNES!\rline two here\033S\033Q\r' \
+  | ../core-c/build/runpc -m 108 -l 900000000 -w build/tedtest.img >/dev/null 2>&1
+python3 tools/mktedimg.py --extract T.TXT build/ted_host.txt >/dev/null 2>&1
+if python3 -c '
+import sys
+want = b"Hello from TED on a SNES!\r\nline two here\r\n"
+try:
+    sys.exit(0 if open("build/ted_host.txt","rb").read() == want else 1)
+except Exception:
+    sys.exit(1)'; then
+  echo "PASS ted-host"
+else
+  echo "FAIL ted-host"
+  FAIL=1
+fi
+
 TESTS="t_boot t_dirb t_zork t_gwb t_ws t_mp t_m40 t_kbd t_cga t_cga6 t_midi"
 [ "$1" = "quick" ] && TESTS="t_boot t_zork t_cga"
 
@@ -116,6 +134,21 @@ for t in $TESTS; do
     *) FAIL=1 ;;
   esac
 done
+
+# TED end-to-end: type into the editor on the SNES, cursor with arrow
+# scancodes, menu-save to B: (the battery-backed SRAM drive), quit, and
+# TYPE the file back. Starts from fresh SRAM: Mesen keys .srm files by
+# ROM name, so stale B: contents from any earlier run would leak in.
+if [ "$1" != "quick" ]; then
+  rm -f "$HOME/Library/Application Support/Mesen2/Saves/msdos_dev.srm"
+  r=$("$MESEN" --testrunner --timeout=300 "$ROM" \
+      "$(pwd)/test/t_ted.lua" 2>/dev/null | grep '^RESULT' | head -1)
+  echo "${r:-RESULT FAIL t_ted (no output)}"
+  case "$r" in
+    *PASS*) ;;
+    *) FAIL=1 ;;
+  esac
+fi
 
 # ELKS end-to-end (own ROM, own timeout: boot to login is ~2 emulated
 # minutes; Mesen's default 100 s testrunner limit would kill it).

@@ -114,12 +114,15 @@ WHAT'S HERE\r
   C:\\BENCH   SIEVE, BENCH, HELLO, CGATEST, CGA6TST  (+ .PAS source)\r
   C:\\GAMES   SOKOBAN  (+ .PAS source)\r
   C:\\PICS    VIEW (BMP/PCX picture viewer, + .PAS source) + test cards\r
+  C:\\TED.COM the TED text editor (TED.PAS = its source)\r
   C:\\USER    your own DOS software (see below)\r
 \r
 TRY IT\r
   C:\\> PLAY          play the demo tune on the SNES-MIDI synth\r
   C:\\> CD GAMES      then:  SOKOBAN\r
   C:\\> CD BENCH      then:  SIEVE   or   CGATEST\r
+  C:\\> TED B:NOTE.TXT  edit a file on B: - it lives in battery-\r
+                     backed cartridge SRAM and survives power-off\r
   C:\\> CD PICS       then:  VIEW CARD.BMP      (640x200 halftone)\r
                        or:   VIEW CARD.PCX 4    (320x200 colour)\r
                        or:   VIEW *.*           (slideshow, ESC quits)\r
@@ -299,6 +302,8 @@ if not user_files:
 
 rootfiles = [
     ("AUTOEXEC.BAT", AUTOEXEC),
+    ("TED.COM", rd(DISKS, "ted.com")),
+    ("TED.PAS", rd(DISKS, "TED.pas")),
     ("README.TXT", README_TXT),
     ("PLAY.BAT", PLAY_BAT),
 ]
