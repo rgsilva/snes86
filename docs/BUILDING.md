@@ -13,27 +13,38 @@
 ## The ROM
 
 ```sh
-cd snes
-make msdos        # -> build/msdos.sfc   (the public build; flash this)
+make              # -> snes/build/msdos.sfc   (the public build; flash this)
 ```
 
-`build/msdos.sfc` boots MS-DOS 2.0 to `C:\>`. Load it in Mesen (`make run` opens
-the console demo; to run the DOS ROM point Mesen at `build/msdos.sfc`) or flash it
-to a cart.
+Everything builds from the repo root (the root `Makefile` delegates to
+`snes/`, `core-c/` and `homebrew/`). `snes/build/msdos.sfc` boots MS-DOS 2.0
+to `C:\>`. Load it in Mesen (`make -C snes run` opens the console demo; to
+run the DOS ROM point Mesen at `snes/build/msdos.sfc`) or flash it to a cart.
 
 ### Build targets
 
-Every target boots the same 8086 core + HLE BIOS; they differ in what's on the C:
-drive, and two of them change the memory size or what boots at all.
+Every ROM target boots the same 8086 core + HLE BIOS; they differ in what's
+on the C: drive, the memory size, or what boots at all. Outputs land in
+`snes/build/`.
 
-| target | output | C: drive | needs local (uncommitted) files? |
+| target | output | what | needs local (uncommitted) files? |
 |---|---|---|---|
-| `make msdos` | `build/msdos.sfc` | free — our tools + a demo | no — builds from the repo |
-| `make freedos` | `build/freedos.sfc` | free (same as `msdos`) | no — FreeDOS auto-fetched |
-| `make elks` | `build/elks.sfc` | — (boots Linux, not DOS) | no — ELKS images auto-fetched |
-| `make apps` | `build/msdos_apps.sfc` | public C: + the app-matrix fixture | yes — `disks/appmatrix/` |
-| `make big` | `build/msdos_big.sfc` | apps C:, 172 KB guest | yes |
-| `make fs` | `build/dosboot_fs.sfc` | — (self-booting disk) | yes — the FS1 image |
+| `make` / `make msdos` | `msdos.sfc` | MS-DOS 2.0, free C: | no — builds from the repo |
+| `make freedos` | `freedos.sfc` | FreeDOS 1.3, 172 KB guest | no — FreeDOS auto-fetched |
+| `make elks` | `elks.sfc` | ELKS (Linux), no DOS | no — ELKS images auto-fetched |
+| `make msdos_big` | `msdos_big.sfc` | MS-DOS, 172 KB guest | no |
+| `make boot DISK=img` | `boot.sfc` | a self-booting disk, no DOS | the disk image |
+| `make test` | — | the public suite | no (Mesen legs skip without Mesen) |
+| `make test-extra` | — | the copyrighted app legs | yes — a complete `disks/` |
+| `make homebrew` | — | rebuild every tool from source | no |
+
+**OVERLAYS** is a uniform optional flag on every DOS-booting target
+(`msdos`, `msdos_big`, `freedos`, `boot`):
+`make msdos OVERLAYS="path/to/dir path/to/floppy.img"` merges each
+overlay's tree onto the free C: (last wins, with a warning) and writes
+`snes/build/msdos_overlay.sfc` — an overlay build never clobbers the
+clean artifact, and nothing copyrighted is ever baked into a default
+build.
 
 What each one actually is:
 
@@ -54,14 +65,10 @@ What each one actually is:
   Small-C toolchain, `C:\CC`) likewise, and `user/` at the repo root becomes
   `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED;C:\CC` — everything else
   is a `CD` away. Builds with nothing but what's in this repo.
-  (`C:\JAVA\JAVAC.EXE` is a committed binary; rebuilding it needs the
-  public-domain Small-C kit and our emulator —
-  `make -C homebrew/java javac-dos KIT=...`, see
+  (`C:\JAVA\JAVAC.EXE` is a committed binary; it rebuilds byte-identically
+  from the public-domain Small-C kit committed in `freeware/cc/` —
+  `make -C homebrew/java javac-dos`, see
   [docs/notes/javac-porting.md](notes/javac-porting.md).)
-
-  Extra content can be overlaid onto the C: at build time:
-  `make msdos OVERLAYS="path/to/dir path/to/floppy.img"` merges each
-  overlay's tree into the image (last wins, with a warning).
 
 - `make freedos` — the same machine on the 172 KB BIGMEM base, booting
   [FreeDOS](https://www.freedos.org/) 1.3 to FreeCOM instead of MS-DOS.
@@ -72,28 +79,30 @@ What each one actually is:
   kernel dies during init at 108 KB — so there is no non-BIGMEM variant, and
   BIGMEM's B: drive is absent by design. See [freedos/README.md](../freedos/README.md).
 
-- `make apps` — the public machine plus the copyrighted app-matrix TEST
-  FIXTURE overlaid on C: (GW-BASIC, WordStar, Multiplan, the Infocom
-  games, MODE.COM...). Those programs are **not** in the repo: generate
-  the fixture once with `python3 disks/mkappmatrix.py` on a machine that
-  has the local software in `disks/`, and the suite's app legs use this
-  ROM — or skip, with a warning, when the fixture is absent. Nothing
-  from it ships; nobody browses it; its root is a period-authentic mess.
+- `make msdos_big` — BIGMEM: the guest grows from ~108 KB to 172 KB by
+  backing the extra conventional RAM with cartridge SRAM, which revives
+  the memory-hungry Rogue (`make msdos_big OVERLAYS=disks/appmatrix` on a
+  machine that has it). Same free C: as the public build. It's an
+  experiment — see BIGMEM in [INTERNALS.md](INTERNALS.md) and
+  [FUTURE.md](FUTURE.md).
 
-- `make big` — `apps` plus BIGMEM: the guest grows from ~108 KB to 172 KB
-  by backing the extra conventional RAM with cartridge SRAM, which
-  revives the memory-hungry Rogue. It's an experiment —
-  see BIGMEM in [INTERNALS.md](INTERNALS.md) and [FUTURE.md](FUTURE.md).
+- `make boot DISK=path/to/disk.img` — boots a self-booting disk directly
+  instead of DOS: the disk replaces the A: floppy wholesale and the BIOS
+  boots its sector 0 like any other. Two geometries are wired: 160 KB
+  (40x1x8) and 360 KB (40x2x9), picked by file size. The proven tenant is
+  the Microsoft Flight Simulator 1 disk (`make boot DISK=disks/fs1.img` —
+  FS1 skipped DOS and drove the hardware itself; needs that image
+  locally).
 
-- `make fs` — boots the Microsoft Flight Simulator 1 self-booting disk directly
-  instead of MS-DOS (FS1 skipped DOS and drove the hardware itself). Not a DOS
-  program at all; a separate experiment. Needs the FS1 disk image locally.
+There is no public target for the copyrighted app matrix: the suite's
+`make test-extra` builds its private fixture ROM by overlaying
+`disks/appmatrix/` (generated by `disks/mkappmatrix.py`;
+`--check` prints the manifest of required local files) onto the public
+machine via the same OVERLAYS mechanism. Nothing from it ships.
 
-Only `make msdos`, `make freedos` and `make elks` build from committed or
-auto-fetched free software; the rest pull in software that lives only on a
-developer's machine (see
-[COMPATIBILITY.md](COMPATIBILITY.md)). PC-DOS is no longer a build target; the code
-path survives behind `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
+Every target above builds from committed or auto-fetched free software.
+PC-DOS is no longer a build target; the code path survives behind
+`.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
 
 ## Bring your own software
 
@@ -105,7 +114,8 @@ The public C: drive is deliberately small. To add your own DOS programs:
 
 They land in `C:\USER` (`CD USER` to get there). The contents of `user/`
 are git-ignored, so your software never ends up in the repo. For anything
-bigger, build an overlay: `make msdos OVERLAYS=path/to/your-tree`.
+bigger, build an overlay: `make msdos OVERLAYS=path/to/your-tree`
+(-> `snes/build/msdos_overlay.sfc`).
 
 ## The MS-DOS toolchain (self-hosted)
 
@@ -132,16 +142,28 @@ story.
 ## Testing
 
 ```sh
+make test          # the public suite: parity + the runpc host smokes +
+                   # the Mesen end-to-end legs (MS-DOS, ELKS, FreeDOS).
+                   # QUICK=1 trims to parity + boot + cga (~3 min);
+                   # without Mesen (e.g. CI) the Mesen legs + parity
+                   # self-skip with one loud line.
+make test-extra    # ONLY the copyrighted app legs (Zork/GW-BASIC/
+                   # WordStar/Multiplan/MODE) on a private fixture ROM;
+                   # refuses to run unless disks/ is complete
+                   # (disks/mkappmatrix.py --check lists what's needed)
+make homebrew      # rebuild every homebrew tool from source (TP3 inside
+                   # runpc; javac.exe via Small-C) and verify — VIEW by
+                   # render bit-compare, javac.exe byte-identical. The
+                   # rebuilt .COMs overwrite the committed ones in place
+                   # (a TP3 rebuild differs by 3 inert load-segment
+                   # stamp bytes — git checkout restores)
+
 # 8086 core correctness (C reference vs SingleStepTests 8088 v2 vectors)
 cd core-c && make && tests/vectors/fetch.sh   # one-time, ~760 MB of vectors
 make test
 
 # 65C816 core vs the C core, in lockstep, all 14 registers per instruction
 cd snes && ./test/parity.sh                   # [seed] [count], default 1 1200
-
-# end-to-end regression suite in Mesen (headless): MS-DOS boot + the app
-# matrix + ELKS boot-to-login, plus parity and the runpc host smokes
-cd snes && ./test/suite.sh          # ./test/suite.sh quick for the short loop
 ```
 
 `runpc` also runs the guests on your desktop directly — handy for reproducing a

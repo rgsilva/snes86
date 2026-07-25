@@ -43,7 +43,7 @@ All captured from snes86 running in Mesen.
 </tr>
 <tr>
 <td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the roguelike that named the genre (needs BIGMEM)</sub></td>
-<td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1 (<code>make fs</code>)</sub></td>
+<td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1 (<code>make boot DISK=disks/fs1.img</code>)</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/si.png" width="400"><br><sub>Norton SI — Computing Index 0.0 vs the IBM/XT</sub></td>
@@ -97,7 +97,7 @@ All captured from snes86 running in Mesen.
 | Interactive fiction | Zork I–III, Planetfall, Leather Goddesses, Hitchhiker's Guide, Wishbringer | ✅ tested | Infocom's later 8086 interpreter |
 | Games | Rogue | ✅ tested* | *needs BIGMEM (see [Memory](#memory)) |
 | | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* [GB.COM](https://github.com/rgsilva/gameboy8086) — playable on the host core, title screen captured on the SNES |
-| | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make fs`), not a DOS program |
+| | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make boot DISK=disks/fs1.img`), not a DOS program |
 | Benchmarks | Norton SI, CPUBENCH | ✅ tested | CPU/system info + timing loops |
 
 If you get something interesting running, we'd love to hear about it.
@@ -156,7 +156,7 @@ bytecode a real `javac` produces. Compile on any modern machine with
 `.class`), and:
 
     C:\JAVA> JAVA HELLO
-    Hello from Java on a SNES!
+    Hello from Java on a SNES emulating a 8086 PC! Yey!
 
 "Write once, run anywhere" — anywhere apparently including a Super
 Nintendo. It is a genuine bytecode interpreter, not a source translator:
@@ -213,7 +213,9 @@ the whole machine changes shape (see
 
 The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the
 software above. A handful of memory-hungry titles need more. The BIGMEM build
-(`make big`) extends the guest to 172 KB using cartridge SRAM, which revives Rogue.
+(`make msdos_big`) extends the guest to 172 KB using cartridge SRAM, which revives
+Rogue (its C: is the free one; overlay the local app fixture with
+`make msdos_big OVERLAYS=disks/appmatrix` to actually run it).
 BIGMEM is an experiment for DOS — but it's load-bearing for the ELKS ROM, which is
 built on the 172 KB machine.
 

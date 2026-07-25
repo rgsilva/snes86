@@ -38,7 +38,7 @@ rejects the old OMF; JWasm chokes on `DOSMAC.ASM`'s old macros). So:
 printf '\r\r\r' | ../core-c/build/runpc -m 256 msdos.img -l 60000000
 # SNES ROM (reproducible; builds IO.SYS + msdos.img + the ROM):
 (cd ../snes && make msdos)    # -> snes/build/msdos.sfc  (PUBLIC: free C:)
-(cd ../snes && make apps)     # -> + the local app-matrix fixture (dev only)
+(cd ../snes && make msdos OVERLAYS=../disks/appmatrix)  # + the local app fixture (dev only)
 ```
 
 `make msdos` is the public build: MS-DOS 2.0 + the free C: (see
@@ -55,7 +55,7 @@ build target).
 - ✅ Boots to `A>`/`C:\>`, VER/DIR work, on runpc **and** the SNES.
 - ✅ 3-unit disk driver (A: floppy, B: SRAM floppy, C: hard disk) — the C: app
   library is reachable; `AUTOEXEC.BAT` sets PATH + drops to C:.
-- ✅ Reproducible ROM: `make msdos` (public, free C:) / `make apps` (+ fixture).
+- ✅ Reproducible ROM: `make msdos` (public, free C:); OVERLAYS= for extras.
 - ✅ App matrix re-run under MS-DOS on the SNES: GW-BASIC 3.23, WordStar 3.31,
   Multiplan, Zork/Infocom, Sokoban (CGA), CPUBENCH all load & run. Rogue needs
   ~120 KB (BIGMEM) — a memory-size edge, not an MS-DOS regression (MS-DOS

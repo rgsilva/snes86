@@ -23,7 +23,7 @@ Reports, screenshots, and videos are genuinely wanted. See
 The default guest has ~108 KB. The BIGMEM build extends it to 172 KB using
 cartridge SRAM, which revives memory-hungry titles (Rogue) — but
 it's currently ~1.7× slower than the standard build, so it's shipped only as an
-experiment (`make big`).
+experiment (`make msdos_big`).
 
 The slowdown is pure "correctness tax" from handling the WRAM↔SRAM address seam; the
 standard build is untouched. There's a clear path to making it fast, if someone wants
@@ -87,7 +87,7 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
 - The bring-your-own path (`user/` → `C:\USER`) already lets anyone add their
   own DOS programs without touching the build.
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
-  build already proves a non-DOS boot works via `make fs`), are open territory.
+  build already proves a non-DOS boot works via `make boot DISK=`), are open territory.
 - One of them landed: **Linux**. `make elks` boots ELKS 0.9.1 to a root shell —
   kernel and apps executing in place from cart ROM on the BIGMEM machine (see
   [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
@@ -261,7 +261,7 @@ folder per tool, per-tool Makefiles staging exactly what ships as
 bring-your-own media (zero gitignore exceptions), `user/` at the repo
 root is the BYO drop-in, TP3 is fetched-not-committed for the
 `recompile` pipeline, the MIT MS-DOS utilities ship as `C:\DOS`, and
-the copyrighted dev C: became the `make apps` test fixture overlay.
+the copyrighted dev C: became the suite's OVERLAYS test fixture.
 A `freeware/` directory (third-party PD/MIT tools, provenance-documented)
 is defined but deliberately not created until its first tenant arrives —
 which will be Small-C, below.
