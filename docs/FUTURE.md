@@ -235,6 +235,21 @@ Speed is interpreted-bytecode-on-an-interpreted-CPU: HelloWorld is
 instant, Fibonacci a blink, and one BYTE-sieve pass is a few minutes of
 honest thinking on the SNES (it prints its BIOS-tick count on exit — the
 three-language benchmark table, Java vs Pascal vs C, is one Small-C away).
+
+**Update: JAVAC shipped too.** The desktop half of the Z-machine split
+is now optional: `C:\JAVA\JAVAC.EXE` compiles the same Java subset *on
+the machine* (`JAVAC HELLO.JAV A:HELLO.CLA`, then `JAVA A:HELLO`), and
+the `.JAV` sources ship alongside the `.CLA`s because the console can
+now build them itself. It is our own single-pass compiler in C
+(`homebrew/java/javac.c`), compiled to a DOS binary by the Small-C 2.2
+toolchain running on MS-DOS 2.0 inside our own emulator — and the clang
+build of the same source emits byte-identical class files (the
+16-bit/32-bit-host parity was a design goal, not luck). Compiling
+JAVAC's own 40 KB source ON the SNES was considered and dropped:
+Small-C cannot compile it there (symbol tables, memory), and Ricardo
+called it — build locally, ship the binary. The vintage-toolchain
+fight that produced it (three separate 1980s walls) is documented in
+[homebrew/java/JAVAC-PORTING.md](../homebrew/java/JAVAC-PORTING.md).
 Open extensions if anyone wants them: `long` (a second pair), `switch`
 tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 

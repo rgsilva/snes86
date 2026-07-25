@@ -20,6 +20,7 @@ disks/*
 # Turbo Pascal 3 live outside git
 homebrew/*/build/
 freeware/*/build/
+homebrew/*/hostbuild/
 homebrew/cache/
 
 # user/ -> C:\USER: bring-your-own software, never committed
