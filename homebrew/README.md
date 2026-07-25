@@ -62,7 +62,9 @@ keystroke as described below).
 
 Sample data policy: `java/samples/` keeps the `.java` sources and the
 `javac --release 8` bytecode committed together (`mkjava.sh` rebuilds
-them when a JDK is around), and the image ships only the bytecode —
-the rule everywhere is *ship source only if the machine itself could
-build it*. When the Small-C milestone lands, `C:\CC` ships C sources,
-because there the rule passes.
+them when a JDK is around). The rule everywhere is *ship source only
+if the machine itself could build it* — and it now passes twice: the
+image ships the five `.JAV` sources, because JAVAC on the machine
+compiles them, and `C:\CC` ships `HELLO.C`/`SIEVE.C`, because the
+Small-C toolchain builds them. Pascal sources stay repo-only: the
+image has no Pascal compiler.

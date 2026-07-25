@@ -22,13 +22,13 @@ MS-DOS 2.0 *inside our own emulator* (`make javac-dos`, deterministic);
 the same source built with clang (`make javac-dev`) emits byte-identical
 class files, which also pass a modern JVM's verifier. The port war
 story — three vintage-toolchain walls and a silent-miscompile hunt —
-is in [JAVAC-PORTING.md](JAVAC-PORTING.md).
+is in [docs/notes/javac-porting.md](../../docs/notes/javac-porting.md).
 
 ## Building the samples
 
 On any machine with a JDK:
 
-    ./mkjava.sh          # javac --release 8 *.java; renames to .CLA
+    samples/mkjava.sh    # javac --release 8 *.java; renames to .CLA
 
 `--release 8` matters: newer targets emit `invokedynamic` string
 concatenation, which is out of scope here. The compiled `.CLA` files

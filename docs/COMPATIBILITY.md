@@ -184,7 +184,7 @@ Z-machine (compiled on a mainframe, interpreted on the PC).
   Small-C toolchain running on MS-DOS 2.0 *inside our own emulator*;
   the clang build of the same source emits byte-identical class files,
   which also pass a modern desktop JVM's verifier. The war story is
-  [homebrew/java/JAVAC-PORTING.md](../homebrew/java/JAVAC-PORTING.md).
+  [docs/notes/javac-porting.md](notes/javac-porting.md).
 
 ## Linux on the SNES (ELKS)
 

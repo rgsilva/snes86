@@ -57,7 +57,7 @@ What each one actually is:
   (`C:\JAVA\JAVAC.EXE` is a committed binary; rebuilding it needs the
   public-domain Small-C kit and our emulator —
   `make -C homebrew/java javac-dos KIT=...`, see
-  [homebrew/java/JAVAC-PORTING.md](../homebrew/java/JAVAC-PORTING.md).)
+  [docs/notes/javac-porting.md](notes/javac-porting.md).)
 
   Extra content can be overlaid onto the C: at build time:
   `make msdos OVERLAYS="path/to/dir path/to/floppy.img"` merges each

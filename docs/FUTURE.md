@@ -249,7 +249,7 @@ JAVAC's own 40 KB source ON the SNES was considered and dropped:
 Small-C cannot compile it there (symbol tables, memory), and Ricardo
 called it — build locally, ship the binary. The vintage-toolchain
 fight that produced it (three separate 1980s walls) is documented in
-[homebrew/java/JAVAC-PORTING.md](../homebrew/java/JAVAC-PORTING.md).
+[docs/notes/javac-porting.md](notes/javac-porting.md).
 Open extensions if anyone wants them: `long` (a second pair), `switch`
 tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 
