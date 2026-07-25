@@ -12,11 +12,11 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "homebrew"))
+sys.path.insert(0, os.path.join(HERE, "..", "..", "apps"))
 from fatimg import Floppy                        # noqa: E402
 
 BUILD = os.path.join(HERE, "..", "build")
-CC = os.path.join(HERE, "..", "..", "freeware", "cc")
+CC = os.path.join(HERE, "..", "..", "apps", "cc")
 
 GO = ("path c:\\;c:\\dos;c:\\cc\r\n"
       "copy c:\\cc\\stdio.h stdio.h\r\n"

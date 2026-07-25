@@ -3,8 +3,8 @@
 
 The layout is convention, not configuration:
 
-  * every homebrew/<tool>/build/  ->  C:\\<TOOL>   (run `make stage` there
-    first; snes/Makefile's homebrew-stage target does them all)
+  * every apps/<tool>/build/  ->  C:\\<TOOL>   (run `make stage` there
+    first; snes/Makefile's apps-stage target does them all)
   * msdos/bin/                    ->  C:\\DOS      (MIT MS-DOS utilities)
   * user/ at the repo root        ->  C:\\USER     (bring-your-own .COMs)
   * C:\\AUTOEXEC.BAT is a byte-identical copy of A:'s (msdos/autoexec.bat):
@@ -28,13 +28,13 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOTDIR = os.path.abspath(os.path.join(HERE, "..", ".."))
-HOMEBREW = os.path.join(ROOTDIR, "homebrew")
+APPSDIR = os.path.join(ROOTDIR, "apps")
 DOSBIN = os.path.join(ROOTDIR, "msdos", "bin")
 USERDIR = os.path.join(ROOTDIR, "user")
 AUTOEXEC_SRC = os.path.join(ROOTDIR, "msdos", "autoexec.bat")
 OUT = sys.argv[1] if len(sys.argv) > 1 else "build"
 
-sys.path.insert(0, HOMEBREW)
+sys.path.insert(0, APPSDIR)
 import fatimg                                    # noqa: E402
 
 # --- geometry ---
@@ -74,37 +74,20 @@ def place(sub, name, data, origin):
 
 place(None, "AUTOEXEC.BAT", open(AUTOEXEC_SRC, "rb").read(), "autoexec")
 
-# homebrew tools, by convention
-for tool in sorted(os.listdir(HOMEBREW)):
-    b = os.path.join(HOMEBREW, tool, "build")
+# apps, by convention (ours and third-party alike; a package that is
+# not ours carries an ORIGIN.md — see apps/README.md for the rule)
+for tool in sorted(os.listdir(APPSDIR)):
+    b = os.path.join(APPSDIR, tool, "build")
     if not os.path.isdir(b):
         continue
     files = sorted(f for f in os.listdir(b)
                    if os.path.isfile(os.path.join(b, f)))
     if not files:
-        raise SystemExit(f"homebrew/{tool}/build/ is empty — "
-                         f"run `make -C homebrew/{tool} stage`")
+        raise SystemExit(f"apps/{tool}/build/ is empty — "
+                         f"run `make -C apps/{tool} stage`")
     for f in files:
         place(tool.upper(), f, open(os.path.join(b, f), "rb").read(),
-              f"homebrew/{tool}")
-
-# freeware tools (third-party PD/MIT, staged like homebrew): freeware/<tool>/
-# build/ -> C:\<TOOL>. Same convention, different provenance (see
-# freeware/README.md for the admission rule).
-FREEWARE = os.path.join(ROOTDIR, "freeware")
-if os.path.isdir(FREEWARE):
-    for tool in sorted(os.listdir(FREEWARE)):
-        b = os.path.join(FREEWARE, tool, "build")
-        if not os.path.isdir(b):
-            continue
-        files = sorted(f for f in os.listdir(b)
-                       if os.path.isfile(os.path.join(b, f)))
-        if not files:
-            raise SystemExit(f"freeware/{tool}/build/ is empty — "
-                             f"run `make -C freeware/{tool} stage`")
-        for f in files:
-            place(tool.upper(), f, open(os.path.join(b, f), "rb").read(),
-                  f"freeware/{tool}")
+              f"apps/{tool}")
 
 # C:\DOS — the MIT MS-DOS 2.0 utilities (msdos/bin/, when present)
 if os.path.isdir(DOSBIN):

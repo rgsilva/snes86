@@ -1,11 +1,11 @@
 #!/bin/sh
 # Rebuild javac.exe — the DOS-native JAVAC — with the Small-C toolchain
 # running inside our own emulator (runpc, MS-DOS 2.0). This is the
-# script that produced the committed homebrew/java/javac.exe.
+# script that produced the committed apps/java/javac.exe.
 #
 # The Small-C 2.2 kit (public-domain, Hendrix) lives in the repo:
-# freeware/cc/ carries CC.EXE, ASM.EXE and the exploded CLIB objects
-# (lib/*.OBJ) — see freeware/cc/ORIGIN.md for provenance. KIT= can
+# apps/cc/ carries CC.EXE, ASM.EXE and the exploded CLIB objects
+# (lib/*.OBJ) — see apps/cc/ORIGIN.md for provenance. KIT= can
 # still point at an external kit ($KIT/CC.EXE, $KIT/ASM.EXE, and the
 # objects in $KIT/libobjs/ or $KIT/lib/). LINK.EXE is Microsoft LINK
 # V2.00 from msdos/ (also in the repo).
@@ -25,14 +25,14 @@
 #   4. link @JCR -> JAVAC.EXE, extracted from the A: floppy image.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-JAVA=$(dirname "$HERE")                       # homebrew/java
+JAVA=$(dirname "$HERE")                       # apps/java
 ROOT=$(cd "$JAVA/../.." && pwd)               # repo root
 RUNPC="$ROOT/core-c/build/runpc"
 [ -x "$RUNPC" ] || { echo "build core-c first (runpc missing)"; exit 1; }
-KIT="${KIT:-$ROOT/freeware/cc}"                # the committed kit
+KIT="${KIT:-$ROOT/apps/cc}"                # the committed kit
 [ -f "$KIT/CC.EXE" ] || { echo "no Small-C kit at $KIT"; exit 1; }
 LIBOBJS="$KIT/libobjs"                         # external-kit layout...
-[ -d "$LIBOBJS" ] || LIBOBJS="$KIT/lib"        # ...or freeware/cc's
+[ -d "$LIBOBJS" ] || LIBOBJS="$KIT/lib"        # ...or apps/cc's
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
@@ -61,7 +61,7 @@ floppy() {  # floppy <img-out> <NAME=path>...
 python3 - "$ROOT" "$W" "$@" <<'PY'
 import sys
 ROOT, W, out = sys.argv[1], sys.argv[2], sys.argv[3]
-sys.path.insert(0, ROOT+"/homebrew"); import fatimg
+sys.path.insert(0, ROOT+"/apps"); import fatimg
 f = fatimg.Floppy(ROOT+"/msdos/msdos.img")
 f.replace("AUTOEXEC.BAT", b"PROMPT $p$g\r\n")
 for spec in sys.argv[4:]:
@@ -79,7 +79,7 @@ grep -q "invalid\|already defined\|missing token" "$W/cc.log" && { echo "cc erro
 python3 - "$ROOT" "$W" <<'PY'
 import sys
 ROOT, W = sys.argv[1], sys.argv[2]
-sys.path.insert(0, ROOT+"/homebrew"); import fatimg
+sys.path.insert(0, ROOT+"/apps"); import fatimg
 a = fatimg.read_img(W+"/f1.img").get("JAVAC.ASM", b"")
 assert len(a) > 100000, "cc produced no/short JAVAC.ASM - see cc.log"
 open(W+"/JAVAC1.ASM","wb").write(a)
@@ -96,7 +96,7 @@ grep -q " 0 lines have errors" "$W/asm.log" || { echo "asm errors - see $W/asm.l
 python3 - "$ROOT" "$W" "$JAVA" <<'PY'
 import sys
 ROOT, W, JAVA = sys.argv[1], sys.argv[2], sys.argv[3]
-sys.path.insert(0, ROOT+"/homebrew"); import fatimg
+sys.path.insert(0, ROOT+"/apps"); import fatimg
 e = fatimg.read_img(W+"/f2.img").get("JAVAC.EXE", b"")
 assert len(e) > 30000, "link produced no JAVAC.EXE - see asm.log"
 open(JAVA+"/javac.exe","wb").write(e)

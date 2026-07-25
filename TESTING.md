@@ -70,7 +70,7 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
 
 ## Deep cuts
 
-- `make homebrew` — rebuilds **every homebrew tool from source**: Turbo
+- `make apps` — rebuilds **every app from source**: Turbo
   Pascal 3 is fetched (pinned + sha256-checked) and driven inside the
   emulator to recompile each `.pas`; `javac.exe` is rebuilt by the
   Small-C toolchain the same way. Each tool verifies (VIEW by render

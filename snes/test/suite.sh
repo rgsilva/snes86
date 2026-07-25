@@ -241,9 +241,9 @@ fi
 # Desktop cross-check: the host build of the same compiler must emit a
 # class a real JVM runs (skips cleanly without a JDK).
 if command -v java >/dev/null 2>&1; then
-  make -C ../homebrew/java javac-dev >/dev/null 2>&1
+  make -C ../apps/java javac-dev >/dev/null 2>&1
   rm -rf build/jcx && mkdir -p build/jcx
-  if ../homebrew/java/hostbuild/javac-dev ../homebrew/java/samples/Hello.java build/jcx/Hello.class >/dev/null 2>&1 \
+  if ../apps/java/hostbuild/javac-dev ../apps/java/samples/Hello.java build/jcx/Hello.class >/dev/null 2>&1 \
      && (cd build/jcx && java Hello 2>/dev/null | grep -q "SNES emulating"); then
     echo "PASS jc-desktop"
   else

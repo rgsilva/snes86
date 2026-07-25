@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal FAT12 360 KB floppy toolkit for the homebrew build system.
+"""Minimal FAT12 360 KB floppy toolkit for the apps build system.
 
 Two jobs:
   * read_img(path)      -> {NAME: bytes} for a 180/360 KB floppy

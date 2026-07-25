@@ -25,7 +25,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "appmatrix")
 
-sys.path.insert(0, os.path.join(HERE, "..", "homebrew"))
+sys.path.insert(0, os.path.join(HERE, "..", "apps"))
 from fatimg import read_img                     # noqa: E402
 
 # Every disks/ input the fixture needs: (path, which legs / what for).

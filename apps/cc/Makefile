@@ -12,7 +12,7 @@ stage:
 	@cp ASM.EXE LINK.EXE STDIO.H CC.BAT CLIB.RSP $(BUILD)/
 	@cp lib/*.OBJ $(BUILD)/
 	@cp samples/*.C $(BUILD)/
-	@echo "freeware/cc: staged $$(ls $(BUILD) | wc -l | tr -d ' ') files -> C:\\CC"
+	@echo "apps/cc: staged $$(ls $(BUILD) | wc -l | tr -d ' ') files -> C:\\CC"
 
 clean:
 	rm -rf $(BUILD)

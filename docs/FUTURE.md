@@ -112,7 +112,7 @@ the rest are queued.
 Show a photo fullscreen on the SNES — decoded by a DOS program on the
 emulated 8086, not pre-baked by the build. **Landed**: `VIEW.COM` ships
 in `C:\VIEW` on the C: image — a Turbo Pascal 3 program (source
-alongside, compiled by `homebrew/tpcompile.sh` driving TP3 *on the emulated
+alongside, compiled by `apps/tpcompile.sh` driving TP3 *on the emulated
 8086*) that renders 8/24/32-bit BMPs (top-down or bottom-up) **and
 8-bit RLE PCX** — the native DOS image format of the era — with
 aspect-correct fit and 4×4 ordered dither: `VIEW PIC.BMP` for 640×200
@@ -120,7 +120,7 @@ halftone (mode 6), `VIEW PIC.PCX 4` for 320×200 four-colour, and
 `VIEW *.BMP` for a wildcard slideshow (any key advances, ESC quits —
 the world's slowest digital photo frame). The build generates
 `CARD.BMP` *and* `CARD.PCX`, the same original CC0 test card in both
-formats (`homebrew/view/mkcard.py`), and the suite + CI assert the two renders
+formats (`apps/view/mkcard.py`), and the suite + CI assert the two renders
 are bit-identical — one compare covers the whole PCX decoder. Fun TP3
 fact: it has no 32-bit integers, so VIEW never seeks backward — target
 rows are walked in the order the file stores them, read in buffered
@@ -172,7 +172,7 @@ Development loop: iterate against `runpc -cga` PPM dumps, finish in Mesen.
 ### The dev workstation — SHIPPED, and it never needed BIGMEM
 
 Small-C 2.2 + Small Assembler (public domain) + the MIT `LINK.EXE`
-now ship in `C:\CC` (`freeware/cc/`, the first `freeware/` tenant) and
+now ship in `C:\CC` (`apps/cc/`) and
 **compile, assemble, link and run C programs inside the emulated DOS
 2.0 on the stock 108 KB machine** — `CC HELLO` on a writable drive does
 the whole cycle (~10 minutes at SNES speed; period-perfect). The two
@@ -241,7 +241,7 @@ is now optional: `C:\JAVA\JAVAC.EXE` compiles the same Java subset *on
 the machine* (`JAVAC HELLO.JAV A:HELLO.CLA`, then `JAVA A:HELLO`), and
 the `.JAV` sources ship alongside the `.CLA`s because the console can
 now build them itself. It is our own single-pass compiler in C
-(`homebrew/java/javac.c`), compiled to a DOS binary by the Small-C 2.2
+(`apps/java/javac.c`), compiled to a DOS binary by the Small-C 2.2
 toolchain running on MS-DOS 2.0 inside our own emulator — and the clang
 build of the same source emits byte-identical class files (the
 16-bit/32-bit-host parity was a design goal, not luck). Compiling
@@ -255,16 +255,15 @@ tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 
 ### Repo housekeeping — DONE
 
-The great reorg landed: our software lives in `homebrew/<tool>/` (one
-folder per tool, per-tool Makefiles staging exactly what ships as
-`C:\<TOOL>`), the packer walks it by convention, `disks/` is purely
-bring-your-own media (zero gitignore exceptions), `user/` at the repo
-root is the BYO drop-in, TP3 is fetched-not-committed for the
-`recompile` pipeline, the MIT MS-DOS utilities ship as `C:\DOS`, and
-the copyrighted dev C: became the suite's OVERLAYS test fixture.
-A `freeware/` directory (third-party PD/MIT tools, provenance-documented)
-is defined but deliberately not created until its first tenant arrives —
-which will be Small-C, below.
+The great reorg landed: the on-machine software lives in `apps/<tool>/`
+(one folder per tool, per-tool Makefiles staging exactly what ships as
+`C:\<TOOL>`; ours and third-party merged — a package that is not ours
+carries an `ORIGIN.md` with provenance and hashes), the packer walks it
+by convention, `disks/` is purely bring-your-own media (zero gitignore
+exceptions), `user/` at the repo root is the BYO drop-in, TP3 is
+fetched-not-committed for the `recompile` pipeline, the MIT MS-DOS
+utilities ship as `C:\DOS`, and the copyrighted dev C: became the
+suite's OVERLAYS test fixture.
 
 ## Windows 1.01 — proof of concept done, fit + renderer next
 

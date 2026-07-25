@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch Turbo Pascal 3.01A for the homebrew `recompile` pipeline.
+"""Fetch Turbo Pascal 3.01A for the apps `recompile` pipeline.
 
 TP3 is NOT redistributable by us: Borland released it as "Antique
 Software" freeware around 2000, but that was a download grant, not a
@@ -11,7 +11,7 @@ Sources, in order of preference:
   1. disks/tp301.img       (a developer's local copy, if present)
   2. archive.org           (pinned image, sha256-verified)
 
-Output: homebrew/cache/TURBO.COM + TURBO.MSG, each verified against the
+Output: apps/cache/TURBO.COM + TURBO.MSG, each verified against the
 pinned per-file sha256 (version 3.01A), so every rebuild everywhere uses
 byte-identical compiler binaries and codegen never drifts.
 """
@@ -52,7 +52,7 @@ def stash(files):
         if got != sha:
             raise SystemExit(f"{nm}: sha256 mismatch ({got}) — refusing")
         open(os.path.join(CACHE, nm), "wb").write(data)
-    print("TP3 3.01A ready in homebrew/cache/ (TURBO.COM + TURBO.MSG)")
+    print("TP3 3.01A ready in apps/cache/ (TURBO.COM + TURBO.MSG)")
 
 
 def main():

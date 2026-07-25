@@ -1,5 +1,5 @@
 # snes86 — root build surface. The real rules live in snes/ (the ROMs,
-# WLA-DX), core-c/ (the reference PC, runpc) and homebrew/ (the
+# WLA-DX), core-c/ (the reference PC, runpc) and apps/ (the
 # on-machine software). See docs/BUILDING.md.
 #
 #   make               the public MS-DOS ROM -> snes/build/msdos.sfc
@@ -11,7 +11,7 @@
 #   make test          parity + host smokes + Mesen legs (QUICK=1 trims;
 #                      Mesen legs self-skip when Mesen is absent)
 #   make test-extra    the copyrighted app-matrix legs (local disks/ only)
-#   make homebrew      rebuild every homebrew tool from source + verify
+#   make apps          rebuild every app from source + verify
 #   make clean
 #
 # OVERLAYS="dir-or-img ..." on any DOS-booting target (msdos, msdos_big,
@@ -43,12 +43,12 @@ test test-extra:
 	@$(MAKE) -s -C core-c runpc
 	$(MAKE) -C snes $@
 
-homebrew:
+apps:
 	@$(MAKE) -s -C core-c runpc
-	sh homebrew/rebuild_all.sh
+	sh apps/rebuild_all.sh
 
 clean:
 	$(MAKE) -C snes clean
 	$(MAKE) -C core-c clean
 
-.PHONY: msdos msdos_big freedos elks boot test test-extra homebrew clean
+.PHONY: msdos msdos_big freedos elks boot test test-extra apps clean

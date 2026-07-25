@@ -68,7 +68,7 @@ parity: javac-dev
 
 # Rebuild the committed javac.exe: the Small-C toolchain running under
 # runpc on MS-DOS 2.0 (the public-domain Small-C kit is committed in
-# freeware/cc/; KIT= overrides). Deterministic — rebuilds byte-identical.
+# apps/cc/; KIT= overrides). Deterministic — rebuilds byte-identical.
 javac-dos:
 	sh tools/mkjavac_dos.sh
 

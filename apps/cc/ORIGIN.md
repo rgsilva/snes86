@@ -1,7 +1,7 @@
 # Small-C — provenance and license
 
 Third-party software, redistributed under the terms below. First tenant of
-`freeware/` (see `../README.md` for the admission rule).
+`apps/` (see `../README.md` for the admission rule).
 
 ## What this is
 
@@ -24,7 +24,7 @@ read-only-C: operation are purely command-line and environment matters
 (see "Mechanics" below).
 
 This directory is also the complete Small-C kit for rebuilding
-`homebrew/java/javac.exe` (`make -C homebrew/java javac-dos`): CC.EXE +
+`apps/java/javac.exe` (`make -C apps/java javac-dos`): CC.EXE +
 ASM.EXE + `lib/*.OBJ` are exactly the pieces that build needs, so the
 rebuild runs from a clean checkout with no external kit. The rebuilt
 `javac.exe` is byte-identical to the committed one.

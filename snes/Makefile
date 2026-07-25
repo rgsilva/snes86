@@ -75,7 +75,7 @@ console-test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test test-extra console-test clean msdos msdos_big boot freedos elks io homebrew-stage parity cputest sramtest
+.PHONY: all run test test-extra console-test clean msdos msdos_big boot freedos elks io apps-stage parity cputest sramtest
 
 # --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) +
 # a free C: (tools/mkhd_free.py; no copyrighted software).  See
@@ -162,20 +162,18 @@ io:
 	cd ../msdos && ./build_io.sh
 
 # --- the C: drive. One packer (tools/mkhd_free.py): every staged
-# homebrew/<tool>/build/ becomes C:\<TOOL>, msdos/bin/ becomes C:\DOS,
+# apps/<tool>/build/ becomes C:\<TOOL>, msdos/bin/ becomes C:\DOS,
 # user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
-HBTOOLS := view ted java midi sokoban bench
-FWTOOLS := cc
+APPSTOOLS := view ted java midi sokoban bench cc
 
-homebrew-stage:
-	@for t in $(HBTOOLS); do $(MAKE) -s -C ../homebrew/$$t stage || exit 1; done
-	@for t in $(FWTOOLS); do $(MAKE) -s -C ../freeware/$$t stage || exit 1; done
+apps-stage:
+	@for t in $(APPSTOOLS); do $(MAKE) -s -C ../apps/$$t stage || exit 1; done
 
-build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../freeware/cc/*)
+build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat apps-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../apps/cc/*)
 	@mkdir -p build
 	python3 tools/mkhd_free.py build
 
-build/hd_overlay.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../freeware/cc/*)
+build/hd_overlay.img: tools/mkhd_free.py ../msdos/autoexec.bat apps-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../apps/cc/*)
 	@mkdir -p build
 	OVERLAYS="$(OVERLAYS)" python3 tools/mkhd_free.py build hd_overlay.img
 

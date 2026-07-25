@@ -13,16 +13,15 @@ snake_im.zip
 
 # disks/ holds bring-your-own copyrighted DOS software and the generated
 # app-matrix test fixture: local-only, never committed. Our own software
-# lives in homebrew/ now; the only tracked file here is mkappmatrix.py.
+# lives in apps/ now; the only tracked file here is mkappmatrix.py.
 disks/*
 !disks/mkappmatrix.py
 
-# homebrew: staged image content and the fetched (never redistributed)
+# apps: staged image content and the fetched (never redistributed)
 # Turbo Pascal 3 live outside git
-homebrew/*/build/
-freeware/*/build/
-homebrew/*/hostbuild/
-homebrew/cache/
+apps/*/build/
+apps/*/hostbuild/
+apps/cache/
 
 # user/ -> C:\USER: bring-your-own software, never committed
 user/*

@@ -28,7 +28,7 @@ BASE = os.path.join(HERE, "..", "msdos", "msdos.img")
 def build(srcpath):
     src = os.path.join(HERE, srcpath)
     if not os.path.exists(src):
-        raise SystemExit(f"{srcpath} not found under homebrew/")
+        raise SystemExit(f"{srcpath} not found under apps/")
     name = os.path.splitext(os.path.basename(src))[0].upper()
     fl = fatimg.Floppy(BASE)
     fl.replace("AUTOEXEC.BAT", b"PROMPT $P$G\r\n")

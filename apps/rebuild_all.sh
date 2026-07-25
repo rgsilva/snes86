@@ -1,9 +1,9 @@
 #!/bin/sh
-# `make homebrew` (root): rebuild every on-machine tool FROM SOURCE and
+# `make apps` (root): rebuild every on-machine tool FROM SOURCE and
 # verify — the CI canary for the whole software stack. The TP3 tools
 # recompile via ../tpcompile.sh (TURBO.COM fetched + cached by
 # fetch_tp3.py); javac.exe rebuilds with the Small-C kit committed in
-# freeware/cc and must come out byte-identical. One PASS/FAIL line per
+# apps/cc and must come out byte-identical. One PASS/FAIL line per
 # artifact.
 #
 # NOTE: recompiles overwrite the committed binaries in place (TP3 stamps
@@ -35,7 +35,7 @@ render() {
   python3 - "$ROOT" "$1" "$W/card.img" <<'PY'
 import sys
 ROOT, view, out = sys.argv[1:4]
-sys.path.insert(0, ROOT+"/homebrew"); import fatimg
+sys.path.insert(0, ROOT+"/apps"); import fatimg
 f = fatimg.Floppy(ROOT+"/msdos/msdos.img")
 f.replace("AUTOEXEC.BAT", b"PROMPT $p$g\r\n")
 f.add("VIEW.COM", open(view, "rb").read())

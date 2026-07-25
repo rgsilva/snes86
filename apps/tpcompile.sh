@@ -1,12 +1,12 @@
 #!/bin/sh
-# Compile a homebrew Turbo Pascal .PAS to a standalone .COM by driving
+# Compile a apps Turbo Pascal .PAS to a standalone .COM by driving
 # TP3's IDE inside runpc, our own emulated MS-DOS 2.0 (TP3 has no
 # command-line compiler). TP3 itself is fetched, not committed — see
 # fetch_tp3.py. The scratch boot floppy is cloned from msdos/msdos.img,
 # so the whole pipeline runs from a clean checkout.
 #
-# usage: tpcompile.sh <tool> <name>     compiles homebrew/<tool>/<name>.pas
-#                                       into homebrew/<tool>/<name>.com
+# usage: tpcompile.sh <tool> <name>     compiles apps/<tool>/<name>.pas
+#                                       into apps/<tool>/<name>.com
 #
 # The keystrokes: Y answers "Include error messages", W<NAME> sets the
 # work file, O C Q selects Com-file output and exits Options, C compiles.
@@ -16,7 +16,7 @@ set -e
 cd "$(dirname "$0")"
 TOOL=$1
 NAME=$2
-[ -f "$TOOL/$NAME.pas" ] || { echo "homebrew/$TOOL/$NAME.pas not found"; exit 1; }
+[ -f "$TOOL/$NAME.pas" ] || { echo "apps/$TOOL/$NAME.pas not found"; exit 1; }
 UPPER=$(printf '%s' "$NAME" | tr '[:lower:]' '[:upper:]')
 
 python3 fetch_tp3.py

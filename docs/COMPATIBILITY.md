@@ -180,7 +180,7 @@ Z-machine (compiled on a mainframe, interpreted on the PC).
 - **JAVAC.EXE** (also in `C:\JAVA`): our own Java compiler for the same
   subset, running on the machine itself — `JAVAC HELLO.JAV A:HELLO.CLA`
   then `JAVA A:HELLO` (C: is read-only, so output goes to A:). Written
-  in C (`homebrew/java/javac.c`), compiled to a DOS binary by the 1988
+  in C (`apps/java/javac.c`), compiled to a DOS binary by the 1988
   Small-C toolchain running on MS-DOS 2.0 *inside our own emulator*;
   the clang build of the same source emits byte-identical class files,
   which also pass a modern desktop JVM's verifier. The war story is

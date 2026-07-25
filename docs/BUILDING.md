@@ -17,7 +17,7 @@ make              # -> snes/build/msdos.sfc   (the public build; flash this)
 ```
 
 Everything builds from the repo root (the root `Makefile` delegates to
-`snes/`, `core-c/` and `homebrew/`). `snes/build/msdos.sfc` boots MS-DOS 2.0
+`snes/`, `core-c/` and `apps/`). `snes/build/msdos.sfc` boots MS-DOS 2.0
 to `C:\>`. Load it in Mesen (`make -C snes run` opens the console demo; to
 run the DOS ROM point Mesen at `snes/build/msdos.sfc`) or flash it to a cart.
 
@@ -36,7 +36,7 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 | `make boot DISK=img` | `boot.sfc` | a self-booting disk, no DOS | the disk image |
 | `make test` | — | the public suite | no (Mesen legs skip without Mesen) |
 | `make test-extra` | — | the copyrighted app legs | yes — a complete `disks/` |
-| `make homebrew` | — | rebuild every tool from source | no |
+| `make apps` | — | rebuild every tool from source | no |
 
 **OVERLAYS** is a uniform optional flag on every DOS-booting target
 (`msdos`, `msdos_big`, `freedos`, `boot`):
@@ -58,16 +58,16 @@ What each one actually is:
   [COMPATIBILITY.md](COMPATIBILITY.md#linux-on-the-snes-elks).
 - `make msdos` — the public ROM (this is the one you flash). Its C: is
   assembled by convention (`tools/mkhd_free.py`): every staged
-  `homebrew/<tool>/build/` becomes `C:\<TOOL>` (MIDI, BENCH, SOKOBAN,
-  VIEW, TED, JAVA — see [homebrew/README.md](../homebrew/README.md)),
-  `msdos/bin/` (the MIT MS-DOS utilities: CHKDSK, DEBUG, EDLIN, MORE,
-  FIND, SORT) becomes `C:\DOS`, staged `freeware/<tool>/build/` (the
-  Small-C toolchain, `C:\CC`) likewise, and `user/` at the repo root becomes
+  `apps/<tool>/build/` becomes `C:\<TOOL>` (MIDI, BENCH, SOKOBAN,
+  VIEW, TED, JAVA, and the Small-C toolchain as `C:\CC` — see
+  [apps/README.md](../apps/README.md)), `msdos/bin/` (the MIT MS-DOS
+  utilities: CHKDSK, DEBUG, EDLIN, MORE, FIND, SORT) becomes `C:\DOS`,
+  and `user/` at the repo root becomes
   `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED;C:\CC` — everything else
   is a `CD` away. Builds with nothing but what's in this repo.
   (`C:\JAVA\JAVAC.EXE` is a committed binary; it rebuilds byte-identically
-  from the public-domain Small-C kit committed in `freeware/cc/` —
-  `make -C homebrew/java javac-dos`, see
+  from the public-domain Small-C kit committed in `apps/cc/` —
+  `make -C apps/java javac-dos`, see
   [docs/notes/javac-porting.md](notes/javac-porting.md).)
 
 - `make freedos` — the same machine on the 172 KB BIGMEM base, booting
@@ -154,7 +154,7 @@ make test-extra    # ONLY the copyrighted app legs (Zork/GW-BASIC/
                    # WordStar/Multiplan/MODE) on a private fixture ROM;
                    # refuses to run unless disks/ is complete
                    # (disks/mkappmatrix.py --check lists what's needed)
-make homebrew      # rebuild every homebrew tool from source (TP3 inside
+make apps          # rebuild every app from source (TP3 inside
                    # runpc; javac.exe via Small-C) and verify — VIEW by
                    # render bit-compare, javac.exe byte-identical. The
                    # rebuilt .COMs overwrite the committed ones in place
