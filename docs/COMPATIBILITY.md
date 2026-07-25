@@ -1,18 +1,11 @@
 # What runs on snes86
 
-snes86 runs ordinary DOS software — it emulates an 8086 and an IBM-PC-class BIOS, so
-period programs generally just work. This page lists what's been exercised.
+snes86 runs ordinary DOS software, as it emulates an 8086 and an IBM-PC-class BIOS, so period programs generally just work. This page lists what's been exercised, but obviously it's far from complete.
 
 Two things to keep in mind:
 
-- The public ROM ships only free software: our own tools plus public-domain
-  third-party packages (the Small-C toolchain, the MIT MS-DOS utilities), with
-  provenance in the per-package READMEs. Everything else
-  below is bring-your-own: drop it in `user/` and rebuild (see
-  [BUILDING.md](BUILDING.md)). A "✅ tested" mark means the emulator runs it, not that
-  it's included.
-- Everything here was verified against the cycle-accurate Mesen emulator. Real
-  hardware is still pending — see [Help wanted](#help-wanted).
+- The public ROM ships only free software: our own tools plus public-domain third-party packages (the Small-C toolchain, the MIT MS-DOS utilities), with provenance in the per-package READMEs. Everything else below is bring-your-own: drop it in `user/` and rebuild (see [BUILDING](BUILDING.md)). A "✅ tested" mark means the emulator runs it, not that it's included.
+- Everything here was verified against the cycle-accurate Mesen emulator. Real hardware is still pending — see [Help wanted](#help-wanted).
 
 ## Gallery
 
@@ -56,22 +49,16 @@ All captured from snes86 running in Mesen.
 <td align="center"><img src="assets/tetris.png" width="400"><br><sub>Tetris® (1989) title screen — a real cartridge running on GB.COM, on the SNES</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/elks.png" width="480"><br><sub>ELKS 0.9.1 — Linux on the SNES: boot, <code>login: root</code>, <code>uname</code>, <code>meminfo</code>. Kernel and apps execute in place from cartridge ROM (<code>make elks</code>)</sub></td>
+<td align="center"><img src="assets/elks.png" width="480"><br><sub>ELKS 0.9.1 — Linux on the SNES: boot, <code>login: root</code>, <code>uname</code>, <code>meminfo</code>. Kernel and apps execute in place from cartridge ROM (<code>make elks</code>)</sub></td>
+<td align="center"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 172 KB machine, reading the C: tools (<code>make freedos</code>)</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 172 KB machine, reading the C: tools (<code>make freedos</code>)</sub></td>
+<td align="center"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub>
+<td align="center"><img src="assets/java.png" width="480"><br><sub>JAVAC.EXE + JAVA.COM — the SNES compiles Java and runs it: JAVAC building <code>HELLO.JAV</code> into bytecode on the machine itself, then JAVA interpreting the result (<code>C:\JAVA</code>)</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub></td>
-</tr>
-<tr>
-<td align="center" colspan="2"><img src="assets/java.png" width="480"><br><sub>JAVAC.EXE + JAVA.COM — the SNES compiles Java and runs it: JAVAC building <code>HELLO.JAV</code> into bytecode on the machine itself, then JAVA interpreting the result (<code>C:\JAVA</code>)</sub></td>
-</tr>
-<tr>
-<td align="center" colspan="2"><img src="assets/cc.png" width="480"><br><sub>CC — the public-domain Small-C toolchain compiling and running <code>HELLO.C</code> on the battery-backed B: drive, ~14 minutes of authentic 1982 build time (measured on the machine) (<code>C:\CC</code>)</sub></td>
-</tr>
-<tr>
-<td align="center" colspan="2"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes a few minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
+<td align="center"><img src="assets/cc.png" width="480"><br><sub>CC — the public-domain Small-C toolchain compiling and running <code>HELLO.C</code> on the battery-backed B: drive, ~14 minutes of authentic 1982 build time (measured on the machine) (<code>C:\CC</code>)</sub></td>
+<td align="center"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes a few minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
 </tr>
 </table>
 
@@ -107,137 +94,38 @@ All captured from snes86 running in Mesen.
 
 If you get something interesting running, we'd love to hear about it.
 
-## The SNES is your sound card
+## FreeDOS
 
-snes86's headline trick beyond "it boots DOS": it turns the SNES's SPC-700 audio chip
-into an 8-voice General MIDI synthesizer, and exposes a small MIDI card to the guest.
+`make freedos` builds a third-OS ROM: [FreeDOS](https://www.freedos.org/) 1.3 on the 172 KB BIGMEM machine — 172 KB is FreeDOS's exact floor here (the kernel dies during init at 108 KB, measured on the host core first).
 
-<p align="center">
-  <a href="https://github.com/rgsilva/snes86/blob/main/docs/assets/mididemo.mp4">
-    <img src="assets/midi.png" width="480" alt="Watch the snes86 MIDI demo">
-  </a>
-  <br><sub>▶ The demo tune played through the SPC-700 — click to watch (Beethoven's
-  "Ode to Joy", sequenced as a CC0 MIDI, ~0.4 MB).</sub>
-</p>
+- **Boot** lands at a FreeCOM `A:\>` prompt; the C: drive is the same free image as the MS-DOS ROM, so `DIR C:`, the benchmarks and the MIDI tools are all there.
+- **Memory is tight**: FreeCOM stays fully resident (no XMS to swap to), so the free arena runs the small tools but not big programs — `MEM` itself doesn't fit, which says it all. More RAM is the same SRAM-bank lever as the Windows 1.01 plan ([FUTURE.md](FUTURE.md#windows-101--proof-of-concept-done-fit--renderer-next)).
+- **It found a real bug**: FreeDOS relocates its kernel init to the top of memory, which parked live code exactly across the WRAM→SRAM seam at 108 KB — the first guest ever to execute across it, and the reason the fetch path now has a general seam bounce (the suite's `t_fdos` regression-guards it).
+- **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM into a 360 KB boot floppy. See [freedos/README.md](../freedos/README.md).
 
-- MIDPLAY streams music to the synth. Point it at a converted song:
-  `MIDPLAY C:\MIDI\DEMO.SNM`.
-- MIDCONV converts a Standard MIDI File (`.MID`, format 0) into the `.SNM` packet
-  stream MIDPLAY plays. (The conversion does slow real-number math once, so playback
-  can be a fast dumb loop.)
-- The public ROM includes a generated demo tune — a public-domain melody sequenced by
-  the build as an original CC0 MIDI: `CD MIDI` then `MIDPLAY DEMO.SNM`.
-- Even the PC speaker is wired to the synth, so programs that beep make sound.
+## Linux
 
-Both tools ship with Turbo Pascal source in `C:\MIDI`. See
-[INTERNALS.md](INTERNALS.md#the-snes-is-your-sound-card) for how the card and synth
-work. Bring your own `.MID` files, convert them, and the SNES plays them.
-
-## FreeDOS on the SNES
-
-`make freedos` builds a third-OS ROM: [FreeDOS](https://www.freedos.org/) 1.3 on the
-172 KB BIGMEM machine — 172 KB is FreeDOS's exact floor here (the kernel dies during
-init at 108 KB, measured on the host core first).
-
-- **Boot** lands at a FreeCOM `A:\>` prompt; the C: drive is the same free image as
-  the MS-DOS ROM, so `DIR C:`, the benchmarks and the MIDI tools are all there.
-- **Memory is tight**: FreeCOM stays fully resident (no XMS to swap to), so the free
-  arena runs the small tools but not big programs — `MEM` itself doesn't fit, which
-  says it all. More RAM is the same SRAM-bank lever as the Windows 1.01 plan
-  ([FUTURE.md](FUTURE.md#windows-101--proof-of-concept-done-fit--renderer-next)).
-- **It found a real bug**: FreeDOS relocates its kernel init to the top of memory,
-  which parked live code exactly across the WRAM→SRAM seam at 108 KB — the first
-  guest ever to execute across it, and the reason the fetch path now has a general
-  seam bounce (the suite's `t_fdos` regression-guards it).
-- **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release
-  (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM
-  into a 360 KB boot floppy. See [freedos/README.md](../freedos/README.md).
-
-## Java on the SNES
-
-`JAVA.COM` (in `C:\JAVA`) is a Java class-file interpreter: it runs the
-bytecode a real `javac` produces. Compile on any modern machine with
-`javac --release 8`, rename the `.class` to `.CLA` (DOS 8.3 can't hold
-`.class`), and:
-
-    C:\JAVA> JAVA HELLO
-    Hello from Java on a SNES emulating a 8086 PC! Yey!
-
-"Write once, run anywhere" — anywhere apparently including a Super
-Nintendo. It is a genuine bytecode interpreter, not a source translator:
-`javac` on the desktop, the JVM on the 8086, in the spirit of Infocom's
-Z-machine (compiled on a mainframe, interpreted on the PC).
-
-- **Scope**: static methods of one class, 32-bit `int` arithmetic
-  (hi/lo 16-bit pairs, with the hot ops hand-written in 8086),
-  `int[]`/`boolean[]` arrays, `String` literals, `StringBuilder`
-  concatenation (`"n=" + i`), `System.out.println/print`,
-  `System.in.read()`. No `long`/`float`, no user-defined objects, no
-  exceptions, no garbage collector (nothing lives long enough to need
-  one). Unsupported bytecode stops with a message naming the opcode.
-- **Samples** in `C:\JAVA` (source `.JAV` alongside): `HELLO`, `FIB`
-  (Fibonacci), `SIEVE` (the BYTE sieve — one pass), `CONCAT` (string
-  building), `GUESS` (reads the keyboard). Each prints its elapsed BIOS
-  ticks on exit, the house benchmark currency.
-- Built with `javac --release 8` — newer targets emit `invokedynamic`
-  string concatenation, which is deliberately out of scope. The compiled
-  class files are committed, so the ROM builds without a JDK.
-- **JAVAC.EXE** (also in `C:\JAVA`): our own Java compiler for the same
-  subset, running on the machine itself — `JAVAC HELLO.JAV B:HELLO.CLA`
-  then `JAVA B:HELLO` (C: is read-only, so output goes to the writable
-  B:). Written
-  in C (`apps/java/javac.c`), compiled to a DOS binary by the 1988
-  Small-C toolchain running on MS-DOS 2.0 *inside our own emulator*;
-  the clang build of the same source emits byte-identical class files,
-  which also pass a modern desktop JVM's verifier. The war story is
-  [docs/notes/javac-porting.md](notes/javac-porting.md).
-
-## Linux on the SNES (ELKS)
-
-`make elks` builds a separate ROM that boots [ELKS](https://github.com/ghaerr/elks) —
-the Linux-family kernel for real-mode x86 — instead of DOS. It is not a DOS program:
-the whole machine changes shape (see
-[INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)).
+`make elks` builds a separate ROM that boots [ELKS](https://github.com/ghaerr/elks) instead of DOS. It ends up changing the whole machine shape (see
+[INTERNALS](INTERNALS.md#booting-linux-the-elks-machine)).
 
 - **Boot** takes about two minutes to `login:`; log in as `root`, no password.
-- **The machine** is the 172 KB BIGMEM guest. The kernel and every application
-  execute in place from cartridge ROM; only data, stacks and the heap live in RAM,
-  which leaves >100 KB free for processes at the shell.
-- **The console** is ELKS's 80×25 headless console over the BIOS: the SNES shows a
-  64-column window, and L/R pan across the full 80 columns, exactly like the DOS
-  console. Type with the on-screen keyboard (SELECT), or the controller shortcuts
-  (START = Enter, B = Backspace, X = Space, Y = Escape).
-- **What runs**: the ELKS shell and the ROMFS userland — `sh`, `uname`, `ls`, `cat`,
-  `ps`, `meminfo`, `date`, and friends. There is no writable filesystem yet; it's a
-  real Unix, if a spartan one.
-- **Images**: the build fetches the unmodified official ELKS v0.9.1 release images
-  (GPL — never committed to this repo). A custom-built ELKS (e.g. with a smaller
-  kernel heap for more process RAM) can be dropped over `snes/build/elks_rom.bin` /
-  `snes/build/elks_romfs.bin` before `make elks`.
+- **The machine** is the 172 KB BIGMEM guest. The kernel and every application execute in place from cartridge ROM; only data, stacks and the heap live in RAM, which leaves >100 KB free for processes at the shell.
+- **The console** is ELKS's 80×25 headless console over the BIOS: the SNES shows a 64-column window, and L/R pan across the full 80 columns, exactly like the DOS console. Type with the on-screen keyboard (SELECT), or the controller shortcuts (START = Enter, B = Backspace, X = Space, Y = Escape).
+- **What runs**: the ELKS shell and the ROMFS userland — `sh`, `uname`, `ls`, `cat`, `ps`, `meminfo`, `date`, and friends. There is no writable filesystem yet; it's a real Unix, if a spartan one.
+- **Images**: the build fetches the unmodified official ELKS v0.9.1 release images (GPL — never committed to this repo). A custom-built ELKS (e.g. with a smaller kernel heap for more process RAM) can be dropped over `snes/build/elks_rom.bin` / `snes/build/elks_romfs.bin` before `make elks`.
 
 ## Memory
 
-The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the
-software above. A handful of memory-hungry titles need more. The BIGMEM build
-(`make msdos_big`) extends the guest to 172 KB using cartridge SRAM, which revives
-Rogue (its C: is the free one; overlay the local app fixture with
-`make msdos_big OVERLAYS=disks/appmatrix` to actually run it).
-BIGMEM is an experiment for DOS — but it's load-bearing for the ELKS ROM, which is
-built on the 172 KB machine.
+The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the software above. A handful of memory-hungry titles need more. The BIGMEM build (`make msdos_big`) extends the guest to 172 KB using cartridge SRAM, which revives Rogue (its C: is the free one; overlay the local app fixture with `make msdos_big OVERLAYS=disks/appmatrix` to actually run it). BIGMEM is an experiment for DOS — but it's load-bearing for the ELKS ROM, which is built on the 172 KB machine.
 
 ## Known limitations
 
 - No EGA/VGA — the display is CGA/MDA-class (text modes + CGA graphics 4/5/6).
-- Disk is a fixed ROM image (A:) plus writable SRAM (B:) and a hard-disk image (C:);
-  there's no real removable media. The BIGMEM builds (`make msdos_big`,
-  `make freedos`) spend the SRAM as guest RAM, so they have no B:.
+- Disk is a fixed ROM image (A:) plus writable SRAM (B:) and a hard-disk image (C:); there's no real removable media. The BIGMEM builds (`make msdos_big`, `make freedos`) spend the SRAM as guest RAM, so they have no B:.
 - Speed is period-appropriate, roughly IBM PC/XT territory, not instantaneous.
 - Copyrighted DOS software is not distributed — you supply your own.
 
 ## Help wanted
 
-- Real hardware. Everything here was verified in Mesen. If you flash a ROM to a cart
-  (the DOS one or the ELKS one) and boot it on a real SNES/Super Famicom, please
-  report what you see — it's the one thing we haven't been able to check.
-- Videos and captures welcome. Recordings of DOS software (or the MIDI synth) running
-  on snes86 are genuinely useful, and fun. Share them.
+- Real hardware. Everything here was verified in Mesen. If you flash a ROM to a cart (the DOS one or the ELKS one) and boot it on a real SNES/Super Famicom, please report what you see — it's the one thing we haven't been able to check.
+- Videos and captures welcome. Recordings of DOS software (or the MIDI synth) running on snes86 are genuinely useful, and fun. Share them.

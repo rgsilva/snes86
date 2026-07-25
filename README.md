@@ -5,7 +5,7 @@ An actual 8086 IBM PC emulator for the Super Nintendo. No, you are not drunk.
 The snes86 is an 8086 PC emulator written from scratch in 65C816 assembly. It boots real MS-DOS 2.0 from a ROM "disk", renders CGA/MDA text and graphics, turns the SNES sound chip into a MIDI synth, and runs period DOS software.
 
 <p align="center">
-  <img src="docs/assets/boot.png" width="480" alt="MS-DOS 2.0 booting on snes86">
+  <img src="docs/assets/boot.png" width="480" alt="MS-DOS 2.0 booting on snes86"><br>
   <sub>MS-DOS 2.0</sub>
 </p>
 
@@ -20,7 +20,7 @@ And, yes, it even boots Linux to a root shell!
 
 There is no good reason why, and the proper answer to this question is: _why not?_
 
-A Super Nintendo's CPU is a 16-bit 65C816 running around 3.5 MHz. This project makes it impersonate an Intel 8086. This is basically an emulator: it loads the 8086 code into RAM and execute it - fetching and decoding instruction as they come along. Refer to [docs/INTERNALS.md](docs/INTERNALS.md) for how it all actually works behind the scenes (disclaimer: it's messy).
+A Super Nintendo's CPU is a 16-bit 65C816 running around 3.5 MHz. This project makes it impersonate an Intel 8086. This is basically an emulator: it loads the 8086 code into RAM and execute it - fetching and decoding instruction as they come along. Refer to [INTERNALS](docs/INTERNALS.md) for how it all actually works behind the scenes (disclaimer: it's messy).
 
 ## Try it
 
@@ -34,23 +34,25 @@ Since this project generates a ROM file (.sfc) for you to use, there are a few b
 | `make msdos_big` | `build/msdos_big.sfc` | No `B:` drive available |
 | `make boot DISK=floppy.img` | `build/boot.sfc` | Needs to have a boot disk parameter, so pass it as the `DISK` parameter. This is useful when booting, for example, Flight Simulator 1.0. |
 
-_Note_: some targets don't have a writeable `B:` drive because they are using the cartridge SRAM as work memory. In normal images such as `msdos`, you have a writeable `B:` that should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though.
+> Note: some targets don't have a writeable `B:` drive because they are using the cartridge SRAM as work memory. In normal images such as `msdos`, you have a writeable `B:` that should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though.
 
-Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in [docs/BUILDING.md](docs/BUILDING.md).
+Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in [BUILDING](docs/BUILDING.md).
 
 ## Available software
 
 The public ROM ships only free software - all of it ours, public domain or MIT:
 
-* A simple nano-like text editor (`TED`)
-* A terrible image viewer (`VIEW`)
+* A simple nano-like text editor
+* A terrible image viewer
 * A very simple compiler and runtime for Java applications
 * A MIDI player that uses the SNES APU for playing songs
 * A very simple Sokoban game
 * Very simple benchmark utilities
 * A C compiler
 
-For all of the apps, you can check details and examples in our [docs here](apps/README.md). All tools are available the in MS-DOS image. The big image also have them, but they won't have a writeable disk for you to use them, so usability is limited.
+For all of the apps, you can check details and examples in our [apps/README](apps/README.md). All tools are available the in MS-DOS image. The big image also have them, but they won't have a writeable disk for you to use them, so usability is limited.
+
+There's also a bunch of other tests I've done, mostly with shareware/licensed/weird software, and you can find them documented in [COMPATIBILITY](docs/COMPATIBILITY.md).
 
 ## Legal & credits
 

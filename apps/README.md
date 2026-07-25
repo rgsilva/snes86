@@ -14,7 +14,7 @@ C:\MIDI> MIDCONV YOURS.MID YOURS.SNM      (converts the MID file into our SNM fo
 C:\MIDI> MIDPLAY DEMO.SNM                 (plays the SNM format)
 ```
 
-[▶ Watch the demo tune](../docs/assets/mididemo.mp4). We used Beethoven's "Ode to Joy", sequenced as a CC0 MIDI, played through the SPC-700. Even the PC speaker routes to the synth, so programs that beep make sound.
+[▶ Watch the demo tune](../docs/assets/mididemo.mp4). We used Beethoven's "Ode to Joy", sequenced as a CC0 MIDI, played through the SPC-700. Even the PC speaker routes to the synth, so programs that beep make sound. See [INTERNALS](INTERNALS.md#the-snes-is-your-sound-card) for how the card and synth work.
 
 ## VIEW
 
@@ -50,7 +50,15 @@ Save to `B:` and the file lives in battery-backed cartridge SRAM: power off, pow
 
 Yes, this is a Java runtime (-ish) running inside a 8086 emulator running MS-DOS inside a Super Nintendo videogame console. Don't ask how we got here. It's the "Write once, run anywhere", but taken literally.
 
-`JAVA.COM` interprets real `javac` bytecode (shipped as `.CLA`, because DOS 8.3 can't spell `.class`), and `JAVAC.EXE` is our Java compiler *running on the 8086 machine* — so the SNES compiles Java and then runs it. Compiling takes a couple of seconds; *running* is the slow part (the sieve interprets ~330K bytecodes in about 3½ minutes and prints its own tick count). You can test it as such:
+`JAVA` is a Java class-file interpreter: it runs the bytecode a real `javac` produces. Compile on any modern machine with `javac --release 8`, rename the `.class` to `.CLA` (DOS 8.3 can't hold `.class`), and it should work. Emphasis on _should_:
+
+- **Scope**: static methods of one class, 32-bit `int` arithmetic (hi/lo 16-bit pairs, with the hot ops hand-written in 8086), `int[]`/`boolean[]` arrays, `String` literals, `StringBuilder` concatenation (`"n=" + i`), `System.out.println/print`, `System.in.read()`. No `long`/`float`, no user-defined objects, no exceptions, no garbage collector (nothing lives long enough to need one). Unsupported bytecode stops with a message naming the opcode.
+- Built with `javac --release 8` — newer targets emit `invokedynamic` string concatenation, which is deliberately out of scope. The compiled class files are committed, so the ROM builds without a JDK.
+
+`JAVAC` is our own Java compiler for the same subset, running on the machine itself. It is written in C (`apps/java/javac.c`), compiled to a DOS binary by the 1988 Small-C toolchain running on MS-DOS 2.0 *inside our own emulator* (the clang build of the same source emits byte-identical class files, which also pass a modern desktop JVM's verifier). The war story is [docs/notes/javac-porting.md](notes/javac-porting.md).
+
+
+Ironically, compiling takes a couple of seconds; *running* is the slow part (the sieve interprets ~330K bytecodes in about 3.5 minutes and prints its own tick count). You can test it as such:
 
 ```
 C:\> CD JAVA
