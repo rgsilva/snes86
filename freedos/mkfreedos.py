@@ -24,8 +24,15 @@ import sys
 import urllib.request
 import zipfile
 
-URL = ("https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/"
-       "distributions/1.3/official/FD13-FloppyEdition.zip")
+# Mirrors of the same official release artifact, tried in order. The
+# sha256 pin below is the security boundary — any mirror serving those
+# exact bytes is fine, and ibiblio (the original home) started 403ing
+# its whole FreeDOS tree in 2026.
+URLS = [
+    "https://archive.org/download/freedos-1.3/FD13-FloppyEdition.zip",
+    "https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/"
+    "distributions/1.3/official/FD13-FloppyEdition.zip",
+]
 SHA256 = "75a4e11a7fce6f124e20927b3022b4b715a2a3f7324c5f5bfea42d90d80eb072"
 BOOTDISK = "720k/x86BOOT.img"          # member holding kernel + FreeCOM
 
@@ -37,9 +44,18 @@ ZIPPATH = os.path.join(CACHE, "FD13-FloppyEdition.zip")
 def fetch():
     if not os.path.exists(ZIPPATH):
         os.makedirs(CACHE, exist_ok=True)
-        print(f"fetching {URL} ...", file=sys.stderr)
-        with urllib.request.urlopen(URL, timeout=120) as r:
-            data = r.read()
+        data, err = None, None
+        for url in URLS:
+            print(f"fetching {url} ...", file=sys.stderr)
+            try:
+                with urllib.request.urlopen(url, timeout=120) as r:
+                    data = r.read()
+                break
+            except Exception as e:
+                err = e
+                print(f"  failed: {e}", file=sys.stderr)
+        if data is None:
+            sys.exit(f"mkfreedos: every mirror failed (last: {err})")
         with open(ZIPPATH + ".part", "wb") as f:
             f.write(data)
         os.replace(ZIPPATH + ".part", ZIPPATH)
