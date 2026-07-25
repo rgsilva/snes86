@@ -72,11 +72,13 @@ such as [Mesen](https://www.mesen.ca/). You boot straight to `C:\>`. For Linux,
 flash `snes/build/elks.sfc` instead and log in as `root`. There's also a
 FreeDOS 1.3 build (`freedos.sfc`) for the 172 KB machine.
 
-The public ROM ships only free software, all of it ours or MIT: the TED
-text editor, the VIEW picture viewer, a Java class-file interpreter, the
-MIDI player, Sokoban, benchmarks (sources in [homebrew/](homebrew/)) and
-the original MS-DOS 2.0 utilities as `C:\DOS` — plus a generated demo
-tune. To run your own DOS programs, drop them in `user/` and rebuild (see
+The public ROM ships only free software, all of it ours, public domain
+or MIT: the TED text editor, the VIEW picture viewer, a Java class-file
+interpreter, the MIDI player, Sokoban, benchmarks (sources in
+[homebrew/](homebrew/)), the original MS-DOS 2.0 utilities as `C:\DOS`,
+and a complete public-domain C toolchain as `C:\CC` — type `CC HELLO`
+on the B: drive and the SNES compiles, links and runs it
+([freeware/](freeware/)) — plus a generated demo tune. To run your own DOS programs, drop them in `user/` and rebuild (see
 [docs/BUILDING.md](docs/BUILDING.md)).
 
 ## Build

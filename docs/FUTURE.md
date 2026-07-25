@@ -169,22 +169,24 @@ toggle. The original plan:
 
 Development loop: iterate against `runpc -cga` PPM dumps, finish in Mesen.
 
-### The dev workstation — queued (B: on spare SRAM + Small-C)
+### The dev workstation — SHIPPED, and it never needed BIGMEM
 
-The verified-but-held milestone. Small-C 2.2 + Small Assembler (both
-public domain) + the MIT `LINK.EXE` already **compile, assemble, link
-and run C programs inside our emulated DOS 2.0** — proven end to end on
-runpc. What holds it: the toolchain needs the 172 KB BIGMEM machine
-(the assembler doesn't fit in 108 KB), and BIGMEM eats B:, so there is
-no writable drive to compile onto. The milestone, in order: (1) move
-B: onto the spare SRAM banks `$72/$73` (the cart header already
-declares 128 KB — this is also pre-work the Windows 1.01 plan wants),
-(2) a public BIGMEM ROM variant, (3) `freeware/smallc/` with provenance
-docs and `C:\CC` carrying the toolchain plus `HELLO.C`/`SIEVE.C`
-samples and a `CC.BAT` driver (~15 minutes per compile at SNES speed —
-period-perfect). End state: write C in TED, compile with Small-C, run
-it, all on the console. After that: more Java opcodes, and maybe —
-maybe — C ports of TED/VIEW once the toolchain can build them.
+Small-C 2.2 + Small Assembler (public domain) + the MIT `LINK.EXE`
+now ship in `C:\CC` (`freeware/cc/`, the first `freeware/` tenant) and
+**compile, assemble, link and run C programs inside the emulated DOS
+2.0 on the stock 108 KB machine** — `CC HELLO` on a writable drive does
+the whole cycle (~10 minutes at SNES speed; period-perfect). The two
+walls that had it "verified but held" both dissolved on close reading:
+the assembler fits 108 KB once its default 1000-symbol table is trimmed
+(`-S200 -NM` — the earlier attempt had passed the *default* size), and
+the "cc changes drive and can't write to read-only C:" behavior was
+never cc at all — DOS 2.x simply cannot exec by explicit path (that's
+DOS 3.0), so the tools are found via `PATH` and the current drive stays
+on the user's writable disk, exactly where the outputs land. With the
+B: write fix, the full workstation works on today's standard build:
+write C in TED, `CC` it, run it, save it to battery SRAM — all on the
+console. Still open here: more Java opcodes, and maybe — maybe — C
+ports of TED/VIEW now that the toolchain can build on-machine.
 
 ### The editor — SHIPPED as TED (vi declined)
 

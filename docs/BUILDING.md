@@ -50,8 +50,9 @@ What each one actually is:
   `homebrew/<tool>/build/` becomes `C:\<TOOL>` (MIDI, BENCH, SOKOBAN,
   VIEW, TED, JAVA — see [homebrew/README.md](../homebrew/README.md)),
   `msdos/bin/` (the MIT MS-DOS utilities: CHKDSK, DEBUG, EDLIN, MORE,
-  FIND, SORT) becomes `C:\DOS`, and `user/` at the repo root becomes
-  `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED` — everything else
+  FIND, SORT) becomes `C:\DOS`, staged `freeware/<tool>/build/` (the
+  Small-C toolchain, `C:\CC`) likewise, and `user/` at the repo root becomes
+  `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED;C:\CC` — everything else
   is a `CD` away. Builds with nothing but what's in this repo.
 
   Extra content can be overlaid onto the C: at build time:
