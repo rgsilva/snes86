@@ -5,7 +5,7 @@ bytecode on the emulated 8086 (and therefore on a SNES). Because DOS
 8.3 names cannot hold `.class`, class files travel as `.CLA`.
 
     C:\JAVA> JAVA HELLO
-    Hello from Java on a SNES!
+    Hello from Java on a SNES emulating a 8086 PC! Yey!
 
 **JAVAC.EXE ships too** — a Java compiler that runs on the machine
 itself, so the SNES compiles Java and then runs it (C: is read-only,
@@ -14,7 +14,7 @@ so output goes to A:):
     C:\JAVA> JAVAC HELLO.JAV A:HELLO.CLA
     ok: A:HELLO.CLA
     C:\JAVA> JAVA A:HELLO
-    Hello from Java on a SNES!
+    Hello from Java on a SNES emulating a 8086 PC! Yey!
 
 The sample sources ship as `.JAV` for exactly this. JAVAC is written
 in C (`javac.c`) and built by the 1988 Small-C toolchain running on
