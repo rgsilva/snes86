@@ -141,6 +141,9 @@ story.
 
 ## Testing
 
+The tiers, the full leg roster and the deep cuts are documented in
+[TESTING.md](../TESTING.md).
+
 ```sh
 make test          # the public suite: parity + the runpc host smokes +
                    # the Mesen end-to-end legs (MS-DOS, ELKS, FreeDOS).
