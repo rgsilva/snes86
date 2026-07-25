@@ -131,11 +131,13 @@ io:
 # homebrew/<tool>/build/ becomes C:\<TOOL>, msdos/bin/ becomes C:\DOS,
 # user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
 HBTOOLS := view ted java midi sokoban bench
+FWTOOLS := cc
 
 homebrew-stage:
 	@for t in $(HBTOOLS); do $(MAKE) -s -C ../homebrew/$$t stage || exit 1; done
+	@for t in $(FWTOOLS); do $(MAKE) -s -C ../freeware/$$t stage || exit 1; done
 
-build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*)
+build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../freeware/cc/*)
 	@mkdir -p build
 	python3 tools/mkhd_free.py build
 

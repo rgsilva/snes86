@@ -81,6 +81,19 @@ jobs:
           grep -q "Hello from Java on a SNES" java.log
           grep -q "112358132134" java.log
 
+      # End-to-end smoke: the Small-C toolchain (public domain, C:\CC)
+      # compiles, assembles, links and runs C inside emulated MS-DOS 2.0
+      # at the stock 108 KB - toolchain on read-only C:, work on the
+      # writable floppy (the B: role on the SNES).
+      - name: Smoke test — Small-C compiles C in the emulator
+        run: |
+          python3 snes/tools/mkccimg.py
+          printf 'a:\rgo\r' | core-c/build/runpc -m 108 -l 9000000000 \
+            -w snes/build/cctest.img -d snes/build/hd_free.img | tr -d '\r' > cc.log
+          grep -q "Hello from Small-C inside snes86!" cc.log
+          grep -q "1899 primes (expect 1899)" cc.log
+          echo "CC OK"
+
       # The ELKS ROM: Linux (well, the Embeddable Linux Kernel Subset) on a
       # SNES. The kernel + ROMFS images are fetched from the official ELKS
       # v0.9.1 release by test/fetch_elks.sh (GPL software - fetched at build

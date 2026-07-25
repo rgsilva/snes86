@@ -161,6 +161,23 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (Small-C compiles and runs C on runpc) =="
+# The full workstation shape at 108 KB: toolchain on read-only C:\CC
+# (found via PATH - DOS 2.x cannot exec by explicit path), sources and
+# every intermediate on the writable work floppy (the SNES's B: role),
+# batch-driven. LINK spills VM.TMP to the work drive; that is normal.
+python3 tools/mkccimg.py >/dev/null
+printf 'a:\rgo\r' \
+  | ../core-c/build/runpc -m 108 -l 9000000000 -w build/cctest.img \
+      -d build/hd_free.img 2>/dev/null | tr -d '\r' > build/cc_host.log
+if grep -q "Hello from Small-C inside snes86!" build/cc_host.log \
+   && grep -q "1899 primes (expect 1899)" build/cc_host.log; then
+  echo "PASS cc-host"
+else
+  echo "FAIL cc-host"
+  FAIL=1
+fi
+
 # --- Mesen legs: generic tests drive the PUBLIC ROM ---
 TESTS="t_boot t_dirb t_kbd t_cga t_cga6 t_midi t_ted"
 [ "$1" = "quick" ] && TESTS="t_boot t_cga"

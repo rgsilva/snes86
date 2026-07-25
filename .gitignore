@@ -19,6 +19,7 @@ disks/*
 # homebrew: staged image content and the fetched (never redistributed)
 # Turbo Pascal 3 live outside git
 homebrew/*/build/
+freeware/*/build/
 homebrew/cache/
 
 # user/ -> C:\USER: bring-your-own software, never committed

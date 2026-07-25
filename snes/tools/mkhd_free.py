@@ -88,6 +88,24 @@ for tool in sorted(os.listdir(HOMEBREW)):
         place(tool.upper(), f, open(os.path.join(b, f), "rb").read(),
               f"homebrew/{tool}")
 
+# freeware tools (third-party PD/MIT, staged like homebrew): freeware/<tool>/
+# build/ -> C:\<TOOL>. Same convention, different provenance (see
+# freeware/README.md for the admission rule).
+FREEWARE = os.path.join(ROOTDIR, "freeware")
+if os.path.isdir(FREEWARE):
+    for tool in sorted(os.listdir(FREEWARE)):
+        b = os.path.join(FREEWARE, tool, "build")
+        if not os.path.isdir(b):
+            continue
+        files = sorted(f for f in os.listdir(b)
+                       if os.path.isfile(os.path.join(b, f)))
+        if not files:
+            raise SystemExit(f"freeware/{tool}/build/ is empty — "
+                             f"run `make -C freeware/{tool} stage`")
+        for f in files:
+            place(tool.upper(), f, open(os.path.join(b, f), "rb").read(),
+                  f"freeware/{tool}")
+
 # C:\DOS — the MIT MS-DOS 2.0 utilities (msdos/bin/, when present)
 if os.path.isdir(DOSBIN):
     for f in sorted(os.listdir(DOSBIN)):
@@ -217,11 +235,13 @@ for nm, data in tree[None]:
 for dname in sorted(k for k in tree if k is not None):
     files = tree[dname]
     assert idx < ROOTN, f"root dir full ({ROOTN} entries) at {dname}"
-    assert len(files) <= (SPC * 512) // 32 - 2, \
-        f"C:\\{dname}: {len(files)} files exceed a one-cluster directory"
     ents = [put(fn, data) for fn, data in files]
     dclus = nc[0]
-    dirdata = bytearray(SPC * 512)
+    # a subdirectory spans as many clusters as its entries need (dot +
+    # dotdot + files, 64 entries/cluster); put() chains them via the FAT
+    perclus = (SPC * 512) // 32
+    ndclus = max(1, (len(files) + 2 + perclus - 1) // perclus)
+    dirdata = bytearray(SPC * 512 * ndclus)
     dot = mkent(".", 0x10, dclus, 0)
     dot[0:11] = b".          "
     dotdot = mkent("..", 0x10, 0, 0)
