@@ -161,6 +161,38 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (JAVAC compiles Java ON the machine, JAVA runs it) =="
+# The whole loop inside one DOS session: JAVAC.EXE (C:\JAVA, built by
+# Small-C under runpc) compiles HELLO.JAV; the .CLA lands on A: because
+# C: is read-only; JAVA interprets it. One session — A: writes are
+# in-memory only without -w.
+printf 'a:\rpath c:\\java\rjavac c:\\java\\hello.jav hi.cla\rjava hi\r' \
+  | ../core-c/build/runpc -m 108 -l 9000000000 -d build/hd_free.img build/msdos_a.img 2>/dev/null \
+  | tr -d '\r' > build/jc_host.log
+if grep -q "^ok: " build/jc_host.log \
+   && grep -q "Hello from Java on a SNES" build/jc_host.log; then
+  echo "PASS jc-host"
+else
+  echo "FAIL jc-host"
+  FAIL=1
+fi
+
+# Desktop cross-check: the host build of the same compiler must emit a
+# class a real JVM runs (skips cleanly without a JDK).
+if command -v java >/dev/null 2>&1; then
+  make -C ../homebrew/java javac-dev >/dev/null 2>&1
+  rm -rf build/jcx && mkdir -p build/jcx
+  if ../homebrew/java/hostbuild/javac-dev ../homebrew/java/samples/Hello.java build/jcx/Hello.class >/dev/null 2>&1 \
+     && (cd build/jcx && java Hello 2>/dev/null | grep -q "Hello from Java on a SNES"); then
+    echo "PASS jc-desktop"
+  else
+    echo "FAIL jc-desktop"
+    FAIL=1
+  fi
+else
+  echo "SKIP jc-desktop (no JDK on host)"
+fi
+
 # --- Mesen legs: generic tests drive the PUBLIC ROM ---
 TESTS="t_boot t_dirb t_kbd t_cga t_cga6 t_midi t_ted"
 [ "$1" = "quick" ] && TESTS="t_boot t_cga"

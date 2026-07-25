@@ -87,6 +87,7 @@ All captured from snes86 running in Mesen.
 | | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source): modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
 | | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\VIEW` ships generated test cards |
 | | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
+| | JAVAC | ✅ shipped | our Java compiler running ON the machine (C, built by Small-C 2.2 on MS-DOS 2.0 inside the emulator): `JAVAC HELLO.JAV A:HELLO.CLA` then `JAVA A:HELLO` — the SNES compiles Java and runs it; output byte-identical to the clang build of the same source |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
@@ -175,6 +176,14 @@ Z-machine (compiled on a mainframe, interpreted on the PC).
 - Built with `javac --release 8` — newer targets emit `invokedynamic`
   string concatenation, which is deliberately out of scope. The compiled
   class files are committed, so the ROM builds without a JDK.
+- **JAVAC.EXE** (also in `C:\JAVA`): our own Java compiler for the same
+  subset, running on the machine itself — `JAVAC HELLO.JAV A:HELLO.CLA`
+  then `JAVA A:HELLO` (C: is read-only, so output goes to A:). Written
+  in C (`homebrew/java/javac.c`), compiled to a DOS binary by the 1988
+  Small-C toolchain running on MS-DOS 2.0 *inside our own emulator*;
+  the clang build of the same source emits byte-identical class files,
+  which also pass a modern desktop JVM's verifier. The war story is
+  [homebrew/java/JAVAC-PORTING.md](../homebrew/java/JAVAC-PORTING.md).
 
 ## Linux on the SNES (ELKS)
 

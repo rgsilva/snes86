@@ -55,7 +55,7 @@ keystroke as described below).
 |---|---|---|
 | `view/` | `C:\VIEW` | BMP/PCX viewer, 640×200 halftone / 320×200 colour, slideshows |
 | `ted/` | `C:\TED` | controller-first text editor (on the DOS PATH) |
-| `java/` | `C:\JAVA` | Java class-file interpreter + sample `.CLA` bytecode |
+| `java/` | `C:\JAVA` | Java class-file interpreter + JAVAC (our on-machine Java compiler) + sample `.JAV` sources and `.CLA` bytecode |
 | `midi/` | `C:\MIDI` | MIDPLAY/MIDCONV + the generated CC0 demo tune |
 | `sokoban/` | `C:\SOKOBAN` | our CGA game |
 | `bench/` | `C:\BENCH` | SIEVE/HELLO + the CGA test cards |
