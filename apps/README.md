@@ -109,6 +109,8 @@ Hello from Small-C inside snes86!
 
 The pipeline, called by `CC.BAT`, is three real programs (`SCC`, `ASM` and `LINK`). Two samples ship **with source** in `C:\CC`: `HELLO.C` and `SIEVE.C`.
 
+![Compiling C code in the SNES](../docs/assets/cc.png)
+
 Some extra technical details are provided [here](cc/README.md).
 
 --
