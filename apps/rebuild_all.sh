@@ -83,8 +83,8 @@ fi
 
 echo
 if [ -z "$FAIL" ]; then
-  echo "== HOMEBREW REBUILD ALL PASS =="
+  echo "== APPS REBUILD ALL PASS =="
 else
-  echo "== HOMEBREW REBUILD FAILURES =="
+  echo "== APPS REBUILD FAILURES =="
   exit 1
 fi

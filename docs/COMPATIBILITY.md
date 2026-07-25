@@ -5,7 +5,9 @@ period programs generally just work. This page lists what's been exercised.
 
 Two things to keep in mind:
 
-- The public ROM ships only free software (our own tools + a demo). Everything else
+- The public ROM ships only free software: our own tools plus public-domain
+  third-party packages (the Small-C toolchain, the MIT MS-DOS utilities), with
+  provenance in the per-package READMEs. Everything else
   below is bring-your-own: drop it in `user/` and rebuild (see
   [BUILDING.md](BUILDING.md)). A "✅ tested" mark means the emulator runs it, not that
   it's included.
@@ -63,7 +65,10 @@ All captured from snes86 running in Mesen.
 <td align="center" colspan="2"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/java.png" width="480"><br><sub>JAVA.COM — real <code>javac --release 8</code> bytecode running on the emulated 8086: "write once, run anywhere," verified on a Super Nintendo (<code>C:\JAVA</code>)</sub></td>
+<td align="center" colspan="2"><img src="assets/java.png" width="480"><br><sub>JAVAC.EXE + JAVA.COM — the SNES compiles Java and runs it: JAVAC building <code>HELLO.JAV</code> into bytecode on the machine itself, then JAVA interpreting the result (<code>C:\JAVA</code>)</sub></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><img src="assets/cc.png" width="480"><br><sub>CC — the public-domain Small-C toolchain compiling and running <code>HELLO.C</code> on the battery-backed B: drive, ~14 minutes of authentic 1982 build time (measured on the machine) (<code>C:\CC</code>)</sub></td>
 </tr>
 <tr>
 <td align="center" colspan="2"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes a few minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
@@ -77,19 +82,19 @@ All captured from snes86 running in Mesen.
 
 | category | software | status | notes |
 |---|---|---|---|
-| OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection |
+| OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection; the MIT utilities (`CHKDSK`, `DEBUG`, `EDLIN`, `FIND`, `SORT`, `MORE`) ship in `C:\DOS` |
 | | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — see [Linux on the SNES](#linux-on-the-snes-elks) |
 | | FreeDOS 1.3 | ✅ shipped | its own ROM (`make freedos`, BIGMEM): kernel + FreeCOM to `A:\>`, runs the C: tools — see [FreeDOS on the SNES](#freedos-on-the-snes) |
 | | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
-| | SIEVE / BENCH / HELLO / CGATEST / CGA6TST | ✅ shipped | our benchmarks + demos, with source |
-| | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source): modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
+| | SIEVE / HELLO / CGATEST / CGA6TST | ✅ shipped | our benchmarks + CGA test cards in `C:\BENCH`, with source |
+| | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source) in `C:\TED`, on the PATH: modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
 | | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\VIEW` ships generated test cards |
 | | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
-| | JAVAC | ✅ shipped | our Java compiler running ON the machine (C, built by Small-C 2.2 on MS-DOS 2.0 inside the emulator): `JAVAC HELLO.JAV A:HELLO.CLA` then `JAVA A:HELLO` — the SNES compiles Java and runs it; output byte-identical to the clang build of the same source |
-| Freeware | Small-C toolchain | ✅ shipped | public-domain C compiler + assembler + the MIT 1982 linker in `C:\CC`: `CC HELLO` compiles, links and runs C on the 108 KB machine (~10 min at SNES speed); samples ship with source — the machine can build them |
+| | JAVAC | ✅ shipped | our Java compiler running ON the machine (C, built by Small-C 2.2 on MS-DOS 2.0 inside the emulator): `JAVAC HELLO.JAV B:HELLO.CLA` then `JAVA B:HELLO` — the SNES compiles Java and runs it; output byte-identical to the clang build of the same source |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
+| Third-party | Small-C toolchain | ✅ shipped | public-domain C compiler + assembler + the MIT 1982 linker in `C:\CC`: `CC HELLO` compiles, links and runs C on the 108 KB machine (~14 min at SNES speed, measured); samples ship with source — the machine can build them; provenance and hashes in [apps/cc/README.md](../apps/cc/README.md) |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
 | Applications | WordStar 3.31 | ✅ tested | full-screen editor, overlays load from C: |
@@ -178,8 +183,9 @@ Z-machine (compiled on a mainframe, interpreted on the PC).
   string concatenation, which is deliberately out of scope. The compiled
   class files are committed, so the ROM builds without a JDK.
 - **JAVAC.EXE** (also in `C:\JAVA`): our own Java compiler for the same
-  subset, running on the machine itself — `JAVAC HELLO.JAV A:HELLO.CLA`
-  then `JAVA A:HELLO` (C: is read-only, so output goes to A:). Written
+  subset, running on the machine itself — `JAVAC HELLO.JAV B:HELLO.CLA`
+  then `JAVA B:HELLO` (C: is read-only, so output goes to the writable
+  B:). Written
   in C (`apps/java/javac.c`), compiled to a DOS binary by the 1988
   Small-C toolchain running on MS-DOS 2.0 *inside our own emulator*;
   the clang build of the same source emits byte-identical class files,
@@ -206,8 +212,8 @@ the whole machine changes shape (see
   real Unix, if a spartan one.
 - **Images**: the build fetches the unmodified official ELKS v0.9.1 release images
   (GPL — never committed to this repo). A custom-built ELKS (e.g. with a smaller
-  kernel heap for more process RAM) can be dropped over `build/elks_rom.bin` /
-  `build/elks_romfs.bin` before `make elks`.
+  kernel heap for more process RAM) can be dropped over `snes/build/elks_rom.bin` /
+  `snes/build/elks_romfs.bin` before `make elks`.
 
 ## Memory
 
@@ -223,7 +229,8 @@ built on the 172 KB machine.
 
 - No EGA/VGA — the display is CGA/MDA-class (text modes + CGA graphics 4/5/6).
 - Disk is a fixed ROM image (A:) plus writable SRAM (B:) and a hard-disk image (C:);
-  there's no real removable media.
+  there's no real removable media. The BIGMEM builds (`make msdos_big`,
+  `make freedos`) spend the SRAM as guest RAM, so they have no B:.
 - Speed is period-appropriate, roughly IBM PC/XT territory, not instantaneous.
 - Copyrighted DOS software is not distributed — you supply your own.
 

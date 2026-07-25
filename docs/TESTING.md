@@ -89,4 +89,4 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
 Where the machinery lives: `snes/test/suite.sh` (the legs),
 `snes/test/*.lua` (the Mesen drivers), `snes/test/parity.sh` (lockstep),
 `disks/mkappmatrix.py` (the fixture manifest). Build documentation:
-[docs/BUILDING.md](docs/BUILDING.md).
+[BUILDING.md](BUILDING.md).

@@ -25,6 +25,6 @@ apps/cache/
 
 # user/ -> C:\USER: bring-your-own software, never committed
 user/*
-!user/README.md
+!user/.gitkeep
 __pycache__/
 snes/test/shot.lua

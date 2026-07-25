@@ -5,7 +5,7 @@
 #
 # The Small-C 2.2 kit (public-domain, Hendrix) lives in the repo:
 # apps/cc/ carries CC.EXE, ASM.EXE and the exploded CLIB objects
-# (lib/*.OBJ) — see apps/cc/ORIGIN.md for provenance. KIT= can
+# (lib/*.OBJ) — see apps/cc/README.md for provenance. KIT= can
 # still point at an external kit ($KIT/CC.EXE, $KIT/ASM.EXE, and the
 # objects in $KIT/libobjs/ or $KIT/lib/). LINK.EXE is Microsoft LINK
 # V2.00 from msdos/ (also in the repo).

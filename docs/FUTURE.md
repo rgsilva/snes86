@@ -175,7 +175,7 @@ Small-C 2.2 + Small Assembler (public domain) + the MIT `LINK.EXE`
 now ship in `C:\CC` (`apps/cc/`) and
 **compile, assemble, link and run C programs inside the emulated DOS
 2.0 on the stock 108 KB machine** — `CC HELLO` on a writable drive does
-the whole cycle (~10 minutes at SNES speed; period-perfect). The two
+the whole cycle (~14 minutes at SNES speed, measured; period-perfect). The two
 walls that had it "verified but held" both dissolved on close reading:
 the assembler fits 108 KB once its default 1000-symbol table is trimmed
 (`-S200 -NM` — the earlier attempt had passed the *default* size), and
@@ -238,7 +238,7 @@ three-language benchmark table, Java vs Pascal vs C, is one Small-C away).
 
 **Update: JAVAC shipped too.** The desktop half of the Z-machine split
 is now optional: `C:\JAVA\JAVAC.EXE` compiles the same Java subset *on
-the machine* (`JAVAC HELLO.JAV A:HELLO.CLA`, then `JAVA A:HELLO`), and
+the machine* (`JAVAC HELLO.JAV B:HELLO.CLA`, then `JAVA B:HELLO`), and
 the `.JAV` sources ship alongside the `.CLA`s because the console can
 now build them itself. It is our own single-pass compiler in C
 (`apps/java/javac.c`), compiled to a DOS binary by the Small-C 2.2
@@ -258,7 +258,7 @@ tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 The great reorg landed: the on-machine software lives in `apps/<tool>/`
 (one folder per tool, per-tool Makefiles staging exactly what ships as
 `C:\<TOOL>`; ours and third-party merged — a package that is not ours
-carries an `ORIGIN.md` with provenance and hashes), the packer walks it
+carries a provenance section in its README, with hashes), the packer walks it
 by convention, `disks/` is purely bring-your-own media (zero gitignore
 exceptions), `user/` at the repo root is the BYO drop-in, TP3 is
 fetched-not-committed for the `recompile` pipeline, the MIT MS-DOS

@@ -87,14 +87,6 @@ C:\BENCH> SIEVE
 C:\BENCH> CGA6TST
 ```
 
-## CC
-
-# freeware/
-
-Third-party DOS software that is **not ours** but is **freely redistributable**, staged onto the public ROM's C: drive the same way `homebrew/` tools are: `freeware/<tool>/build/` → `C:\<TOOL>`, populated by that tool's `make stage` (wired into `snes/Makefile`'s staging target).
-
-A package comes in only with an `ORIGIN.md` documenting: where each file came from (source URL), its license with the evidence (the actual PD notice or MIT grant), and a sha256 for every binary. PD or MIT-class redistribution rights, documented — or it stays out. When in doubt, it stays out.
-
 ## C compiler
 
 We provide the Small-C toolchain (public-domain compiler + assembler, the MIT MS-DOS linker, runtime, samples) → `C:\CC`. Compiles and runs C entirely inside the emulated machine at the stock 108 KB. You can use it like this:
@@ -115,7 +107,7 @@ Some extra technical details are provided [here](cc/README.md).
 
 # Building them
 
-`make apps` from the repo root runs the whole loop: rebuild every tool from source and verify (see [TESTING.md](../TESTING.md)).
+`make apps` from the repo root runs the whole loop: rebuild every tool from source and verify (see [TESTING.md](../docs/TESTING.md)).
 
 Each tool folder holds its own source, the committed `.COM` binary, any generators it owns, and a Makefile with two targets:
 

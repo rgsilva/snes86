@@ -79,9 +79,9 @@ dispatches BIOS calls natively.
 | INT | service |
 |---|---|
 | 10h video | set mode (40/80-col text, CGA graphics 4/5/6), cursor, scroll, read/write char+attr, teletype, set pixel / read pixel, palette/border. Includes an ANSI/CSI escape parser (cursor moves, clears, SGR colors) for `ANSI.SYS`-style output. |
-| 11h equipment | returns "two floppies, 80×25 color". |
+| 11h equipment | returns "two floppies, 80×25 color" (one floppy under BIGMEM — the SRAM banks are guest RAM there, so B: is gone). |
 | 12h memory size | returns the guest RAM size (108 KB, or 172 under BIGMEM). |
-| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is writable SRAM; C: is a hard-disk image. Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
+| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable 32 KB battery-backed SRAM disk (absent under BIGMEM); C: is a hard-disk image. Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
 | 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags. Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |
@@ -98,7 +98,7 @@ exactly 64 character columns of 8 pixels. Mode 5 is also a two-layer mode, and s
 both at once: each 16-pixel tile slot carries two character cells, the even column on BG2
 (2bpp) and the odd column on BG1 (4bpp). A character is therefore a single tilemap write,
 and vertical scrolling is a ring over the tile rows via the scroll register. The 8×8 font
-(`tools/mkfont.py`) is emitted as two copies to match — 2bpp for BG2, 4bpp for BG1 — and
+(`snes/tools/mkfont.py`) is emitted as two copies to match — 2bpp for BG2, 4bpp for BG1 — and
 DMA'd into VRAM at boot.
 
 Colours, without a 256-entry palette. A CGA cell is a character plus an attribute byte
@@ -112,7 +112,7 @@ that attribute's two colours into CGRAM during vblank, and records it in a looku
 the scanner then points each cell at whatever palette its attribute resolved to. A handful
 of pairs are available (1–3 and 5–6); once they're spent, further attributes fall back to
 green. The 16 CGA colours themselves become 15-bit SNES RGB through a build-time table
-(`tools/mkcgalut.py`), and ANSI.SYS SGR colours map in through a small ANSI→CGA index table.
+(`snes/tools/mkcgalut.py`), and ANSI.SYS SGR colours map in through a small ANSI→CGA index table.
 
 40 and 80 columns. Modes 0/1 are 40 columns, modes 2/3 are 80. The physical console is 64
 columns wide, so 40-column text just fits. Eighty don't — so the scanner renders a 64-column
@@ -189,7 +189,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the MIDI feature from a user's view
 
 ## Booting Linux: the ELKS machine
 
-`make elks` builds `build/elks.sfc`: the same 8086 core and HLE BIOS, reshaped to
+`make elks` builds `snes/build/elks.sfc`: the same 8086 core and HLE BIOS, reshaped to
 boot [ELKS](https://github.com/ghaerr/elks) 0.9.1 — a real Linux-family kernel for
 real-mode x86 — to a root shell. Everything below is `.IFDEF ELKS`-gated; the DOS
 builds are byte-identical with the variant compiled out.
