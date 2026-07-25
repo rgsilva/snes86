@@ -1261,7 +1261,7 @@ _h13_badn:
     jmp _h13_bad
 _h13_flp:
 .IFDEF FSBOOT
-    ; FS1 booter floppy: 40 cyl / 1 head / 8 spt. LBA = cyl*8 + sec-1
+    ; 160 KB booter floppy: 40 cyl / 1 head / 8 spt. LBA = cyl*8 + sec-1
     lda gDX
     and #$FF00
     bne _h13_badj            ; head 0 only
@@ -4824,46 +4824,52 @@ zero_w:
 .ENDS
 
 ;----------------------------------------------------------------------
-; A: floppy image across banks 2-13. Normal build: the 360KB PC DOS
-; disk. FSBOOT build: the MS Flight Simulator 1.0 self-booting 160KB
-; disk (5 banks; FS1 replaces DOS entirely — our BIOS boots its boot
-; sector like any other).
+; A: floppy image across banks 2-13. Normal build: the 360KB DOS disk.
+; FSBOOT build (`make boot` with a 160 KB image): build/bootdisk.img is
+; a self-booting single-sided disk (5 banks; it replaces DOS entirely —
+; our BIOS boots its boot sector like any other; MS Flight Simulator
+; 1.0 is the proven tenant). BOOTIMG (`make boot` with a 360 KB image):
+; the self-booting disk simply takes the A: slot below.
 ;----------------------------------------------------------------------
 .IFDEF FSBOOT
 .BANK 2 SLOT 0
 .ORG 0
 .SECTION "Disk2" FORCE
-.INCBIN "../disks/fs1.img" SKIP 0 READ 32768
+.INCBIN "build/bootdisk.img" SKIP 0 READ 32768
 .ENDS
 .BANK 3 SLOT 0
 .ORG 0
 .SECTION "Disk3" FORCE
-.INCBIN "../disks/fs1.img" SKIP 32768 READ 32768
+.INCBIN "build/bootdisk.img" SKIP 32768 READ 32768
 .ENDS
 .BANK 4 SLOT 0
 .ORG 0
 .SECTION "Disk4" FORCE
-.INCBIN "../disks/fs1.img" SKIP 65536 READ 32768
+.INCBIN "build/bootdisk.img" SKIP 65536 READ 32768
 .ENDS
 .BANK 5 SLOT 0
 .ORG 0
 .SECTION "Disk5" FORCE
-.INCBIN "../disks/fs1.img" SKIP 98304 READ 32768
+.INCBIN "build/bootdisk.img" SKIP 98304 READ 32768
 .ENDS
 .BANK 6 SLOT 0
 .ORG 0
 .SECTION "Disk6" FORCE
-.INCBIN "../disks/fs1.img" SKIP 131072 READ 32768
+.INCBIN "build/bootdisk.img" SKIP 131072 READ 32768
 .ENDS
 .ELSE
 .IFNDEF ELKS                 ; ELKS boots from the ROM windows in banks
-.IFDEF PCDOS                 ; 14+; the 360 KB DOS floppy would be dead
-.DEFINE AIMG "build/adisk.img"  ; weight in banks 2-13 (a DL=0 probe now
-.ELSE                        ; reads zero-filled banks and fails cleanly)
+.IFDEF BOOTIMG               ; 14+; the 360 KB DOS floppy would be dead
+.DEFINE AIMG "build/bootdisk.img" ; weight in banks 2-13 (a DL=0 probe
+.ELSE                        ; now reads zero-filled banks and fails
+.IFDEF PCDOS                 ; cleanly)
+.DEFINE AIMG "build/adisk.img"
+.ELSE
 .IFDEF FREEDOS
 .DEFINE AIMG "build/freedos_a.img"
 .ELSE
 .DEFINE AIMG "build/msdos_a.img"
+.ENDIF
 .ENDIF
 .ENDIF
 .BANK 2 SLOT 0
@@ -4928,8 +4934,8 @@ zero_w:
 .ENDS
 .ENDIF                       ; IFNDEF ELKS (A: floppy banks)
 .ENDIF
-.IFDEF APPSHD
-.DEFINE HDIMG "build/hd_apps.img"
+.IFDEF OVERLAYHD             ; OVERLAYS= build (any DOS target): the
+.DEFINE HDIMG "build/hd_overlay.img" ; free C: with extra content merged
 .ELSE
 .DEFINE HDIMG "build/hd_free.img"
 .ENDIF

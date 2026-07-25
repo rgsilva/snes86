@@ -5,6 +5,33 @@ LD     := $(PVBIN)/wlalink
 
 all: build/console.sfc
 
+# --- OVERLAYS: a uniform optional flag on every DOS-booting target
+# (msdos, msdos_big, freedos, boot). OVERLAYS="dir-or-img ..." merges
+# extra content onto the free C: (tools/mkhd_free.py) and switches the
+# output to build/<target>_overlay.sfc — an overlay build never
+# clobbers the clean artifact. Nothing copyrighted is ever baked into
+# a default build; the suite's app fixture is just OVERLAYS too.
+ifneq ($(strip $(OVERLAYS)),)
+OVSUF := _overlay
+OVDEF := -D OVERLAYHD
+HDC   := build/hd_overlay.img
+else
+OVSUF :=
+OVDEF :=
+HDC   := build/hd_free.img
+endif
+
+# every DOS-boot variant assembles dosboot.asm via a stub + these
+DOSDEPS := dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin \
+           build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin \
+           build/font_bg1.bin build/spc_midi64.bin build/cgalut.bin \
+           build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+
+# wlalink linkfiles are two generated lines — build/<stem>.link
+build/%.link:
+	@mkdir -p build
+	@printf '[objects]\nbuild/%s.o\n' '$*' > $@
+
 build/font_bg2.bin build/font_bg1.bin build/cgafont.bin: tools/mkfont.py tools/font8x8_basic.h
 	python3 tools/mkfont.py build
 
@@ -32,22 +59,31 @@ parity:
 run: build/console.sfc
 	open -a Mesen build/console.sfc
 
-test: build/console.sfc
+# --- the suite: `make test` = the public legs (parity + host smokes +
+# Mesen; Mesen legs self-skip when Mesen is absent, e.g. CI). QUICK=1
+# trims to parity + boot + cga. `make test-extra` = only the
+# copyrighted app-matrix legs (local machines with disks/).
+test:
+	./test/suite.sh free $(if $(QUICK),quick)
+
+test-extra:
+	./test/suite.sh extra
+
+console-test: build/console.sfc
 	/Applications/Mesen.app/Contents/MacOS/Mesen --testrunner build/console.sfc test/console.lua
 
 clean:
 	rm -rf build
 
-.PHONY: all run test clean msdos apps big fs freedos io homebrew-stage
+.PHONY: all run test test-extra console-test clean msdos msdos_big boot freedos elks io homebrew-stage parity cputest sramtest
 
-# --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) + a
-# free C: (tools/mkhd_free.py; no copyrighted software).  `make apps` is the
-# same machine with the copyrighted app-matrix fixture overlaid (for the
-# compatibility suite legs).  See docs/BUILDING.md.
-msdos: build/msdos.sfc
+# --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) +
+# a free C: (tools/mkhd_free.py; no copyrighted software).  See
+# docs/BUILDING.md.
+msdos: build/msdos$(OVSUF).sfc
 
-build/msdos.o: msdos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/msdos.o msdos.asm
+build/msdos$(OVSUF).o: msdos.asm $(DOSDEPS) build/msdos_a.img $(HDC)
+	$(AS) $(OVDEF) -o $@ msdos.asm
 
 build/aluflat.asm: tools/mkaluflat.py
 	python3 tools/mkaluflat.py build/aluflat.asm
@@ -69,34 +105,32 @@ build/spc_beep64.bin: spc_beep.asm linkfile_spc
 	$(AS_SPC) -o build/spc_beep.o spc_beep.asm
 	$(LD) -d -s linkfile_spc build/spc_beep64.bin
 
-build/msdos.sfc: build/msdos.o linkfile_msdos
-	$(LD) -d -s -v -c linkfile_msdos build/msdos.sfc
+build/msdos$(OVSUF).sfc: build/msdos$(OVSUF).o build/msdos$(OVSUF).link
+	$(LD) -d -s -v -c build/msdos$(OVSUF).link $@
 
-fs: build/dosboot_fs.sfc
+msdos_big: build/msdos_big$(OVSUF).sfc
 
-big: build/msdos_big.sfc
+build/msdos_big$(OVSUF).o: msdos_big.asm $(DOSDEPS) build/msdos_a.img $(HDC)
+	$(AS) $(OVDEF) -o $@ msdos_big.asm
 
-build/msdos_big.o: msdos_big.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_apps.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/msdos_big.o msdos_big.asm
-
-build/msdos_big.sfc: build/msdos_big.o linkfile_big
-	$(LD) -d -s -v -c linkfile_big build/msdos_big.sfc
+build/msdos_big$(OVSUF).sfc: build/msdos_big$(OVSUF).o build/msdos_big$(OVSUF).link
+	$(LD) -d -s -v -c build/msdos_big$(OVSUF).link $@
 
 # --- FreeDOS 1.3: GPL, fetched at build time like ELKS (freedos/mkfreedos.py
 # downloads the official FD 1.3 floppy release, extracts KERNEL.SYS + FreeCOM
 # and assembles a 360 KB boot floppy — nothing copyrighted-in-the-bad-way is
 # committed).  Runs on the BIGMEM machine: FreeDOS needs the full 172 KB
 # (108 KB dies in kernel init).  Same free C: as the public build.
-freedos: build/freedos.sfc
+freedos: build/freedos$(OVSUF).sfc
 
 build/freedos_a.img: ../freedos/mkfreedos.py
 	python3 ../freedos/mkfreedos.py build/freedos_a.img
 
-build/freedos.o: freedos.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/freedos_a.img build/hd_free.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/freedos.o freedos.asm
+build/freedos$(OVSUF).o: freedos.asm $(DOSDEPS) build/freedos_a.img $(HDC)
+	$(AS) $(OVDEF) -o $@ freedos.asm
 
-build/freedos.sfc: build/freedos.o linkfile_freedos
-	$(LD) -d -s -v -c linkfile_freedos build/freedos.sfc
+build/freedos$(OVSUF).sfc: build/freedos$(OVSUF).o build/freedos$(OVSUF).link
+	$(LD) -d -s -v -c build/freedos$(OVSUF).link $@
 
 # sneslinux: ELKS ROM-XIP variant (not a DOS boot, hence no dosboot_ prefix).
 # build/elks_rom.bin + build/elks_romfs.bin are the kernel + ROMFS images:
@@ -108,7 +142,7 @@ elks: build/elks.sfc
 build/elks_rom.bin build/elks_romfs.bin:
 	./test/fetch_elks.sh
 
-build/elks.o: elks.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm build/elks_rom.bin build/elks_romfs.bin
+build/elks.o: elks.asm $(DOSDEPS) build/elks_rom.bin build/elks_romfs.bin
 	$(AS) -o build/elks.o elks.asm
 
 build/elks.sfc: build/elks.o linkfile_elks
@@ -141,20 +175,37 @@ build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wil
 	@mkdir -p build
 	python3 tools/mkhd_free.py build
 
-# --- APPS build: the public machine + the copyrighted app-matrix fixture
-# (disks/appmatrix, generated once by disks/mkappmatrix.py on machines
-# with the local software). Exists for the compatibility suite legs.
-apps: build/msdos_apps.sfc
-
-build/hd_apps.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../disks/appmatrix/*) $(wildcard ../msdos/bin/*)
+build/hd_overlay.img: tools/mkhd_free.py ../msdos/autoexec.bat homebrew-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../freeware/cc/*)
 	@mkdir -p build
-	OVERLAYS=../disks/appmatrix python3 tools/mkhd_free.py build hd_apps.img
+	OVERLAYS="$(OVERLAYS)" python3 tools/mkhd_free.py build hd_overlay.img
 
-build/msdos_apps.o: msdos_apps.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin build/msdos_a.img build/hd_apps.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/msdos_apps.o msdos_apps.asm
+# --- Self-booting disk: `make boot DISK=path/to/disk.img` replaces DOS
+# with the disk — the BIOS boots its sector 0. Two geometries are wired:
+# 160 KB / 163840 bytes (40x1x8; e.g. disks/fs1.img — MS Flight
+# Simulator 1.0) and 360 KB / 368640 bytes (40x2x9, the standard A:
+# shape). Output: build/boot.sfc (build/boot_overlay.sfc with OVERLAYS).
+boot:
+	@test -n "$(DISK)" || { echo "usage: make boot DISK=path/to/disk.img (a 160 KB or 360 KB self-booting image)"; exit 1; }
+	@mkdir -p build && cp "$(DISK)" build/bootdisk.img
+	@size=$$(wc -c < build/bootdisk.img | tr -d ' '); \
+	case $$size in \
+	  163840) $(MAKE) -s build/boot160$(OVSUF).sfc && cp build/boot160$(OVSUF).sfc build/boot$(OVSUF).sfc ;; \
+	  368640) $(MAKE) -s build/boot360$(OVSUF).sfc && cp build/boot360$(OVSUF).sfc build/boot$(OVSUF).sfc ;; \
+	  *) echo "make boot: $(DISK) is $$size bytes - need 163840 (160 KB, 40x1x8) or 368640 (360 KB, 40x2x9)"; rm -f build/bootdisk.img; exit 1 ;; \
+	esac
+	@echo "build/boot$(OVSUF).sfc <- $(DISK)"
 
-build/msdos_apps.sfc: build/msdos_apps.o linkfile_apps
-	$(LD) -d -s -v -c linkfile_apps build/msdos_apps.sfc
+build/boot160$(OVSUF).o: boot160.asm $(DOSDEPS) build/bootdisk.img $(HDC)
+	$(AS) $(OVDEF) -o $@ boot160.asm
+
+build/boot160$(OVSUF).sfc: build/boot160$(OVSUF).o build/boot160$(OVSUF).link
+	$(LD) -d -s -v -c build/boot160$(OVSUF).link $@
+
+build/boot360$(OVSUF).o: boot360.asm $(DOSDEPS) build/bootdisk.img $(HDC)
+	$(AS) $(OVDEF) -o $@ boot360.asm
+
+build/boot360$(OVSUF).sfc: build/boot360$(OVSUF).o build/boot360$(OVSUF).link
+	$(LD) -d -s -v -c build/boot360$(OVSUF).link $@
 
 # SRAM extent probe (M15): requests 128 KB, reports real banks -> WRAM $04.
 # Run: Mesen --testrunner build/sramtest.sfc test/sram.lua
@@ -162,12 +213,6 @@ sramtest: build/sramtest.sfc
 build/sramtest.sfc: sramtest.asm linkfile_sramtest
 	$(AS) -o build/sramtest.o sramtest.asm
 	$(LD) -d -s linkfile_sramtest build/sramtest.sfc
-
-build/dosboot_fs.o: dosboot_fs.asm dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin build/font_bg1.bin ../disks/fs1.img build/hd_apps.img build/spc_midi64.bin build/cgalut.bin build/aluflat.asm build/cgafont.bin build/trace_meta.asm
-	$(AS) -o build/dosboot_fs.o dosboot_fs.asm
-
-build/dosboot_fs.sfc: build/dosboot_fs.o linkfile_fs
-	$(LD) -d -s -v -c linkfile_fs build/dosboot_fs.sfc
 
 build/bdisk.bin: tools/mkbdisk.py
 	python3 tools/mkbdisk.py build
