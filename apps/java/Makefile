@@ -50,7 +50,7 @@ recompile:
 # --- JAVAC, the compiler ---------------------------------------------
 # javac.c is the platform-independent compiler; ccmain.c / scmain.c are
 # the host / DOS drivers (concatenation, not #include: the DOS dialect
-# cannot #include mid-file). See docs/notes/javac-porting.md for the
+# cannot #include mid-file). See docs/notes/JAVAC-PORTING.md for the
 # full story.
 
 # Host reference build (clang). Same compiler, byte-identical output.

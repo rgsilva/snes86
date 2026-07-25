@@ -64,13 +64,13 @@ Notes from the field: `LINK` may drop a `VM.TMP` on your work drive
 mid-link — normal 1982 memory-spill behavior, cleaned up by `CC.BAT`.
 The dialect is genuine Small-C: `int`/`char`, pointers, one-dimensional
 arrays, no structs — see
-[docs/notes/javac-porting.md](../../docs/notes/javac-porting.md) for
+[docs/notes/JAVAC-PORTING](../../docs/notes/JAVAC-PORTING.md) for
 what it's like to write something big in it (this kit built our Java
 compiler).
 
 This toolchain is exercised on every `make test` run (the `cc-host`
 leg compiles and runs both samples in-machine); see
-[TESTING.md](../../docs/TESTING.md).
+[TESTING](../../docs/TESTING.md).
 
 ## Provenance
 

@@ -54,13 +54,13 @@ What each one actually is:
   the official ELKS release by `test/fetch_elks.sh` on first build (GPL software —
   fetched, never committed, like the CPU test vectors); a custom-built ELKS can be
   copied over `build/elks_rom.bin` / `build/elks_romfs.bin` and wins. See
-  [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine) and
-  [COMPATIBILITY.md](COMPATIBILITY.md#linux-on-the-snes-elks).
+  [INTERNALS](INTERNALS.md#booting-linux-the-elks-machine) and
+  [COMPATIBILITY](COMPATIBILITY.md#linux-on-the-snes-elks).
 - `make msdos` — the public ROM (this is the one you flash). Its C: is
   assembled by convention (`tools/mkhd_free.py`): every staged
   `apps/<tool>/build/` becomes `C:\<TOOL>` (MIDI, BENCH, SOKOBAN,
   VIEW, TED, JAVA, and the Small-C toolchain as `C:\CC` — see
-  [apps/README.md](../apps/README.md)), `msdos/bin/` (the MIT MS-DOS
+  [apps/README](../apps/README.md)), `msdos/bin/` (the MIT MS-DOS
   utilities: CHKDSK, DEBUG, EDLIN, MORE, FIND, SORT) becomes `C:\DOS`,
   and `user/` at the repo root becomes
   `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED;C:\CC` — everything else
@@ -68,7 +68,7 @@ What each one actually is:
   (`C:\JAVA\JAVAC.EXE` is a committed binary; it rebuilds byte-identically
   from the public-domain Small-C kit committed in `apps/cc/` —
   `make -C apps/java javac-dos`, see
-  [docs/notes/javac-porting.md](notes/javac-porting.md).)
+  [docs/notes/JAVAC-PORTING](notes/JAVAC-PORTING.md).)
 
 - `make freedos` — the same machine on the 172 KB BIGMEM base, booting
   [FreeDOS](https://www.freedos.org/) 1.3 to FreeCOM instead of MS-DOS.
@@ -77,14 +77,14 @@ What each one actually is:
   never committed) and assembles a minimal 360 KB boot floppy from it; the C:
   is the same free image as `make msdos`. FreeDOS needs the full 172 KB — the
   kernel dies during init at 108 KB — so there is no non-BIGMEM variant, and
-  BIGMEM's B: drive is absent by design. See [freedos/README.md](../freedos/README.md).
+  BIGMEM's B: drive is absent by design. See [freedos/README](../freedos/README.md).
 
 - `make msdos_big` — BIGMEM: the guest grows from ~108 KB to 172 KB by
   backing the extra conventional RAM with cartridge SRAM, which revives
   the memory-hungry Rogue (`make msdos_big OVERLAYS=disks/appmatrix` on a
   machine that has it). Same free C: as the public build. It's an
-  experiment — see BIGMEM in [INTERNALS.md](INTERNALS.md) and
-  [FUTURE.md](FUTURE.md).
+  experiment — see BIGMEM in [INTERNALS](INTERNALS.md) and
+  [FUTURE](FUTURE.md).
 
 - `make boot DISK=path/to/disk.img` — boots a self-booting disk directly
   instead of DOS: the disk replaces the A: floppy wholesale and the BIOS
@@ -136,13 +136,13 @@ This needs `msdos/jwasm`, `core-c/build/runpc`, and a local DOS host image to bo
 linker — so it's a developer step, not part of the public build. Its output
 `msdos/msdos.img` is a free floppy (our `IO.SYS` + the MIT `MSDOS.SYS`/`COMMAND.COM`) and
 is committed to the repo; `make msdos` just copies it. Rebuild it and commit the new
-image whenever you change `io.asm`. See [msdos/README.md](../msdos/README.md) for the full
+image whenever you change `io.asm`. See [msdos/README](../msdos/README.md) for the full
 story.
 
 ## Testing
 
 The tiers, the full leg roster and the deep cuts are documented in
-[TESTING.md](TESTING.md).
+[TESTING](TESTING.md).
 
 ```sh
 make test          # the public suite: parity + the runpc host smokes +
@@ -185,4 +185,4 @@ printf 'root\r' | ../core-c/build/runpc -m 172 -l 150000000 -kdelay 3000000 \
 DOS, which exits at the first key wait once stdin is drained. Run it without a
 pipe for an interactive session — quit with Ctrl-].)
 
-See [INTERNALS.md](INTERNALS.md) for what `runpc` is and how parity testing works.
+See [INTERNALS](INTERNALS.md) for what `runpc` is and how parity testing works.

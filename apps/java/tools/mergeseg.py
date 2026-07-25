@@ -10,7 +10,7 @@ their bodies is safe: the linker would have combined them anyway.
 
     mergeseg.py IN.ASM OUT.ASM
 
-See docs/notes/javac-porting.md for why this is necessary and the remaining
+See docs/notes/JAVAC-PORTING.md for why this is necessary and the remaining
 linker limitation it exposes.
 """
 import sys

@@ -58,7 +58,7 @@ All captured from snes86 running in Mesen.
 </tr>
 <tr>
 <td align="center"><img src="assets/cc.png" width="480"><br><sub>CC — the public-domain Small-C toolchain compiling and running <code>HELLO.C</code> on the battery-backed B: drive, ~14 minutes of authentic 1982 build time (measured on the machine) (<code>C:\CC</code>)</sub></td>
-<td align="center"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP viewer halftoning the MS-DOS logo in CGA mode 6, true 640×200 on hi-res BG2 (M10p6). The image is decoded pixel-by-pixel on the emulated 8086; the full paint takes a few minutes of watching it crawl up the screen, exactly as the eighties intended</sub></td>
+<td align="center"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP/PCX viewer rendering the generated test card in CGA mode 4: 320×200 in palette 1 (cyan/magenta/white), decoded pixel-by-pixel on the emulated 8086 — the full paint takes ~23 minutes of watching it crawl up the screen, exactly as the eighties intended. <code>VIEW CARD.BMP</code> without the <code>4</code> renders the 640×200 mode-6 halftone instead (M10p6)</sub></td>
 </tr>
 </table>
 
@@ -81,7 +81,7 @@ All captured from snes86 running in Mesen.
 | | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
 | | JAVAC | ✅ shipped | our Java compiler running ON the machine (C, built by Small-C 2.2 on MS-DOS 2.0 inside the emulator): `JAVAC HELLO.JAV B:HELLO.CLA` then `JAVA B:HELLO` — the SNES compiles Java and runs it; output byte-identical to the clang build of the same source |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
-| Third-party | Small-C toolchain | ✅ shipped | public-domain C compiler + assembler + the MIT 1982 linker in `C:\CC`: `CC HELLO` compiles, links and runs C on the 108 KB machine (~14 min at SNES speed, measured); samples ship with source — the machine can build them; provenance and hashes in [apps/cc/README.md](../apps/cc/README.md) |
+| Third-party | Small-C toolchain | ✅ shipped | public-domain C compiler + assembler + the MIT 1982 linker in `C:\CC`: `CC HELLO` compiles, links and runs C on the 108 KB machine (~14 min at SNES speed, measured); samples ship with source — the machine can build them; provenance and hashes in [apps/cc/README](../apps/cc/README.md) |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
 | Applications | WordStar 3.31 | ✅ tested | full-screen editor, overlays load from C: |
@@ -99,9 +99,9 @@ If you get something interesting running, we'd love to hear about it.
 `make freedos` builds a third-OS ROM: [FreeDOS](https://www.freedos.org/) 1.3 on the 172 KB BIGMEM machine — 172 KB is FreeDOS's exact floor here (the kernel dies during init at 108 KB, measured on the host core first).
 
 - **Boot** lands at a FreeCOM `A:\>` prompt; the C: drive is the same free image as the MS-DOS ROM, so `DIR C:`, the benchmarks and the MIDI tools are all there.
-- **Memory is tight**: FreeCOM stays fully resident (no XMS to swap to), so the free arena runs the small tools but not big programs — `MEM` itself doesn't fit, which says it all. More RAM is the same SRAM-bank lever as the Windows 1.01 plan ([FUTURE.md](FUTURE.md#windows-101--proof-of-concept-done-fit--renderer-next)).
+- **Memory is tight**: FreeCOM stays fully resident (no XMS to swap to), so the free arena runs the small tools but not big programs — `MEM` itself doesn't fit, which says it all. More RAM is the same SRAM-bank lever as the Windows 1.01 plan ([FUTURE](FUTURE.md#windows-101--proof-of-concept-done-fit--renderer-next)).
 - **It found a real bug**: FreeDOS relocates its kernel init to the top of memory, which parked live code exactly across the WRAM→SRAM seam at 108 KB — the first guest ever to execute across it, and the reason the fetch path now has a general seam bounce (the suite's `t_fdos` regression-guards it).
-- **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM into a 360 KB boot floppy. See [freedos/README.md](../freedos/README.md).
+- **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM into a 360 KB boot floppy. See [freedos/README](../freedos/README.md).
 
 ## Linux
 

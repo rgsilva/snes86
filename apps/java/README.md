@@ -22,7 +22,7 @@ MS-DOS 2.0 *inside our own emulator* (`make javac-dos`, deterministic);
 the same source built with clang (`make javac-dev`) emits byte-identical
 class files, which also pass a modern JVM's verifier. The port war
 story — three vintage-toolchain walls and a silent-miscompile hunt —
-is in [docs/notes/javac-porting.md](../../docs/notes/javac-porting.md).
+is in [docs/notes/JAVAC-PORTING](../../docs/notes/JAVAC-PORTING.md).
 
 ## Building the samples
 

@@ -16,7 +16,7 @@ SNES/Super Famicom (via a flashcart) is the real test. Specifically worth checki
   frame interrupt, which is what real hardware does too — but only hardware confirms.
 
 Reports, screenshots, and videos are genuinely wanted. See
-[COMPATIBILITY.md](COMPATIBILITY.md#help-wanted).
+[COMPATIBILITY](COMPATIBILITY.md#help-wanted).
 
 ## More guest RAM (make BIGMEM fast)
 
@@ -78,7 +78,7 @@ milestone.
 ## The MIDI synth
 
 The SPC-700 currently runs an 8-voice General MIDI synth with a handful of BRR
-instruments (see [INTERNALS.md](INTERNALS.md#the-snes-is-your-sound-card)). Room to
+instruments (see [INTERNALS](INTERNALS.md#the-snes-is-your-sound-card)). Room to
 grow: richer/more accurate GM instruments, better drum mapping, and — much harder —
 an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI.
 
@@ -90,7 +90,7 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   build already proves a non-DOS boot works via `make boot DISK=`), are open territory.
 - One of them landed: **Linux**. `make elks` boots ELKS 0.9.1 to a root shell —
   kernel and apps executing in place from cart ROM on the BIGMEM machine (see
-  [INTERNALS.md](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
+  [INTERNALS](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
   BIGMEM speedups above a real customer: the ELKS boot pays the seam tax in full.
 - Another one landed the same week it was checked: **FreeDOS**. `make freedos`
   boots FreeDOS 1.3 to FreeCOM on the BIGMEM machine (172 KB is its exact
@@ -249,7 +249,7 @@ JAVAC's own 40 KB source ON the SNES was considered and dropped:
 Small-C cannot compile it there (symbol tables, memory), and Ricardo
 called it — build locally, ship the binary. The vintage-toolchain
 fight that produced it (three separate 1980s walls) is documented in
-[docs/notes/javac-porting.md](notes/javac-porting.md).
+[docs/notes/JAVAC-PORTING](notes/JAVAC-PORTING.md).
 Open extensions if anyone wants them: `long` (a second pair), `switch`
 tables, more of `java/lang`, and an asm dispatch loop for the 5-10×.
 

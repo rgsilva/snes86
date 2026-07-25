@@ -65,7 +65,7 @@ above WRAM; 16-bit accesses that straddle a region seam (the `$7F` WRAM top or a
 SRAM page top) go through seam-safe helpers (`rd16m`/`wr16m`) that split the word
 across regions — every 16-bit path, including the stack, `MOV`, and the flattened
 ALU bodies, routes through them under BIGMEM. It's an experiment for DOS (see
-[FUTURE.md](FUTURE.md)), off by default — but it is the foundation of the ELKS
+[FUTURE](FUTURE.md)), off by default — but it is the foundation of the ELKS
 machine below.
 
 ---
@@ -183,7 +183,7 @@ offline, emitting a `.SNM` file that is exactly the packet stream the card wants
 then just streams packets while watching the free-slot count, and the SNES itself parses
 nothing. Both tools ship with Turbo Pascal source in `C:\MIDI`.
 
-See [COMPATIBILITY.md](COMPATIBILITY.md) for the MIDI feature from a user's view.
+See [COMPATIBILITY](COMPATIBILITY.md) for the MIDI feature from a user's view.
 
 ---
 
