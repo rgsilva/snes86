@@ -41,8 +41,18 @@ def main():
     # the drive change — a C: copy longer than A:'s resumes into garbage.
     autoexec = open(os.path.join(HERE, "autoexec.bat"), "rb").read()
 
+    # CONFIG.SYS: the SHELL line's "A:\" argument becomes COMMAND.COM's
+    # FCB1 drive byte, which is all DOS 2.0 INIT reads from it (COMDRV) —
+    # it pins the transient-reload path to A:\COMMAND.COM. Without it,
+    # COMDRV is 0 = "default drive": any program big enough to stomp the
+    # transient (SCC) then exiting with B: or C: current wedges the
+    # machine on "Insert COMMAND.COM disk in default drive" — B: and C:
+    # carry no COMMAND.COM and the SNES has no disk to swap in.
+    config = b"SHELL=A:\\COMMAND.COM A:\\ /P\r\n"
+
     files = [("IO.SYS", io, 0x27), ("MSDOS.SYS", dos, 0x27),
              ("COMMAND.COM", cmd, 0x00),
+             ("CONFIG.SYS", config, 0x00),
              ("AUTOEXEC.BAT", autoexec, 0x00)]
 
     # allocate clusters sequentially from 2
