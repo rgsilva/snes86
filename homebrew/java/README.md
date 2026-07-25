@@ -7,6 +7,15 @@ bytecode on the emulated 8086 (and therefore on a SNES). Because DOS
     C:\JAVA> JAVA HELLO
     Hello from Java on a SNES!
 
+There is also **JAVAC**, a compiler for the same subset (`javac.c`).
+Today it builds and runs on the host (`make javac-dev`, clang), and its
+output is verified to run on both a desktop JVM and JAVA.COM on the
+SNES — the machine's own compiler already produces SNES-runnable
+bytecode. A DOS-native JAVAC (so the SNES compiles Java itself) is one
+vintage-linker step away; the full story, the polyglot-C dialect it is
+written in, and where the DOS build stops are in
+[JAVAC-PORTING.md](JAVAC-PORTING.md).
+
 ## Building the samples
 
 On any machine with a JDK:
