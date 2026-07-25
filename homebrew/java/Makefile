@@ -67,10 +67,10 @@ parity: javac-dev
 	done; echo "host-compiled classes in $(HB)/"
 
 # Rebuild the committed javac.exe: the Small-C toolchain running under
-# runpc on MS-DOS 2.0 (needs the public-domain Small-C kit; see the
-# script header). Deterministic — rebuilds byte-identical.
+# runpc on MS-DOS 2.0 (the public-domain Small-C kit is committed in
+# freeware/cc/; KIT= overrides). Deterministic — rebuilds byte-identical.
 javac-dos:
-	KIT=$(KIT) sh tools/mkjavac_dos.sh
+	sh tools/mkjavac_dos.sh
 
 clean:
 	rm -rf $(B) $(HB)

@@ -23,11 +23,19 @@ All binaries are **stock** — nothing was patched. The 108 KB fit and the
 read-only-C: operation are purely command-line and environment matters
 (see "Mechanics" below).
 
+This directory is also the complete Small-C kit for rebuilding
+`homebrew/java/javac.exe` (`make -C homebrew/java javac-dos`): CC.EXE +
+ASM.EXE + `lib/*.OBJ` are exactly the pieces that build needs, so the
+rebuild runs from a clean checkout with no external kit. The rebuilt
+`javac.exe` is byte-identical to the committed one.
+
 ## Provenance & hashes
 
 - **Small-C, Small Assembler, runtime** — the DosWorld collected archive of
   Hendrix's original releases, <https://github.com/DosWorld/smallc> (`C/`,
-  `ASM/`), including full source for every piece.
+  `ASM/`), including full source for every piece. The source tree is >1 MB
+  and not vendored here; the upstream repo is the reference. `SHA256SUMS`
+  pins every committed kit file (`shasum -c SHA256SUMS` verifies).
   - `CC.EXE`  sha256 `f8cbe4529617463c6f5a563ee1808182bace90e687f15675dbc7a6ce9d843d7e`
   - `ASM.EXE` sha256 `9ef22876ade03d3d4cc86b6e4988318fd70612c553d44f581d01e382e608144f`
 - **LINK.EXE** — Microsoft's linker from the MIT-licensed MS-DOS 2.0 source

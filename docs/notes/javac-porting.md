@@ -95,6 +95,7 @@ link, two runpc sessions) and is what produced the committed binary.
 
 Compiler and drivers: this repo (`javac.c`, `ccmain.c`, `scmain.c`).
 Toolchain: public-domain Small-C 2.2 kit (Hendrix) — CC.EXE, Small
-Assembler, exploded CLIB objects — not committed; point `KIT=` at it.
+Assembler, exploded CLIB objects — committed in `freeware/cc/` (see its
+ORIGIN.md; `KIT=` still points the build at an external kit).
 Linker: Microsoft LINK V2.00, already in `msdos/`. Host: our own
 `runpc` on our own MS-DOS 2.0 build.

@@ -3,12 +3,14 @@
 # running inside our own emulator (runpc, MS-DOS 2.0). This is the
 # script that produced the committed homebrew/java/javac.exe.
 #
-# Needs a Small-C 2.2 kit (public-domain, Hendrix; e.g. the DOS-World
-# CC.EXE + Small Assembler + the exploded CLIB objects) laid out as:
-#     $KIT/CC.EXE  $KIT/ASM.EXE  $KIT/libobjs/*.OBJ
-# LINK.EXE is Microsoft LINK V2.00 from msdos/ (already in the repo).
+# The Small-C 2.2 kit (public-domain, Hendrix) lives in the repo:
+# freeware/cc/ carries CC.EXE, ASM.EXE and the exploded CLIB objects
+# (lib/*.OBJ) — see freeware/cc/ORIGIN.md for provenance. KIT= can
+# still point at an external kit ($KIT/CC.EXE, $KIT/ASM.EXE, and the
+# objects in $KIT/libobjs/ or $KIT/lib/). LINK.EXE is Microsoft LINK
+# V2.00 from msdos/ (also in the repo).
 #
-#   KIT=/path/to/smallc-kit sh tools/mkjavac_dos.sh
+#   sh tools/mkjavac_dos.sh
 #
 # Pipeline (each stage sized so nothing hits the 360 KB floppy wall —
 # that wall silently truncated the .ASM in early attempts):
@@ -27,7 +29,10 @@ JAVA=$(dirname "$HERE")                       # homebrew/java
 ROOT=$(cd "$JAVA/../.." && pwd)               # repo root
 RUNPC="$ROOT/core-c/build/runpc"
 [ -x "$RUNPC" ] || { echo "build core-c first (runpc missing)"; exit 1; }
-[ -n "$KIT" ] && [ -f "$KIT/CC.EXE" ] || { echo "set KIT=/path/to/smallc-kit"; exit 1; }
+KIT="${KIT:-$ROOT/freeware/cc}"                # the committed kit
+[ -f "$KIT/CC.EXE" ] || { echo "no Small-C kit at $KIT"; exit 1; }
+LIBOBJS="$KIT/libobjs"                         # external-kit layout...
+[ -d "$LIBOBJS" ] || LIBOBJS="$KIT/lib"        # ...or freeware/cc's
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
@@ -36,11 +41,11 @@ cat "$JAVA/javac.c" "$JAVA/scmain.c" | perl -pe 's/\n/\r\n/' > "$W/JAVAC.C"
 mkdir -p "$W/ov"
 cp "$KIT/CC.EXE" "$KIT/ASM.EXE" "$W/ov/"
 cp "$ROOT/msdos/LINK.EXE" "$W/ov/"
-cp "$KIT"/libobjs/*.OBJ "$W/ov/"
-python3 - "$W" "$KIT" <<'PY'
+cp "$LIBOBJS"/*.OBJ "$W/ov/"
+python3 - "$W" "$LIBOBJS" <<'PY'
 import sys, os
-W, KIT = sys.argv[1], sys.argv[2]
-objs = sorted(o[:-4] for o in os.listdir(KIT+"/libobjs") if o.endswith(".OBJ"))
+W, LIBOBJS = sys.argv[1], sys.argv[2]
+objs = sorted(o[:-4] for o in os.listdir(LIBOBJS) if o.endswith(".OBJ"))
 names = ["JAVAC"] + ["C:"+o for o in objs]
 lines, cur = [], ""
 for n in names:
