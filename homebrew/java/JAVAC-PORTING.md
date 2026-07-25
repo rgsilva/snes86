@@ -1,101 +1,100 @@
-# JAVAC — status, design, and the Small-C port
+# JAVAC — design notes and the Small-C port war story
 
 `javac.c` is a single-pass Java-subset compiler that emits class files
-(format version 49.0) for the subset JAVA.COM interprets. It is written
-in a **polyglot C dialect** so the same source builds two ways:
+(format version 49.0) for the subset JAVA.COM interprets. One source,
+two binaries:
 
-- **`make javac-dev`** — clang, the host reference compiler. **Working
-  and verified.** Every sample compiles, and the output runs on a
-  modern desktop JVM (JDK 26 loads version-49 class files) *and* on
-  JAVA.COM under emulated MS-DOS on the SNES. So the compiler is proven
-  correct end to end today: `HELLO/FIB/SIEVE/CONCAT/GUESS` all produce
-  bytecode that runs, and SIEVE reports the right 1899 primes on both.
+- **`javac.exe`** (committed) — the DOS binary that ships in `C:\JAVA`.
+  Built by the 1988 Small-C 2.2 toolchain running on MS-DOS 2.0 inside
+  our own emulator (`tools/mkjavac_dos.sh`, deterministic —
+  re-running rebuilds it byte-identically). Compiles every sample at
+  `-m 108` (108 KB of guest RAM).
+- **`make javac-dev`** — the same compiler built with clang for the
+  host. Its output is **byte-identical** to `javac.exe`'s for all five
+  samples: the compiler keeps every int in −32768..32767 and carries
+  32-bit Java literals as four byte-limbs precisely so a 16-bit and a
+  64-bit host compute the same bytecode.
 
-- **`make javac-dos`** — the Small-C toolchain, for a binary that runs
-  on the guest itself. **cc and asm succeed; the final link is the one
-  open step** (see below).
+Verified end to end: all five samples compile on the guest, run on
+JAVA.COM (Sieve: the right 1899 primes), and the same class files pass
+a modern desktop JVM's verifier (version 49.0 predates StackMapTable,
+so no stack frames are needed, yet JDKs still load it).
 
 ## What it compiles
 
 Exactly the subset JAVA.COM runs: one public class, `static` methods,
-32-bit `int` (kept as hi/lo halves so the arithmetic is identical on a
-16-bit and a 32-bit host), `boolean[]`/`int[]` arrays, `String`
-literals, `+` concatenation (desugared to the same `StringBuilder`
-chain javac emits), `System.out.println/print`, `System.in.read()`,
-`if/else`, `while`, `for`, `break`, `continue`, `&&`/`||`, comparisons,
-`+ - *`. No `/` or `%` (the interpreter has no `idiv`), no long/float,
-no objects/fields, no exceptions. Anything else is a clean error with a
-line number, never a silent miscompile.
+32-bit `int`, `boolean[]`/`int[]` arrays, `String` literals, `+`
+concatenation (desugared to the same StringBuilder chain javac emits),
+`System.out.println/print`, `System.in.read()`, `if/else`, `while`,
+`for`, `break`, `continue`, `&&`/`||`, comparisons, `+ - *`. No `/` or
+`%` (the interpreter has no `idiv`), no long/float, no objects/fields,
+no exceptions. Anything else is a clean error with a line number,
+never a silent miscompile.
 
 Design: whole source in memory, a declaration pre-scan for forward
 method references, then one recursive-descent pass straight to stack
-bytecode with classic backpatch chains for control flow and an
-in-memory constant-pool builder (deduplicated). No AST. Emits class
-version 49.0 deliberately — it predates `StackMapTable`, so no stack
-frames are needed, yet modern JVMs still load it.
+bytecode with classic backpatch chains for control flow and a
+deduplicated in-memory constant-pool builder. No AST.
 
-## The polyglot dialect (what the 1988 Small-C accepts)
+## The Small-C dialect (historical — no longer a constraint)
 
-The Small-C compiler (Hendrix rev 117, the public-domain kit) is far
-narrower than clang. Every rule below was found by compiling under it
-and reading the errors; clang tolerates all of them under `-std=c89
--w`. If you extend `javac.c`, keep to:
+Ricardo has since dropped the self-hosting goal (`javac.c` will not be
+compiled ON the SNES), so the dialect below documents how `javac.exe`
+was built; it is not a rule for future edits. If you change javac.c
+and only verify with clang, rebuild `javac.exe` via
+`tools/mkjavac_dos.sh` or note the divergence.
+
+The 1988 Small-C 2.2 (Hendrix, rev 117) rules, each found the hard way:
 
 - **No return type on a function definition.** `foo(a) int a; { }`,
-  never `int foo(a) ...`. A leading `int`/`char` on a definition is a
-  hard "missing token". (Global *variables* keep their type: `int x;`.)
-- **No `#include` mid-file.** The kit reads it, but placed after code it
-  desyncs the parser. `scmain.c` inlines the three values it needs
-  (`NULL`, `LF`, `stderr`) instead; the I/O functions resolve at link.
-- **No subscripting a string literal.** `"abc"[i]` is "can't
-  subscript"; copy the literal through `scopy()` first.
-- **One pointer per declaration.** `char *a; char *b;`, not
-  `char *a, *b;`.
-- **No forward function prototypes** (`stmt();` at file scope becomes a
-  *definition* and collides). Rely on implicit-int forward references.
-- Also assumed throughout: no structs (parallel arrays), no
-  `unsigned`/`long`/`void` in our code, no local initialisers, no
-  compound assignment beyond what is hand-expanded, `/* */` comments
-  only, identifiers unique in 8 characters.
+  never `int foo(a)`. (Global *variables* keep their type.)
+- **No `#include` mid-file** — desyncs the parser after real code.
+- **No string-literal subscripts** (`"abc"[i]`): copy through a helper.
+- **One pointer per declaration**: `char *a; char *b;`.
+- **No forward prototypes** — implicit-int forward references only.
+- **`main(argc, argv) int argc, *argv;` + CLIB `getarg()`** — cc
+  *accepts* `char *argv[]` and then silently emits main's body as
+  file-scope garbage (statements become fake function definitions;
+  the damage only surfaces later as assembler "Phase Error"s).
+- **No local arrays** — another silent miscompile; buffers are globals.
+- **`fputc`, not `putc`** — CLIB has no PUTC module.
+- Plus the baseline: no structs (parallel arrays), no
+  `unsigned`/`long`/`void`, no initialisers, `/* */` comments only,
+  identifiers unique in 8 chars, ints assumed 16-bit.
 
-Binary file I/O on DOS uses the kit's raw `read()`/`write()` (not
-`fgetc`/`fputc`, which cook CR/LF and `^Z` and would wreck a class
-file). `argv[1..]` arrive fine on DOS 2.0 — cc and asm take arguments
-the same way; only `argv[0]` needs the DOS-3 Get-PSP call, which JAVAC
-does not use.
+Binary file I/O uses CLIB's raw `read()`/`write()` (CSYSLIB), not
+`fgetc`/`fputc` — those cook CR/LF and `^Z` and would wreck a class
+file.
 
-## The open step: the 1982 linker
+## The three toolchain walls (and how the build dodges them)
 
-With the fetched Small-C kit, `cc javac -m` compiles `JAVAC.C` cleanly
-and `asm javac` assembles it. The last stage, Microsoft LINK V2.00
-(1982, the one already in `msdos/`), fails with **"Too many segments or
-classes."**
+1. **LINK V2.00 "Too many segments or classes."** cc opens a fresh
+   `CODE`/`DATA` segment pair around *every function* — 87 segments
+   for JAVAC — overflowing the 1982 linker's fixed table.
+   → `tools/mergeseg.py` coalesces the generated .ASM into one CODE +
+   one DATA segment before assembling (same-name PUBLIC segments would
+   have been combined by the linker anyway).
 
-Root cause, traced through the OMF: cc emits a separate `CODE`/`DATA`
-segment pair per function — 87 segments for JAVAC — which alone
-overflows LINK's table. Coalescing the assembly into one `CODE` and one
-`DATA` segment (`tools/mergeseg.py`) fixes the segment count, but then
-the assembler, driven to a symbol table large enough for the whole
-program (`-S3000`), writes a bloated `LNAMES` record (~990 empty name
-entries) that overflows LINK's *name* table instead. `-S1000` keeps the
-name table small but is too few symbols for JAVAC (undefined-symbol
-errors). No single `-S` threads both needles with this LINK.
+2. **`asm -S3000` writes a corrupt object.** The Small Assembler is
+   itself a 16-bit Small-C program; a 3000-symbol table overflows its
+   own 64 KB data segment and the OBJ comes out as ~24 KB of junk
+   LNAMES records with no code. JAVAC has only ~600 labels — the
+   *default* table (1500) is plenty. No `-S` flag, no corruption.
 
-Paths to finish it (not yet done):
-- A newer linker (the kit's `ylink`, or any OMF linker without LINK
-  V2.00's fixed tables) — needs its own DOS-2.0 verification.
-- Splitting JAVAC into a handful of segments (not 1, not 87) so both
-  the segment count and the per-segment symbol table stay under LINK's
-  limits.
-- Trimming the linked library to only the objects JAVAC references, so
-  the cumulative name/segment count across all objects stays low.
+3. **The 360 KB floppy wall.** cc's 113 KB .ASM plus the toolchain
+   plus DOS cannot share one floppy; the overflow silently truncates
+   the .ASM mid-write (35 SEGMENTs, 34 ENDS — hours of confusion).
+   → the build puts the toolchain on a read-only *hard disk* image
+   (`runpc -d`, the same fixed-disk support the SNES build uses) and
+   keeps only the work files on the writable A: floppy.
 
-Until then, `make javac-dev` is the working compiler; its output is
-what ships as the samples, and it is proven on the SNES via JAVA.COM.
+`tools/mkjavac_dos.sh` runs the whole pipeline (cc → mergeseg → asm →
+link, two runpc sessions) and is what produced the committed binary.
 
-## Reproducing
+## Provenance
 
-`tools/mkjavac_dos.sh` documents the exact floppy-staged build under
-`runpc` (cc on its own floppy for output room, segment-merge, asm,
-link) and the point at which it stops. The Small-C kit itself is not
-committed; the script notes where to fetch it.
+Compiler and drivers: this repo (`javac.c`, `ccmain.c`, `scmain.c`).
+Toolchain: public-domain Small-C 2.2 kit (Hendrix) — CC.EXE, Small
+Assembler, exploded CLIB objects — not committed; point `KIT=` at it.
+Linker: Microsoft LINK V2.00, already in `msdos/`. Host: our own
+`runpc` on our own MS-DOS 2.0 build.
