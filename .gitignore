@@ -1,3 +1,4 @@
+.claude/
 core-c/build/
 snes/build/
 core-c/tests/vectors/*.json.gz
