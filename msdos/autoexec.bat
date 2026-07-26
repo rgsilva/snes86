@@ -1,3 +1,3 @@
-PATH C:\;C:\DOS;C:\TED;C:\CC
+PATH C:\;C:\DOS;C:\TED;C:\CC;C:\VI
 PROMPT $P$G
 C:

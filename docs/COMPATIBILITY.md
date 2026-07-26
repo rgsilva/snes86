@@ -58,6 +58,9 @@ All captured from snes86 running in Mesen.
 </tr>
 <tr>
 <td align="center"><img src="assets/cc.png" width="480"><br><sub>CC — the public-domain Small-C toolchain compiling and running <code>HELLO.C</code> on the battery-backed B: drive, ~14 minutes of authentic 1982 build time (measured on the machine) (<code>C:\CC</code>)</sub></td>
+<td align="center"><img src="assets/vi.png" width="480"><br><sub>VI — levee 4.0b, a real vi, mid-insert with the tilde column: BSD-licensed, cross-compiled for MS-DOS 2.0 with Open Watcom, on the PATH (<code>C:\VI</code>)</sub></td>
+</tr>
+<tr>
 <td align="center"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP/PCX viewer rendering the generated test card in CGA mode 4: 320×200 in palette 1 (cyan/magenta/white), decoded pixel-by-pixel on the emulated 8086 in hand-written machine code — the full paint takes ~12 minutes of watching it crawl up the screen, exactly as the eighties intended. <code>VIEW CARD.BMP</code> without the <code>4</code> renders the 640×200 mode-6 halftone instead (M10p6)</sub></td>
 </tr>
 </table>

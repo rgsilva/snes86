@@ -46,6 +46,20 @@ Save to `B:` and the file lives in battery-backed cartridge SRAM: power off, pow
 
 ![TED mid-edit on B:NOTE.TXT](../docs/assets/ted.png)
 
+## VI
+
+Yes, a real vi. This is [levee](https://github.com/Orc/levee) 4.0b, David Parsons' tiny vi clone, cross-compiled for MS-DOS 2.0 with Open Watcom and given a BIOS screen layer so it feels at home here. Modal editing, `dd`/`yy`/`p`/`u`, `/search`, `:wq`, wildcard `VI *.TXT` with `:n` — the whole muscle-memory package, on a game console. You can test it as such:
+
+```
+C:\> VI B:NOTE.TXT
+```
+
+> Note: VI is on the PATH, so it works from anywhere. The edit buffer is 16 KB (bigger files open read-only), and there's no `:!` — there's no shell to shell out to.
+
+Like TED, saving to `B:` writes battery-backed cartridge SRAM. Provenance and license live in [vi/ORIGIN](vi/ORIGIN.md).
+
+![VI (levee) mid-insert, tildes and all](../docs/assets/vi.png)
+
 ## JAVA + JAVAC
 
 Yes, this is a Java runtime (-ish) running inside a 8086 emulator running MS-DOS inside a Super Nintendo videogame console. Don't ask how we got here. It's the "Write once, run anywhere", but taken literally.
@@ -84,6 +98,22 @@ C:\SOKOBAN> SOKOBAN
 
 ![Sokoban](../docs/assets/sokoban.png)
 
+## GB
+
+Our Game Boy emulator: a 15 KB pure-8086 `.COM` running DMG carts inside DOS inside a SNES — a Game Boy, four machines deep. It was born in this repo, moved out to grow up in its own project ([gb8086](https://github.com/rgsilva/gb8086), where it passes Blargg's cpu_instrs 11/11), and now ships back home. Three of our own homebrew test carts come along; game ROMs are bring-your-own (32 KB, no MBC) via `user/` → `C:\USER`. You can test it as such:
+
+```
+C:\> CD GB
+C:\GB> GB SMOKE.GB            (CPU smoke-test cart)
+C:\GB> GB GFX.GB              (graphics test cart)
+C:\GB> GB JOY.GB              (joypad test cart)
+C:\GB> GB C:\USER\YOURS.GB    (bring your own)
+```
+
+Flags and the gory details are in [gb/README](gb/README.md).
+
+![GB.COM booting: the Game Boy logo, four machines deep](../docs/assets/gameboy.png)
+
 ## BENCH
 
 The benchmarks and test cards, mostly useful for regression hunting and bragging: `SIEVE` (the BYTE sieve, ten iterations), `HELLO`, and the two CGA test cards `CGATEST` (320×200 mode 4) and `CGA6TST` (true 640×200 mode 6 — any key exits back to DOS).
@@ -118,7 +148,7 @@ Some extra technical details are provided [here](cc/README.md).
 
 `make apps` from the repo root runs the whole loop: rebuild every tool from source and verify (see [TESTING](../docs/TESTING.md)).
 
-Each tool folder holds its own source, the committed `.COM` binary, any generators it owns, and a Makefile with two targets:
+Each tool folder holds its own source, any generators it owns, and a Makefile with two targets:
 
-- `make stage` — populate `<tool>/build/` with **exactly** what ships on the C: drive as `C:\<TOOL>`. Binaries and sample files are provided as part of the image. Source code is only added to the final image if we can build it inside the emulator, otherwise it's unnecessary.
-- `make recompile` — rebuild the `.COM` from source by driving the compilers inside `runpc`, our own emulated MS-DOS 2.0. External tools such as Turbo Pascal 3 are fetched, but not committed. This is mostly due to licensing - for example, Borland/Embarcadero retain all rights to TP3, so we can't really redistribute it here.
+- `make stage` — populate `<tool>/build/` with **exactly** what ships on the C: drive as `C:\<TOOL>`, compiling the binaries from source as needed (no binaries are committed). Source code is only added to the final image if we can build it inside the emulator, otherwise it's unnecessary.
+- `make recompile` — rebuild the binary from source, most of them by driving the compilers inside `runpc`, our own emulated MS-DOS 2.0. External tools such as Turbo Pascal 3 or Open Watcom are fetched, but not committed. This is mostly due to licensing - for example, Borland/Embarcadero retain all rights to TP3, so we can't really redistribute it here.
