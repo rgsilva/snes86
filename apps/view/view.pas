@@ -2,6 +2,7 @@ program View;
 { VIEW - a BMP/PCX viewer for snes86 (or any CGA PC).
   Usage:  VIEW picture.bmp        640x200 mono, ordered dither (CGA mode 6)
           VIEW picture.pcx 4      320x200 four-colour dither  (CGA mode 4)
+          VIEW picture.pcx 4 0    same, but CGA palette 0 (green/red/brown)
           VIEW *.BMP              slideshow: any key advances, ESC quits
   Any key exits. On the SNES, L/R pan the 512px window across the 640.
 
@@ -22,6 +23,10 @@ const
      (247, 119, 215, 87));
   { r*4+g*2+b after per-channel threshold -> CGA palette-1 colour }
   ColorMap: array[0..7] of Byte = (0, 2, 1, 1, 2, 2, 3, 3);
+  { same thresholds -> CGA palette 0 (green/red/brown): green stays
+    green, red stays red, red+green lands on brown; blue has no home
+    here, so it folds to its nearest colour, black }
+  ColorMap0: array[0..7] of Byte = (0, 0, 1, 1, 2, 2, 3, 3);
   BufMax = 8191;
 
 type
@@ -59,6 +64,7 @@ var
   Buf: array[0..BufMax] of Byte;
   Row: array[0..79] of Byte;          { one packed CGA scanline }
   Mode6: Boolean;
+  Pal0: Boolean;
   TopDown: Boolean;
   IsPCX: Boolean;
   BadImg: Boolean;
@@ -438,7 +444,9 @@ begin
   Intr($10, R);
   if not Mode6 then
   begin
-    R.AX := $0B01; R.BX := $0101;     { palette 1: cyan/magenta/white }
+    R.AX := $0B01;                    { select the CGA palette: }
+    if Pal0 then R.BX := $0100        { 0 = green/red/brown }
+    else R.BX := $0101;               { 1 = cyan/magenta/white }
     Intr($10, R);
   end;
   RQ := SrcH div TgtH; RR := SrcH mod TgtH;
@@ -528,10 +536,12 @@ begin
   for I := 0 to 255 do IdTab[I] := I;
   for I := 0 to 7 do CMap[I] := ColorMap[I];
   Mode6 := True; ScrW := 512;
+  Pal0 := False;
   if ParamCount < 1 then
   begin
-    WriteLn('usage: VIEW picture[.bmp|.pcx] [4]');
+    WriteLn('usage: VIEW picture[.bmp|.pcx] [4 [0]]');
     WriteLn('  640x200 mono by default; "4" = 320x200 colour');
+    WriteLn('  "4 0" = colour with CGA palette 0 (green/red/brown)');
     WriteLn('  wildcards slideshow: VIEW *.BMP  (any key = next, ESC = quit)');
     Halt;
   end;
@@ -540,6 +550,12 @@ begin
     if ParamStr(2) = '4' then
     begin
       Mode6 := False; ScrW := 320;
+    end;
+  if (not Mode6) and (ParamCount >= 3) then
+    if ParamStr(3) = '0' then
+    begin
+      Pal0 := True;
+      for I := 0 to 7 do CMap[I] := ColorMap0[I];
     end;
   Wild := False;
   for I := 1 to Length(FName) do
