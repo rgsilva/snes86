@@ -70,7 +70,7 @@ All captured from snes86 running in Mesen.
 | category | software | status | notes |
 |---|---|---|---|
 | OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection; the MIT utilities (`CHKDSK`, `DEBUG`, `EDLIN`, `FIND`, `SORT`, `MORE`) ship in `C:\DOS` |
-| | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — see [Linux on the SNES](#linux-on-the-snes-elks) |
+| | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`, the SA-1 machine): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — the 300 KB machine is what lets `/etc/rc.sys` fork at all; see [Linux on the SNES](#linux-on-the-snes-elks) |
 | | FreeDOS 1.3 | ✅ shipped | its own ROM (`make freedos`, the SA-1 machine): kernel + FreeCOM to `A:\>`, runs the C: tools — see [FreeDOS on the SNES](#freedos-on-the-snes) |
 | | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |

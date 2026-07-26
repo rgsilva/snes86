@@ -31,12 +31,12 @@ Since this project generates a ROM file (.sfc) for you to use, there are a few b
 | `make msdos` | `build/msdos.sfc` | |
 | `make msdos_sa1` | `build/msdos_sa1.sfc` | A 300 KB machine instead of the usual 108 KB. Asks for an SA-1 cartridge, so read the note below. |
 | `make freedos` | `build/freedos.sfc` | Boots on that same 300 KB SA-1 machine, so the same note applies. |
-| `make elks` | `build/elks.sfc` | |
+| `make elks` | `build/elks.sfc` | Linux, on that same 300 KB SA-1 machine. The extra RAM is what finally lets it fork its own boot scripts. |
 | `make boot DISK=floppy.img` | `build/boot.sfc` | Needs to have a boot disk parameter, so pass it as the `DISK` parameter. This is useful when booting, for example, Flight Simulator 1.0. |
 
-> Note: every DOS image has a writeable `B:` drive, and it should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though. On `msdos` that's 32 KB of plain cartridge SRAM; on the SA-1 images it's a 64 KB slice of the coprocessor's own RAM.
+> Note: every DOS image has a writeable `B:` drive, and it should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though. On `msdos` that's 32 KB of plain cartridge SRAM; on `msdos_sa1` and `freedos` it's a 64 KB slice of the coprocessor's own RAM.
 
-> Note: `msdos_sa1` and `freedos` ask for an SA-1 cartridge board, and we do the rudest possible thing with it: we never start its 10 MHz CPU at all, and use the chip purely as a RAM stick. That means those two ROMs only run where SA-1 is actually implemented. Mesen is fine, and so is the FXPak Pro (it's the same support that runs Super Mario RPG). Simpler flash carts may not be, and if yours isn't, `msdos.sfc` is the one to flash.
+> Note: `msdos_sa1`, `freedos` and `elks` ask for an SA-1 cartridge board, and we do the rudest possible thing with it: we never start its 10 MHz CPU at all, and use the chip purely as a RAM stick. That means those three ROMs only run where SA-1 is actually implemented. Mesen is fine, and so is the FXPak Pro (it's the same support that runs Super Mario RPG). Simpler flash carts may not be, and if yours isn't, `msdos.sfc` is the one to flash.
 
 Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in [BUILDING](docs/BUILDING.md).
 
