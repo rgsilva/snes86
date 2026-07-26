@@ -16,8 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # nasm assembles GB.COM (apps/gb) at image-build time — a required
+      # build prereq now that no app binaries are committed.
       - name: Install toolchain deps
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake nasm
 
       # WLA-DX — the SNES assembler/linker. Pinned to match the version the
       # project is developed against (local: v10.7a). If a future WLA-DX ever
@@ -50,9 +52,21 @@ jobs:
             apps/cache/TURBO.MSG
           key: tp3-${{ hashFiles('apps/fetch_tp3.py') }}
 
+      # Open Watcom v2 — the cross-compiler that builds VI.EXE (levee)
+      # at image-build time (apps/vi/fetch_watcom.py: pinned sha256,
+      # ~151 MB download on a cold cache, unpacks only the Linux host
+      # bins + headers + 16-bit libs, ~60 MB). Cache the extracted
+      # toolchain so CI refetches only when the pin moves.
+      - name: Cache the fetched Open Watcom toolchain
+        uses: actions/cache@v4
+        with:
+          path: apps/cache/watcom
+          key: watcom-${{ runner.os }}-${{ hashFiles('apps/vi/fetch_watcom.py') }}
+
       # The public ROM: MS-DOS 2.0 + a free-only C:. Compiles every app
-      # binary from source first (TP3 + Small-C inside runpc), then packs
-      # the free C: — nothing copyrighted ships.
+      # binary from source first (TP3 + Small-C inside runpc, Open
+      # Watcom for VI.EXE, nasm for GB.COM), then packs the free C: —
+      # nothing copyrighted ships.
       - name: Build the public ROM (msdos.sfc)
         run: make -C snes PVBIN="$PVBIN" msdos
 
