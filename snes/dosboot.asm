@@ -53,6 +53,7 @@ cTickP   dw                  ; timer tick pending (INT 8 delivery)
 cT2n     dw                  ; INT13 scratch
 kPAN     dw                  ; horizontal pan (0-16), L/R buttons
 scanROW  dw                  ; scanner round-robin row
+kSHV     dw                  ; shift state the key labels were drawn with
 .ENDE
 
 .DEFINE CQBASE $0800         ; 512 B VRAM write queue (native WRAM; kbd-only
@@ -1834,6 +1835,7 @@ _vb_jw:
     lda $4218
     sta cJoyN
     jsr kbd_frame
+    jsr kbd_shift            ; before scan_rows: label writes don't self-heal
     lda cGFX
     beq _vb_txts
     jsr gfx_scan             ; gfx: convert next tile row into staging
@@ -2226,6 +2228,7 @@ _rst_fmtd:
 
     ; -- on-screen keyboard: draw into its tilemaps, set up the HDMA
     ; raster split (terminal scrolls above, keyboard fixed below)
+    stz kSHV                 ; before kbd_draw: its kbd_color tail reads it
     jsr kbd_draw
     stz kSEL
     stz kMOD
@@ -3225,7 +3228,13 @@ _kc_l:
     clc
     adc kT3                  ; row*64+col
     tax
-    lda.l kbd_rows,x
+    lda kSHV                 ; glyph from the table matching the drawn
+    bne _kc_sh               ; shift state (else re-painting the selected
+    lda.l kbd_rows,x         ; key would un-shift its label)
+    bra _kc_g
+_kc_sh:
+    lda.l kbd_rows_sh,x
+_kc_g:
     and #$00FF
     asl a
     ora #$2000
@@ -3339,6 +3348,62 @@ _kd_s:
     ; highlight the initial selection
     lda #0
     ldx #$1C00
+    jmp kbd_color
+
+kbd_shift:                   ; redraw the shift-sensitive key labels when
+    lda kMOD                 ; the sticky shift changed since they were
+    and #$0001               ; last drawn (covers Y latch, the SHIFT key,
+    cmp kSHV                 ; and kbd_emit's auto-unlatch). NMI-only:
+    bne _ks_go               ; VRAM writes go straight to the ports, and
+    rts                      ; ~47 delta cells fit the vblank budget.
+_ks_go:
+    sta kSHV
+    stz kT0                  ; byte offset into kbd_sdelta (4 B records)
+_ks_l:
+    ldx kT0
+    lda.l kbd_sdelta,x       ; lo=row hi=col
+    sta kT1
+    and #$00FF
+    cmp #$00FF               ; row $FF: end of table
+    beq _ks_hl
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a                    ; row*32
+    sta kT2
+    lda kT1
+    xba
+    and #$00FF               ; col
+    lsr a                    ; col/2, carry = col&1
+    bcc _ks_e
+    clc
+    adc #$0C00               ; odd cols: BG1 map
+    bra _ks_s
+_ks_e:
+    clc
+    adc #$0800               ; even cols: BG2 map
+_ks_s:
+    clc
+    adc kT2
+    sta.w $2116
+    lda kT0
+    clc
+    adc kSHV                 ; record byte 2 = normal, 3 = shifted glyph
+    tax
+    lda.l kbd_sdelta+2,x
+    and #$00FF
+    asl a
+    ora #$2000
+    sta.w $2118
+    lda kT0
+    clc
+    adc #4
+    sta kT0
+    bra _ks_l
+_ks_hl:
+    lda kSEL                 ; the selection may be among the redrawn
+    ldx #$1C00               ; cells: repaint its highlight
     jmp kbd_color
 
 kbd_toggle:
