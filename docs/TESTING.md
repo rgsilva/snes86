@@ -73,7 +73,9 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
 - `make apps` — FORCE-rebuilds **every app from source**: Turbo
   Pascal 3 is fetched (pinned + sha256-checked) and driven inside the
   emulator to recompile each `.pas`; `javac.exe` is rebuilt by the
-  Small-C toolchain the same way. Each tool verifies and reports
+  Small-C toolchain the same way; `vi.exe` by the fetched Open Watcom
+  cross-compiler; `gb.com` by host nasm (the committed homebrew carts
+  rebuild only where RGBDS is installed). Each tool verifies and reports
   PASS/FAIL: VIEW by bit-comparing its test-card render against a
   pinned golden, javac by byte-comparing the DOS compiler's bytecode
   against the clang build of the same source. This is the
