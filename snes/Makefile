@@ -166,11 +166,12 @@ io:
 # user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
 APPSTOOLS := view ted java midi sokoban bench cc vi gb
 
-# staging may COMPILE the app binaries (the committed binaries in apps/
-# are vi.exe and gb.com + its carts — their toolchains, Watcom and
-# nasm/RGBDS, are canary-only, see make apps):
-# TP3 is fetched (pinned sha256) and driven inside runpc, and
-# javac.exe rebuilds via Small-C under runpc — so build runpc first.
+# staging COMPILES the app binaries (none are committed): TP3 is
+# fetched (pinned sha256) and driven inside runpc, javac.exe rebuilds
+# via Small-C under runpc, vi.exe cross-compiles with Open Watcom
+# (fetched + cached by apps/vi/fetch_watcom.py), and gb.com assembles
+# with host nasm — so build runpc first, and nasm is a build prereq.
+# Only the homebrew .gb carts are committed (RGBDS stays canary-only).
 # The loop is serial on purpose: the TP3 compiles share apps/cache/.
 apps-stage:
 	@$(MAKE) -s -C ../core-c runpc

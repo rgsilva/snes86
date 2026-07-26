@@ -1,14 +1,22 @@
 # GB — a Game Boy (DMG) emulator as a 15 KB DOS .COM (pure 8086, CGA).
-# `make stage` fills build/ with exactly what ships on C:\GB: the
-# committed gb.com plus the homebrew test carts. `make recompile`
-# rebuilds everything from source on the host: gb.com needs nasm
-# (mksm83.py generates the 512 SM83 opcode handlers into
-# hostbuild/sm83.inc), the .gb carts need RGBDS (rgbasm/rgblink/rgbfix).
-# macOS: brew install nasm rgbds.
+# `make stage` fills build/ with exactly what ships on C:\GB. gb.com is
+# a BUILD PRODUCT (no binary is committed): mksm83.py generates the 512
+# SM83 opcode handlers into hostbuild/sm83.inc and nasm assembles
+# gb.asm — deterministic, so nasm is a build prerequisite of the
+# images. The homebrew .gb test carts ARE committed (RGBDS stays a
+# canary/dev-only dependency); `make recompile` rebuilds them too and
+# needs rgbasm/rgblink/rgbfix. macOS: brew install nasm rgbds.
 B := build
 H := hostbuild
 
 stage: $(B)/GB.COM $(B)/SMOKE.GB $(B)/GFX.GB $(B)/JOY.GB
+
+$(H)/sm83.inc: mksm83.py
+	@mkdir -p $(H)
+	python3 mksm83.py > $@
+
+gb.com: gb.asm $(H)/sm83.inc
+	nasm -f bin -I$(H)/ -o gb.com gb.asm
 
 $(B)/GB.COM: gb.com
 	@mkdir -p $(B)
@@ -27,6 +35,7 @@ $(B)/JOY.GB: joy.gb
 	cp joy.gb $@
 
 recompile:
+	rm -f gb.com
 	@mkdir -p $(H)
 	python3 mksm83.py > $(H)/sm83.inc
 	nasm -f bin -I$(H)/ -o gb.com gb.asm
@@ -42,6 +51,6 @@ recompile:
 	$(MAKE) stage
 
 clean:
-	rm -rf $(B) $(H)
+	rm -rf $(B) $(H) gb.com
 
 .PHONY: stage recompile clean

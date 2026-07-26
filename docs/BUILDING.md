@@ -8,7 +8,9 @@
 | Python 3 | build-time asset generation + the test harness | standard library only — no `pip install` needed |
 | a C compiler (`cc`, C11) | the `core-c` reference core + `runpc` | any clang/gcc |
 | [JWasm](https://github.com/JWasm/JWasm) | rebuilding the MS-DOS `IO.SYS` | only if you change `msdos/io.asm`; build it and symlink as `msdos/jwasm` (see [MS-DOS toolchain](#the-ms-dos-toolchain-self-hosted)) |
-| nasm + [RGBDS](https://rgbds.gbdev.io/) | rebuilding `GB.COM` + its homebrew carts (`apps/gb`) | only for `make apps` / `make recompile` there — the committed binaries stage without them (`brew install nasm rgbds`) |
+| nasm | assembling `GB.COM` (`apps/gb`) at image-build time | **required** — no app binaries are committed (`brew install nasm` / `apt-get install nasm`) |
+| Open Watcom v2 | cross-compiling `VI.EXE` (`apps/vi`) at image-build time | **auto-fetched** by `apps/vi/fetch_watcom.py` (pinned sha256, ~151 MB download one-time, cached in `apps/cache/watcom/`); works on macOS arm64 and Linux x64 |
+| [RGBDS](https://rgbds.gbdev.io/) | rebuilding the committed homebrew `.gb` carts (`apps/gb`) | canary/dev only — `make apps` skips the cart rebuild without it (`brew install rgbds`) |
 | [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen |
 
 ## The ROM
@@ -68,12 +70,17 @@ What each one actually is:
   is a `CD` away.
 
   **No app binaries are committed** — the build compiles every one of
-  them from source, on the emulated machine itself: the Turbo Pascal
-  tools (VIEW, TED, SOKOBAN, MIDPLAY/MIDCONV, SIEVE/HELLO, JAVA.COM)
-  via `apps/tpcompile.sh` (TP3's IDE driven inside `runpc`), and
+  them from source: the Turbo Pascal tools (VIEW, TED, SOKOBAN,
+  MIDPLAY/MIDCONV, SIEVE/HELLO, JAVA.COM) via `apps/tpcompile.sh`
+  (TP3's IDE driven inside `runpc`, on the emulated machine itself),
   `C:\JAVA\JAVAC.EXE` from `javac.c` with the public-domain Small-C kit
   committed in `apps/cc/` (`make -C apps/java javac-dos`, see
-  [docs/notes/JAVAC-PORTING](notes/JAVAC-PORTING.md)). That makes
+  [docs/notes/JAVAC-PORTING](notes/JAVAC-PORTING.md)),
+  `C:\VI\VI.EXE` with the auto-fetched Open Watcom cross-compiler
+  (`apps/vi/fetch_watcom.py`: pinned sha256, ~151 MB one-time download,
+  cached in `apps/cache/watcom/`), and `C:\GB\GB.COM` with host nasm
+  (deterministic; the homebrew `.gb` carts are committed, RGBDS is
+  canary-only). That makes
   **Turbo Pascal 3.01A a required build dependency of the MS-DOS
   images**: `apps/fetch_tp3.py` downloads it on first build (pinned
   sha256, cached in `apps/cache/`, checked against a local

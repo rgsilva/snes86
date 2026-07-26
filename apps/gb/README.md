@@ -44,17 +44,18 @@ a writable drive if you want `-o`/`-sN` output files.
 
 ## Build
 
-The committed binaries (`gb.com` + the `.gb` carts) are what stages, so
-`make msdos` needs no extra toolchain. `make recompile` rebuilds them
-from source on the host:
+No `gb.com` is committed — `make stage` (and so every image build)
+assembles it from source: `mksm83.py` generates the 512 SM83 opcode
+handlers (`hostbuild/sm83.inc`), then `nasm -f bin` assembles `gb.asm`
+(deterministic). That makes **nasm a required build prerequisite** of
+the images.
 
-- `gb.com`: `mksm83.py` generates the 512 SM83 opcode handlers
-  (`hostbuild/sm83.inc`), then `nasm -f bin` assembles `gb.asm`.
-  Deterministic — the rebuild is byte-identical (that is the
-  `make apps` canary).
-- the carts: RGBDS (`rgbasm`/`rgblink`/`rgbfix`).
+The homebrew `.gb` test carts ARE committed: rebuilding them needs
+RGBDS (`rgbasm`/`rgblink`/`rgbfix`), which stays a canary/dev-only
+dependency — `make recompile` rebuilds carts + `gb.com`, and the
+`make apps` canary skips the cart rebuild where RGBDS is absent.
 
-macOS: `brew install nasm rgbds`.
+macOS: `brew install nasm` (add `rgbds` to touch the carts).
 
 ## Test
 
