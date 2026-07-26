@@ -29,10 +29,10 @@ recompile: version.c
 	    "INCLUDE=$(abspath $(W))/h" \
 	    wcl -q -bcl=dos -ms -0 -os -k4096 -I. -Ilevee \
 	        -fe=vi.exe $(LEVEE_SRC) snescall.c version.c
-	rm -f *.o levee/*.o
+	rm -f *.o levee/*.o *.err levee/*.err
 	$(MAKE) stage
 
 clean:
-	rm -rf $(B) *.o levee/*.o
+	rm -rf $(B) *.o levee/*.o *.err levee/*.err
 
 .PHONY: stage recompile clean
