@@ -9,7 +9,7 @@ The snes86 is an 8086 PC emulator written from scratch in 65C816 assembly. It bo
   <sub>MS-DOS 2.0</sub>
 </p>
 
-And, yes, it even boots Linux to a root shell!
+And, yes, it even boots Linux:
 
 <p align="center">
   <img src="docs/assets/elks.png" width="480" alt="ELKS 0.9.1 booting to a root shell on snes86"><br>
@@ -55,6 +55,9 @@ The public ROM ships only free software - all of it ours, public domain or MIT:
 For all of the apps, you can check details and examples in our [apps/README](apps/README.md). All tools are available the in MS-DOS image. The big image also have them, but they won't have a writeable disk for you to use them, so usability is limited.
 
 There's also a bunch of other tests I've done, mostly with shareware/licensed/weird software, and you can find them documented in [COMPATIBILITY](docs/COMPATIBILITY.md).
+
+Oh, and if you are curious of what can we do with it, here's a whole dev-workstation demo, 8086 on a SNES style: [video](assets/devstation.mp4) ([mirror](https://youtu.be/L4caINpE8gE)).
+
 
 ## Legal & credits
 
