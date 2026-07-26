@@ -18,16 +18,17 @@ SNES/Super Famicom (via a flashcart) is the real test. Specifically worth checki
 Reports, screenshots, and videos are genuinely wanted. See
 [COMPATIBILITY](COMPATIBILITY.md#help-wanted).
 
-## More guest RAM (make BIGMEM fast)
+## More guest RAM (make the big machine fast)
 
-The default guest has ~108 KB. The BIGMEM build extends it to 172 KB using
-cartridge SRAM, which revives memory-hungry titles (Rogue) — but
-it's currently ~1.7× slower than the standard build, so it's shipped only as an
-experiment (`make msdos_big`).
+The default guest has ~108 KB — everything above that lives on the cartridge, and
+the emulator has to fold guest addresses into it. `make msdos_sa1` does this with an
+SA-1 board's 256 KB of BW-RAM and gets a 300 KB guest (plus a B: drive); it's what
+revives memory-hungry titles like Rogue, and it's the machine FreeDOS boots on. The
+cost is that the big machines are currently ~1.7× slower than the public build.
 
-The slowdown is pure "correctness tax" from handling the WRAM↔SRAM address seam; the
-standard build is untouched. There's a clear path to making it fast, if someone wants
-it:
+The slowdown is pure "correctness tax" from handling the WRAM↔cartridge address seam;
+the standard build is untouched. There's a clear path to making it fast, if someone
+wants it:
 
 - Gate the per-instruction rebase behind an IP window (the big win, est.
   1.7× → ~1.2×). Today every instruction re-checks whether the code segment crosses
@@ -35,8 +36,8 @@ it:
   the fetch pointer stays in one region, and only doing the full rebase when leaving
   it, removes ~90% of the overhead.
 - Restore the chunked `REP MOVS/STOS` fast path, capped at the region boundary
-  (the cap is the safety) — recovers the 7× block-move speedup BIGMEM currently
-  gives up.
+  (the cap is the safety) — recovers the 7× block-move speedup the big machines
+  currently give up.
 
 There's also a known correctness edge (an instruction whose *immediate* spills across
 the seam) that would need seam-safe operand fetch. Start at the `lda [bCS],y` fetch
@@ -62,8 +63,11 @@ Remaining ideas have diminishing returns and rising risk:
 - the irreducible one: instruction fetch (`lda [bCS],y`) can't get much cheaper
   without bank-crossing surgery — high risk.
 
-Note the SNES has no SA-1/SuperFX acceleration in play here — this is a stock
-cartridge, so all speed comes from the 65C816 doing the work.
+Note that no coprocessor is in play here — all speed comes from the console's own
+65C816 doing the work. That stays true even on the SA-1 variant, where the board is
+wired up purely for its BW-RAM and the SA-1 CPU is never released from reset.
+Actually *running* guest code on an SA-1 (a second, faster 65C816) would be a
+different project, and a large one.
 
 ## Graphics beyond CGA text
 

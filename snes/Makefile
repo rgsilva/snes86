@@ -6,7 +6,7 @@ LD     := $(PVBIN)/wlalink
 all: build/console.sfc
 
 # --- OVERLAYS: a uniform optional flag on every DOS-booting target
-# (msdos, msdos_big, freedos, boot). OVERLAYS="dir-or-img ..." merges
+# (msdos, msdos_sa1, freedos, boot). OVERLAYS="dir-or-img ..." merges
 # extra content onto the free C: (tools/mkhd_free.py) and switches the
 # output to build/<target>_overlay.sfc — an overlay build never
 # clobbers the clean artifact. Nothing copyrighted is ever baked into
@@ -75,7 +75,7 @@ console-test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test test-extra console-test clean msdos msdos_big msdos_sa1 boot freedos elks io apps-stage parity cputest sramtest
+.PHONY: all run test test-extra console-test clean msdos msdos_sa1 boot freedos elks io apps-stage parity cputest sramtest
 
 # --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) +
 # a free C: (tools/mkhd_free.py; no copyrighted software).  See
@@ -107,14 +107,6 @@ build/spc_beep64.bin: spc_beep.asm linkfile_spc
 
 build/msdos$(OVSUF).sfc: build/msdos$(OVSUF).o build/msdos$(OVSUF).link
 	$(LD) -d -s -v -c build/msdos$(OVSUF).link $@
-
-msdos_big: build/msdos_big$(OVSUF).sfc
-
-build/msdos_big$(OVSUF).o: msdos_big.asm $(DOSDEPS) build/msdos_a.img $(HDC)
-	$(AS) $(OVDEF) -o $@ msdos_big.asm
-
-build/msdos_big$(OVSUF).sfc: build/msdos_big$(OVSUF).o build/msdos_big$(OVSUF).link
-	$(LD) -d -s -v -c build/msdos_big$(OVSUF).link $@
 
 # --- SA-1 variant: the SA-1 board as a pure RAM expander (the SA-1 CPU
 # is never started). 256 KB of BW-RAM = 192 KB more guest RAM (300 KB

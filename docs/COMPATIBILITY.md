@@ -37,7 +37,7 @@ All captured from snes86 running in Mesen.
 <td align="center"><img src="assets/sokoban.png" width="400"><br><sub>Sokoban — our own CGA game, with source</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the roguelike that named the genre (needs BIGMEM)</sub></td>
+<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the roguelike that named the genre (needs the big SA-1 machine)</sub></td>
 <td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1 (<code>make boot DISK=disks/fs1.img</code>)</sub></td>
 </tr>
 <tr>
@@ -50,7 +50,7 @@ All captured from snes86 running in Mesen.
 </tr>
 <tr>
 <td align="center"><img src="assets/elks.png" width="480"><br><sub>ELKS 0.9.1 — Linux on the SNES: boot, <code>login: root</code>, <code>uname</code>, <code>meminfo</code>. Kernel and apps execute in place from cartridge ROM (<code>make elks</code>)</sub></td>
-<td align="center"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 172 KB machine, reading the C: tools (<code>make freedos</code>)</sub></td>
+<td align="center"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 300 KB SA-1 machine, reading the C: tools (<code>make freedos</code>)</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub>
@@ -71,7 +71,7 @@ All captured from snes86 running in Mesen.
 |---|---|---|---|
 | OS / shell | MS-DOS 2.0 (MIT) | ✅ shipped | `DIR`, `PATH`, `PROMPT`, batch files, `VER`, redirection; the MIT utilities (`CHKDSK`, `DEBUG`, `EDLIN`, `FIND`, `SORT`, `MORE`) ship in `C:\DOS` |
 | | ELKS 0.9.1 (Linux) | ✅ shipped | its own ROM (`make elks`): boots to a root shell; `sh`, `uname`, `ls`, `meminfo`, … — see [Linux on the SNES](#linux-on-the-snes-elks) |
-| | FreeDOS 1.3 | ✅ shipped | its own ROM (`make freedos`, BIGMEM): kernel + FreeCOM to `A:\>`, runs the C: tools — see [FreeDOS on the SNES](#freedos-on-the-snes) |
+| | FreeDOS 1.3 | ✅ shipped | its own ROM (`make freedos`, the SA-1 machine): kernel + FreeCOM to `A:\>`, runs the C: tools — see [FreeDOS on the SNES](#freedos-on-the-snes) |
 | | PC DOS 2.00 | ✅ tested | the original bring-up target; MS-DOS ships instead, but `.IFDEF PCDOS` still boots it |
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
@@ -88,7 +88,7 @@ All captured from snes86 running in Mesen.
 | Applications | WordStar 3.31 | ✅ tested | full-screen editor, overlays load from C: |
 | | Multiplan | ✅ tested | spreadsheet grid, `.LOD`/`.SYS` overlays |
 | Interactive fiction | Zork I–III, Planetfall, Leather Goddesses, Hitchhiker's Guide, Wishbringer | ✅ tested | Infocom's later 8086 interpreter |
-| Games | Rogue | ✅ tested* | *needs BIGMEM (see [Memory](#memory)) |
+| Games | Rogue | ✅ tested* | *needs the big machine (see [Memory](#memory)) |
 | | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* [GB.COM](../apps/gb/README.md) (`C:\GB`) — playable on the host core, title screen captured on the SNES; the cartridge ROM is copyrighted, bring your own |
 | | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make boot DISK=disks/fs1.img`), not a DOS program |
 | Benchmarks | Norton SI, CPUBENCH | ✅ tested | CPU/system info + timing loops |
@@ -97,11 +97,12 @@ If you get something interesting running, we'd love to hear about it.
 
 ## FreeDOS
 
-`make freedos` builds a third-OS ROM: [FreeDOS](https://www.freedos.org/) 1.3 on the 172 KB BIGMEM machine — 172 KB is FreeDOS's exact floor here (the kernel dies during init at 108 KB, measured on the host core first).
+`make freedos` builds a third-OS ROM: [FreeDOS](https://www.freedos.org/) 1.3 on the 300 KB SA-1 machine. It cannot run on the public ROM's machine at all — the kernel dies during init at 108 KB (measured on the host core first), and 172 KB was its exact floor — so it rides the biggest board in the fleet and inherits that board's SA-1 requirement.
 
 - **Boot** lands at a FreeCOM `A:\>` prompt; the C: drive is the same free image as the MS-DOS ROM, so `DIR C:`, the benchmarks and the MIDI tools are all there.
-- **Memory is tight**: FreeCOM stays fully resident (no XMS to swap to), so the free arena runs the small tools but not big programs — `MEM` itself doesn't fit, which says it all. More RAM is the same SRAM-bank lever as the Windows 1.01 plan ([FUTURE](FUTURE.md#windows-101--proof-of-concept-done-fit--renderer-next)).
-- **It found a real bug**: FreeDOS relocates its kernel init to the top of memory, which parked live code exactly across the WRAM→SRAM seam at 108 KB — the first guest ever to execute across it, and the reason the fetch path now has a general seam bounce (the suite's `t_fdos` regression-guards it).
+- **B: works**, which is new: on the old 172 KB machine the cartridge SRAM *was* the extra guest RAM, so FreeDOS had no writable drive at all. BW-RAM bank `$43` keeps B: on the SA-1 board, and FreeDOS reads and writes it like any other DOS — `DIR B:` finds the `SNES86RAM` volume, and files written there survive a power cycle.
+- **Memory**: FreeCOM stays fully resident (no XMS to swap to), but with 300 KB underneath it there is real room now — `MEM` reports about 168 KB free for programs. It did not even fit on the 172 KB machine.
+- **It found a real bug**: FreeDOS relocates its kernel init to the top of memory, which parked live code exactly across the WRAM→cartridge seam at 108 KB — the first guest ever to execute across it, and the reason the fetch path now has a general seam bounce (the suite's `t_fdos` regression-guards it).
 - **Images**: `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 release (GPL — checksum-pinned, cached, never committed) and re-packs the kernel + FreeCOM into a 360 KB boot floppy. See [freedos/README](../freedos/README.md).
 
 ## Linux
@@ -117,12 +118,12 @@ If you get something interesting running, we'd love to hear about it.
 
 ## Memory
 
-The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the software above. A handful of memory-hungry titles need more. The BIGMEM build (`make msdos_big`) extends the guest to 172 KB using cartridge SRAM, which revives Rogue (its C: is the free one; overlay the local app fixture with `make msdos_big OVERLAYS=disks/appmatrix` to actually run it). BIGMEM is an experiment for DOS — but it's load-bearing for the ELKS ROM, which is built on the 172 KB machine.
+The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the software above. A handful of memory-hungry titles need more. `make msdos_sa1` extends the guest to 300 KB by asking for an SA-1 cartridge board and using it as nothing but a RAM expander (see [BUILDING](BUILDING.md#build-targets)), which revives Rogue (its C: is the free one; overlay the local app fixture with `make msdos_sa1 OVERLAYS=disks/appmatrix` to actually run it) and is the machine FreeDOS boots on. The price is that the ROM only runs where SA-1 does: Mesen yes, most flash carts no. An earlier variant did the same trick with 64 KB of plain cartridge SRAM for a 172 KB guest; the SA-1 board beats it on every axis — more memory, and B: survives — so only the ELKS ROM still uses that layer.
 
 ## Known limitations
 
 - No EGA/VGA — the display is CGA/MDA-class (text modes + CGA graphics 4/5/6).
-- Disk is a fixed ROM image (A:) plus writable SRAM (B:) and a hard-disk image (C:); there's no real removable media. The BIGMEM builds (`make msdos_big`, `make freedos`) spend the SRAM as guest RAM, so they have no B:.
+- Disk is a fixed ROM image (A:) plus a writable battery-backed drive (B:) and a hard-disk image (C:); there's no real removable media. Every DOS ROM has all three — on the SA-1 builds B: is a BW-RAM bank rather than cartridge SRAM.
 - Speed is period-appropriate, roughly IBM PC/XT territory, not instantaneous.
 - Copyrighted DOS software is not distributed — you supply your own.
 

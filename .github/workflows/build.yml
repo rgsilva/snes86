@@ -70,17 +70,12 @@ jobs:
       - name: Build the public ROM (msdos.sfc)
         run: make -C snes PVBIN="$PVBIN" msdos
 
-      # The BIGMEM experiment: same MS-DOS + free C:, guest RAM grown to
-      # 172 KB by spending the cartridge SRAM (so no B: drive). Reuses the
-      # app binaries the msdos build just compiled.
-      - name: Build the BIGMEM ROM (msdos_big.sfc)
-        run: make -C snes PVBIN="$PVBIN" msdos_big
-
       # The SA-1 variant: the same MS-DOS + free C: on a 300 KB machine
       # (108 KB WRAM + 192 KB of SA-1 BW-RAM), and it keeps B: on the
       # fourth BW-RAM bank. The SA-1 coprocessor is never released from
       # reset — the board is used purely as a RAM expander. Needs an
-      # SA-1-capable cart or emulator to run.
+      # SA-1-capable cart or emulator to run. Reuses the app binaries
+      # the msdos build just compiled.
       - name: Build the SA-1 ROM (msdos_sa1.sfc)
         run: make -C snes PVBIN="$PVBIN" msdos_sa1
 
@@ -93,7 +88,8 @@ jobs:
       - name: Build the ELKS ROM (elks.sfc)
         run: make -C snes PVBIN="$PVBIN" elks
 
-      # The FreeDOS ROM: FreeDOS 1.3 on the 172 KB BIGMEM machine. Kernel +
+      # The FreeDOS ROM: FreeDOS 1.3 on the same 300 KB SA-1 machine (its
+      # kernel dies in init at 108 KB, so it needs one). Kernel +
       # FreeCOM are pulled from the official FreeDOS 1.3 Floppy Edition by
       # freedos/mkfreedos.py (GPL - fetched at build time with a pinned
       # sha256, never committed; source at github.com/FDOS). Same
@@ -115,12 +111,6 @@ jobs:
         with:
           name: msdos-sfc
           path: snes/build/msdos.sfc
-
-      - name: Upload BIGMEM ROM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: msdos-big-sfc
-          path: snes/build/msdos_big.sfc
 
       - name: Upload SA-1 ROM artifact
         uses: actions/upload-artifact@v4
@@ -150,7 +140,6 @@ jobs:
         with:
           files: |
             snes/build/msdos.sfc
-            snes/build/msdos_big.sfc
             snes/build/msdos_sa1.sfc
             snes/build/freedos.sfc
             snes/build/elks.sfc
@@ -159,15 +148,14 @@ jobs:
             **snes86** — MS-DOS 2.0, FreeDOS and Linux on a stock, unmodified SNES.
 
             - `msdos.sfc` — the flashable public ROM (free software only).
-            - `msdos_big.sfc` — the BIGMEM experiment: 172 KB of guest RAM
-              (cartridge SRAM spent as memory, so no B: drive), same free C:.
             - `msdos_sa1.sfc` — the SA-1 board used purely as a RAM expander
               (its coprocessor is never started): a 300 KB guest that still
               has B:, same free C:. Needs an SA-1-capable cartridge or
               emulator — most flash carts, FXPak included, will not run it.
-            - `freedos.sfc` — FreeDOS 1.3 booting to FreeCOM on the 172 KB
-              BIGMEM machine; bundles the unmodified official FreeDOS kernel
-              + FreeCOM (GPL — source at https://github.com/FDOS).
+            - `freedos.sfc` — FreeDOS 1.3 booting to FreeCOM on the same
+              300 KB SA-1 machine (and so with the same SA-1 requirement);
+              bundles the unmodified official FreeDOS kernel + FreeCOM
+              (GPL — source at https://github.com/FDOS).
             - `elks.sfc` — ELKS 0.9.1 (Linux for the 8086) booting to a root
               shell; bundles the unmodified official ELKS release images
               (GPL — source at https://github.com/ghaerr/elks).

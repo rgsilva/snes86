@@ -11,7 +11,7 @@
 | nasm | assembling `GB.COM` (`apps/gb`) at image-build time | **required** — no app binaries are committed (`brew install nasm` / `apt-get install nasm`) |
 | Open Watcom v2 | cross-compiling `VI.EXE` (`apps/vi`) at image-build time | **auto-fetched** by `apps/vi/fetch_watcom.py` (pinned sha256, ~151 MB download one-time, cached in `apps/cache/watcom/`); works on macOS arm64 and Linux x64 |
 | [RGBDS](https://rgbds.gbdev.io/) | rebuilding the committed homebrew `.gb` carts (`apps/gb`) | canary/dev only — `make apps` skips the cart rebuild without it (`brew install rgbds`) |
-| [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen |
+| [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen. The `msdos_sa1` and `freedos` ROMs additionally need **SA-1 support** — Mesen has it; a flash cart usually does not (see below) |
 
 ## The ROM
 
@@ -33,9 +33,8 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 | target | output | what | needs local (uncommitted) files? |
 |---|---|---|---|
 | `make` / `make msdos` | `msdos.sfc` | MS-DOS 2.0, free C: | no — TP3 auto-fetched (compiles the apps) |
-| `make freedos` | `freedos.sfc` | FreeDOS 1.3, 172 KB guest | no — FreeDOS auto-fetched |
+| `make freedos` | `freedos.sfc` | FreeDOS 1.3, 300 KB guest, SA-1 board | no — FreeDOS auto-fetched |
 | `make elks` | `elks.sfc` | ELKS (Linux), no DOS | no — ELKS images auto-fetched |
-| `make msdos_big` | `msdos_big.sfc` | MS-DOS, 172 KB guest | no — TP3 auto-fetched |
 | `make msdos_sa1` | `msdos_sa1.sfc` | MS-DOS, 300 KB guest, SA-1 board | no — TP3 auto-fetched |
 | `make boot DISK=img` | `boot.sfc` | a self-booting disk, no DOS | the disk image |
 | `make test` | — | the public suite | no (Mesen legs skip without Mesen) |
@@ -43,7 +42,7 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 | `make apps` | — | force-rebuild every tool + verify | no |
 
 **OVERLAYS** is a uniform optional flag on every DOS-booting target
-(`msdos`, `msdos_big`, `msdos_sa1`, `freedos`, `boot`):
+(`msdos`, `msdos_sa1`, `freedos`, `boot`):
 `make msdos OVERLAYS="path/to/dir path/to/floppy.img"` merges each
 overlay's tree onto the free C: (last wins, with a warning) and writes
 `snes/build/msdos_overlay.sfc` — an overlay build never clobbers the
@@ -91,21 +90,15 @@ What each one actually is:
   network (or the local disk image); after that everything is cached
   and the compiles are incremental.
 
-- `make freedos` — the same machine on the 172 KB BIGMEM base, booting
+- `make freedos` — the SA-1 machine below, booting
   [FreeDOS](https://www.freedos.org/) 1.3 to FreeCOM instead of MS-DOS.
   `freedos/mkfreedos.py` fetches the official FreeDOS 1.3 Floppy Edition on
   first build (GPL — fetched with a pinned sha256, cached in `freedos/cache/`,
   never committed) and assembles a minimal 360 KB boot floppy from it; the C:
-  is the same free image as `make msdos`. FreeDOS needs the full 172 KB — the
-  kernel dies during init at 108 KB — so there is no non-BIGMEM variant, and
-  BIGMEM's B: drive is absent by design. See [freedos/README](../freedos/README.md).
-
-- `make msdos_big` — BIGMEM: the guest grows from ~108 KB to 172 KB by
-  backing the extra conventional RAM with cartridge SRAM, which revives
-  the memory-hungry Rogue (`make msdos_big OVERLAYS=disks/appmatrix` on a
-  machine that has it). Same free C: as the public build. It's an
-  experiment — see BIGMEM in [INTERNALS](INTERNALS.md) and
-  [FUTURE](FUTURE.md).
+  is the same free image as `make msdos`. FreeDOS cannot run on the public
+  ROM's machine at all — the kernel dies during init at 108 KB — which is why
+  it rides the big board, and why it inherits the SA-1 requirement along with
+  the 300 KB and the B: drive. See [freedos/README](../freedos/README.md).
 
 - `make msdos_sa1` — the biggest machine in the fleet: a 300 KB guest
   (108 KB of WRAM + 192 KB of cartridge RAM), and it keeps the B: drive.
@@ -117,7 +110,10 @@ What each one actually is:
   guest RAM above 108 KB; the fourth stays the battery-backed B: disk.
   So the fastest enhancement chip ever put in a SNES cartridge is doing
   duty here as a RAM stick, which is either the best or the worst thing
-  in this repo. Same free C: as the public build.
+  in this repo. Same free C: as the public build. This is also the only
+  big-guest DOS machine there is: it replaced an earlier 172 KB variant
+  that spent plain cartridge SRAM as guest RAM and therefore had no B:,
+  and it is what `make freedos` boots on too.
 
   The catch is where it runs. Mesen runs it. A **flash cart only runs it
   if that cart implements SA-1**, and most do not — notably the plain
