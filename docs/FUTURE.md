@@ -93,16 +93,19 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
   build already proves a non-DOS boot works via `make boot DISK=`), are open territory.
 - One of them landed: **Linux**. `make elks` boots ELKS 0.9.1 to a root shell —
-  kernel and apps executing in place from cart ROM on the BIGMEM machine (see
-  [INTERNALS](INTERNALS.md#booting-linux-the-elks-machine)). It also gives the
-  BIGMEM speedups above a real customer: the ELKS boot pays the seam tax in full.
+  kernel and apps executing in place from cart ROM on the 172 KB cartridge-SRAM
+  machine (see [INTERNALS](INTERNALS.md#booting-linux-the-elks-machine)); it is
+  now the only guest that still uses that region layer. It also gives the
+  big-machine speedups above a real customer: the ELKS boot pays the seam tax in
+  full.
 - Another one landed the same week it was checked: **FreeDOS**. `make freedos`
-  boots FreeDOS 1.3 to FreeCOM on the BIGMEM machine (172 KB is its exact
-  floor — the kernel dies during init at 108 KB). The kernel is 8086-clean and
+  boots FreeDOS 1.3 to FreeCOM on the 300 KB SA-1 machine (it needs a big one —
+  the kernel dies during init at 108 KB, and 172 KB was its exact floor). The kernel is 8086-clean and
   GPL, so unlike the dev C: it ships in a public ROM; `freedos/mkfreedos.py`
-  fetches the official release and re-packs a 360 KB boot floppy. Note the
-  arena is tight: FreeCOM stays fully resident without XMS, so big .COMs won't
-  fit — the growth path is the same SRAM-bank lever as Windows 1.01 below.
+  fetches the official release and re-packs a 360 KB boot floppy. FreeCOM stays
+  fully resident without XMS, but with 300 KB underneath it there is real room —
+  `MEM` reports ~168 KB free for programs, and it moved to the SA-1 board partly
+  to get that and partly because the board leaves B: intact.
 
 ## Homegrown userware: VIEW, a C toolchain, vi, a JVM
 
@@ -173,7 +176,7 @@ toggle. The original plan:
 
 Development loop: iterate against `runpc -cga` PPM dumps, finish in Mesen.
 
-### The dev workstation — SHIPPED, and it never needed BIGMEM
+### The dev workstation — SHIPPED, and it never needed the big machine
 
 Small-C 2.2 + Small Assembler (public domain) + the MIT `LINK.EXE`
 now ship in `C:\CC` (`apps/cc/`) and
@@ -288,26 +291,25 @@ navigation: all there. The HLE BIOS surface (INT 10h/11h/12h/13h/16h/1Ah + the
 B800 framebuffer) is sufficient as-is; no missing interrupt was hit. So the
 CPU and the machine are proven — what's left is SNES-specific plumbing:
 
-1. **Memory — the tight part.** The measured floor is **237 KB**: at 236 KB the
-   `WIN` loader dies with "Program too big to fit in memory," at 237 KB the
-   Executive comes up. The SNES's realistic ceiling is **236 KB** (108 KB WRAM +
-   a full 128 KB SRAM, which the cart header already declares — today only 64 KB
-   is wired, banks `$72/$73` are the lever). That is *one kilobyte short* in the
-   naive layout. The kilobyte is recoverable: running `WIN.COM` as the DOS
-   `SHELL` drops resident `COMMAND.COM` (~2.6 KB) and clears 236 KB with room —
-   the catch is that Windows 1.x locates its startup files via the *current
-   directory*, so a `SHELL=` launch (CWD = boot-drive root) fails with "Cannot
-   find Windows startup files" until the install is laid out so the root is the
-   Windows directory. That layout work is the milestone's known-hard step.
-   (A 192 KB-SRAM *emulator* config — 300 KB guest — clears it trivially for a
-   Mesen-first demo, like BIGMEM before it.)
+1. **Memory — no longer the tight part.** The measured floor is **237 KB**: at
+   236 KB the `WIN` loader dies with "Program too big to fit in memory," at
+   237 KB the Executive comes up. When this was written the SNES's ceiling was
+   236 KB of plain cartridge SRAM — *one kilobyte short*, and the plan was to
+   claw it back by running `WIN.COM` as the DOS `SHELL` to drop the resident
+   `COMMAND.COM` (~2.6 KB), which in turn ran into Windows 1.x locating its
+   startup files via the *current directory*. The SA-1 machine
+   (`make msdos_sa1`) makes all of that moot: **300 KB**, 63 KB clear of the
+   floor, with a writable B: still attached. The `SHELL=` layout puzzle is now
+   an optimisation, not a blocker. The cost is that the ROM needs SA-1 support
+   to run at all — so Windows would land as an SA-1 build first.
 2. **True 640×200 mode 6 — DONE** (landed as step 0 of the image-viewer
    milestone above): the SNES now renders mode 6 on hi-res BG2 as a
    512-pixel window with L/R panning the remaining 128. Windows' GUI
    would display correctly today; this prerequisite is retired.
 3. **Survive the read-only C:** — Windows writes `WIN.INI` and temp files at
-   runtime; patch or shim them (BIGMEM eats the B: SRAM disk, so the writable
-   bits need an INT 21h-level detour or tolerated failures).
+   runtime. On the SA-1 machine B: is a real writable drive, so this may reduce
+   to pointing the install at it; failing that, an INT 21h-level detour or
+   tolerated failures.
 4. **SNES Mouse → INT 33h** (optional, delightful): the SNES Mouse exists, the
    auto-read port is already polled, and the Executive is fully keyboard-drivable
    in the meantime.
@@ -362,7 +364,7 @@ Noted, but not greenlit:
   real (but wanted a 286+); the achievable screenshot is the Atari BASIC
   `READY.` prompt. ANTIC's display list is the wall for real graphics.
 - **NES — the original idea, biggest lift.** More PPU than the GB and worse CGA
-  colour mapping; screenshot-only, BIGMEM, from-scratch core. If GB lands first,
+  colour mapping; screenshot-only, needs the big machine, from-scratch core. If GB lands first,
   NES is "just" a bigger version of the same work.
 
 Aside: we already nest — Infocom's Z-machine is a VM, so every Zork is
