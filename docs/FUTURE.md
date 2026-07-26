@@ -154,7 +154,8 @@ toggle. The original plan:
    char-index ceiling is beaten by HDMA-rebanding the BG2 character base
    per row group, and the on-screen keyboard survives untouched. Every
    bring-your-own mode-6 program is un-squashed, and the Windows 1.01
-   renderer prerequisite (below) is retired as a side effect. Covered by
+   renderer prerequisite (below) was retired as a side effect — Windows'
+   GUI came up through it unmodified. Covered by
    `test/t_cga6.lua` (Mesen) + a runpc PPM check in the suite and CI;
    `CGA6TST.COM` ships in `C:\BENCH`. (See INTERNALS.md for the how —
    including the native-stack lesson it re-taught.)
@@ -278,7 +279,7 @@ fetched-not-committed for the `recompile` pipeline, the MIT MS-DOS
 utilities ship as `C:\DOS`, and the copyrighted dev C: became the
 suite's OVERLAYS test fixture.
 
-## Windows 1.01 — proof of concept done, fit + renderer next
+## Windows 1.01 — it boots on the SNES; input is the milestone left
 
 Windows 3.0 is out of reach and stays out: its real mode — already the
 low-memory fallback — wants 640 KB installed / 384 KB free and DOS 3.1+, more
@@ -287,43 +288,73 @@ every theoretical LoROM SRAM bank stays emulator-only fantasy). Windows 2.03
 (512 KB, DOS 3.0) sits on the same wrong side of the wall.
 
 **Windows 1.01 is a different story: 8088, 256 KB, CGA, DOS 2.0 — the exact DOS
-we already boot. Step 1 is done, and it worked better than hoped.**
+we already boot. It boots.** Microsoft Windows 1.01 comes up to its **MS-DOS
+Executive** — the real GUI, in CGA mode 6 (640×200) — on the SA-1 ROM in Mesen:
+title bar, `File`/`View`/`Special` menus, the A:/B:/C: drive buttons, the file
+listing, the selection highlight, the dithered desktop. It does not yet *take*
+input, which is the rest of this section. Windows **1.04** does the same on the
+same ROM (settles at frame 30 600, `PRACTICE.WRI` and all). Reproduce either
+with
 
-Both Windows **1.01 and 1.04** boot all the way to a working **MS-DOS
-Executive** — the real GUI, in CGA mode 6 (640×200) — on `runpc` (the C
-reference core, bit-identical to the SNES 65816 core, under MS-DOS 2.0 with a
-Windows install on C:). Menus, drive icons, the file listing, keyboard
-navigation: all there. The HLE BIOS surface (INT 10h/11h/12h/13h/16h/1Ah + the
-B800 framebuffer) is sufficient as-is; no missing interrupt was hit. So the
-CPU and the machine are proven — what's left is SNES-specific plumbing:
+    ./snes/test/winsnes.sh ../disks/windows.img win_snes.png
 
-1. **Memory — no longer the tight part.** The measured floor is **237 KB**: at
-   236 KB the `WIN` loader dies with "Program too big to fit in memory," at
-   237 KB the Executive comes up. When this was written the SNES's ceiling was
-   236 KB of plain cartridge SRAM — *one kilobyte short*, and the plan was to
-   claw it back by running `WIN.COM` as the DOS `SHELL` to drop the resident
-   `COMMAND.COM` (~2.6 KB), which in turn ran into Windows 1.x locating its
-   startup files via the *current directory*. The SA-1 machine
-   (`make msdos_sa1`) makes all of that moot: **300 KB**, 63 KB clear of the
-   floor, with a writable B: still attached. The `SHELL=` layout puzzle is now
-   an optimisation, not a blocker. The cost is that the ROM needs SA-1 support
-   to run at all — so Windows would land as an SA-1 build first.
-2. **True 640×200 mode 6 — DONE** (landed as step 0 of the image-viewer
-   milestone above): the SNES now renders mode 6 on hi-res BG2 as a
-   512-pixel window with L/R panning the remaining 128. Windows' GUI
-   would display correctly today; this prerequisite is retired.
-3. **Survive the read-only C:** — Windows writes `WIN.INI` and temp files at
-   runtime. On the SA-1 machine B: is a real writable drive, so this may reduce
-   to pointing the install at it; failing that, an INT 21h-level detour or
-   tolerated failures.
-4. **SNES Mouse → INT 33h** (optional, delightful): the SNES Mouse exists, the
-   auto-read port is already polled, and the Executive is fully keyboard-drivable
-   in the meantime.
+which builds `build/msdos_sa1_overlay.sfc` with your Windows C: merged in,
+checks it on `runpc` first, then drives Mesen headless — and finally diffs the
+SNES's CGA bytes against the C core's render: **0 of 16 000 bytes differ**, so
+this is not "looks the same", it is the same picture. Nothing about it ships:
+Windows media is copyrighted, so like the dev C: this stays a bring-your-own
+build, never a default target.
 
-Speed: reaching the Executive is ~2–3 M guest instructions, so at snes86's
-~0.05–0.1× XT that's on the order of a minute or two — ELKS-boot territory, well
-inside the "it booted" bar below. (Windows media is copyrighted, so like the dev
-C: it can never ship in a public ROM — this stays a bring-your-own build.)
+What it took, and what it did not:
+
+1. **Memory — the SA-1 machine settles it.** The floor is **237 KB**, measured
+   by bisection: at 236 KB the `WIN` loader dies with "Program too big to fit in
+   memory," at 237 KB the Executive comes up, and 237 KB / 256 KB / 300 KB /
+   640 KB all render a byte-identical screen. The old 236 KB plain-SRAM ceiling
+   was *one kilobyte short* and the plan was to claw it back with a `SHELL=`
+   launch; `make msdos_sa1` makes that moot with **300 KB**, 63 KB of headroom,
+   and a writable B: still attached. The cost is that the ROM needs SA-1 support
+   to run at all.
+2. **True 640×200 mode 6 — already there** (step 0 of the image-viewer milestone
+   above): mode 6 on hi-res BG2 as a 512-pixel window with L/R panning the
+   remaining 128. Windows' GUI displays through it unmodified — the 512-pixel
+   window happens to cut just right of the file list.
+3. **No BIOS or CPU gap on the way in.** This is the surprise: getting to the
+   Executive asks for INT 10h/11h/12h/13h/16h and INT 21h and nothing else — no
+   INT 1Ch, no direct 6845 CRTC programming, no PIT/PIC reprogramming, no
+   INT 33h, and (measured with `runpc -v`) **not a single port `OUT`** in the
+   whole run. It never writes to disk either: 543 sectors read, 0 written. So
+   the read-only C: is a non-issue for the boot, and the 65816 core needed no
+   change at all — the SNES reaches the identical screen the C core does.
+
+**What is still missing is input, and it is the whole remaining milestone.**
+The Executive comes up and then ignores the keyboard:
+
+- Windows hooks INT 9 (IVT[9] goes from our `0000:04F0` stub to `0EAB:0199`)
+  and from then on never calls INT 16h again — verified on the reference core,
+  where 200 synthetic Enter keys were delivered as 400 make/break INT 9s and
+  the selection did not move. Stuffing the BIOS keyboard ring at 40:1A/1C/1E
+  as a real INT 9 would have done does not help either. So this is a
+  machine-level gap in the HLE keyboard, identical on both cores, **not** a
+  65816 bug: whatever protocol Windows' own driver expects, we do not speak it.
+  Disassembling `0EAB:0199` is the obvious next step.
+- On the SNES there is a second, separate defect stacked on top: with a guest
+  INT 9 hook installed, the raw-scancode queue stops draining (`s9H` advances,
+  `s9T` never moves, while the guest IF is set on ~75% of sampled frames and
+  the hold-off counter is 0). That path is what FS1 and Snipes use, so it is
+  worth chasing on its own — it just isn't what is blocking Windows.
+- **SNES Mouse → INT 33h** is the other half. The Mouse exists and its
+  auto-read port is already polled; whether the Executive would take mouse
+  input when it ignores the keyboard is unknown until the item above is
+  understood.
+
+Speed: reset → Executive is under **3 M guest instructions** (bisected on
+`runpc`: 2 M is still the splash, 3 M is the Executive) and lands at **frame
+32 100** on the SNES, to the frame, every run — about nine emulated minutes, and
+roughly two host minutes in headless Mesen. That works out near 5 k guest
+instructions/second, well under the usual 0.05–0.1× XT: a mode-6 GUI repaints
+constantly and most of Windows lives above 108 KB, in the BW-RAM half of the
+machine. Still ELKS-boot territory, well inside the "it booted" bar below.
 
 ## Nested emulation (an emulator on the emulator)
 

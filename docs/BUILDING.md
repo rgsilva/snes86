@@ -47,7 +47,10 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 overlay's tree onto the free C: (last wins, with a warning) and writes
 `snes/build/msdos_overlay.sfc` — an overlay build never clobbers the
 clean artifact, and nothing copyrighted is ever baked into a default
-build.
+build. An overlay is a directory (one level of subdirs), a FAT12 floppy
+image (flat, into the root) or a fixed-disk image of this repo's C:
+shape (root plus one level of subdirs) — so a whole prepared C: can be
+handed over as one file.
 
 What each one actually is:
 
