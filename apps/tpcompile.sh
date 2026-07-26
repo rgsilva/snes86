@@ -19,6 +19,9 @@ NAME=$2
 [ -f "$TOOL/$NAME.pas" ] || { echo "apps/$TOOL/$NAME.pas not found"; exit 1; }
 UPPER=$(printf '%s' "$NAME" | tr '[:lower:]' '[:upper:]')
 
+# the compile runs inside runpc — build it if this is a fresh checkout
+[ -x ../core-c/build/runpc ] || make -s -C ../core-c runpc
+
 python3 fetch_tp3.py
 python3 mk_tpc_img.py build "$TOOL/$NAME.pas"
 printf 'turbo\rYW%s\rOCQC' "$UPPER" | \

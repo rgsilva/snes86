@@ -10,11 +10,16 @@
 #
 # javac.c stays repo-only: a 40 KB C source with no on-image C compiler
 # is dead weight there. The committed .CLAs remain real `javac
-# --release 8` output (the "genuine javac bytecode" claim); JAVAC.EXE
-# reproduces them byte-for-byte from the .JAVs.
+# --release 8` output (the "genuine javac bytecode" claim).
+#
+# JAVA.COM and JAVAC.EXE are BUILD PRODUCTS (no binaries are committed):
+# java.com compiles from java.pas with TP3 inside runpc (../tpcompile.sh),
+# javac.exe with the Small-C toolchain inside runpc (tools/mkjavac_dos.sh).
 #
 # build/ is what the image packer stages (8.3 names only!) — host-side
 # artifacts (javac-dev, *.class) go to hostbuild/, never build/.
+# .NOTPARALLEL: the emulator-hosted compiles share scratch images.
+.NOTPARALLEL:
 B := build
 HB := hostbuild
 CLASSES := Hello Fib Sieve Concat Guess
@@ -24,6 +29,12 @@ UPPER = $(shell echo $(1) | tr a-z A-Z)
 stage: $(B)/JAVA.COM $(B)/JAVAC.EXE \
        $(foreach c,$(CLASSES),$(B)/$(call UPPER,$(c)).CLA) \
        $(foreach c,$(CLASSES),$(B)/$(call UPPER,$(c)).JAV)
+
+java.com: java.pas java1.inc java2.inc java3.inc ../tpcompile.sh
+	sh ../tpcompile.sh java java
+
+javac.exe: javac.c scmain.c tools/mkjavac_dos.sh tools/mergeseg.py
+	sh tools/mkjavac_dos.sh
 
 $(B)/JAVA.COM: java.com
 	@mkdir -p $(B)
@@ -66,8 +77,8 @@ parity: javac-dev
 	  $(HB)/javac-dev samples/$$f.java $(HB)/$$f.class || exit 1; \
 	done; echo "host-compiled classes in $(HB)/"
 
-# Rebuild the committed javac.exe: the Small-C toolchain running under
-# runpc on MS-DOS 2.0 (the public-domain Small-C kit is committed in
+# Force-rebuild javac.exe: the Small-C toolchain running under runpc
+# on MS-DOS 2.0 (the public-domain Small-C kit is committed in
 # apps/cc/; KIT= overrides). Deterministic — rebuilds byte-identical.
 javac-dos:
 	sh tools/mkjavac_dos.sh

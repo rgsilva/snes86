@@ -166,7 +166,12 @@ io:
 # user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
 APPSTOOLS := view ted java midi sokoban bench cc
 
+# staging may COMPILE the app binaries (nothing binary is committed in
+# apps/): TP3 is fetched (pinned sha256) and driven inside runpc, and
+# javac.exe rebuilds via Small-C under runpc — so build runpc first.
+# The loop is serial on purpose: the TP3 compiles share apps/cache/.
 apps-stage:
+	@$(MAKE) -s -C ../core-c runpc
 	@for t in $(APPSTOOLS); do $(MAKE) -s -C ../apps/$$t stage || exit 1; done
 
 build/hd_free.img: tools/mkhd_free.py ../msdos/autoexec.bat apps-stage $(wildcard ../user/*) $(wildcard ../msdos/bin/*) $(wildcard ../apps/cc/*)

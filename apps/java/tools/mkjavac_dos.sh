@@ -1,7 +1,8 @@
 #!/bin/sh
-# Rebuild javac.exe — the DOS-native JAVAC — with the Small-C toolchain
-# running inside our own emulator (runpc, MS-DOS 2.0). This is the
-# script that produced the committed apps/java/javac.exe.
+# Build apps/java/javac.exe — the DOS-native JAVAC — with the Small-C
+# toolchain running inside our own emulator (runpc, MS-DOS 2.0).
+# javac.exe is a build product, never committed; this pipeline is
+# deterministic, so every rebuild is byte-identical.
 #
 # The Small-C 2.2 kit (public-domain, Hendrix) lives in the repo:
 # apps/cc/ carries CC.EXE, ASM.EXE and the exploded CLIB objects
@@ -28,6 +29,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 JAVA=$(dirname "$HERE")                       # apps/java
 ROOT=$(cd "$JAVA/../.." && pwd)               # repo root
 RUNPC="$ROOT/core-c/build/runpc"
+[ -x "$RUNPC" ] || make -s -C "$ROOT/core-c" runpc
 [ -x "$RUNPC" ] || { echo "build core-c first (runpc missing)"; exit 1; }
 KIT="${KIT:-$ROOT/apps/cc}"                # the committed kit
 [ -f "$KIT/CC.EXE" ] || { echo "no Small-C kit at $KIT"; exit 1; }
@@ -54,6 +56,7 @@ for n in names:
 lines.append(cur)
 open(W+"/JCR","w",newline="").write("\r\n".join(lines)+"\r\nJAVAC\r\nNUL\r\n;\r\n")
 PY
+mkdir -p "$ROOT/snes/build"
 (cd "$ROOT/snes" && OVERLAYS="$W/ov" python3 tools/mkhd_free.py build hd_jcbuild.img >/dev/null)
 HD="$ROOT/snes/build/hd_jcbuild.img"
 
