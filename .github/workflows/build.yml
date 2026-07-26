@@ -150,8 +150,8 @@ jobs:
             - `msdos.sfc` — the flashable public ROM (free software only).
             - `msdos_sa1.sfc` — the SA-1 board used purely as a RAM expander
               (its coprocessor is never started): a 300 KB guest that still
-              has B:, same free C:. Needs an SA-1-capable cartridge or
-              emulator — most flash carts, FXPak included, will not run it.
+              has B:, same free C:. Needs an SA-1-capable emulator or cart
+              — Mesen and the FXPak Pro qualify; simpler carts may not.
             - `freedos.sfc` — FreeDOS 1.3 booting to FreeCOM on the same
               300 KB SA-1 machine (and so with the same SA-1 requirement);
               bundles the unmodified official FreeDOS kernel + FreeCOM

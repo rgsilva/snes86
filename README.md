@@ -29,12 +29,14 @@ Since this project generates a ROM file (.sfc) for you to use, there are a few b
 | Target | Output file | Remarks |
 |---|---|---|
 | `make msdos` | `build/msdos.sfc` | |
-| `make freedos` | `build/freedos.sfc` | No `B:` drive available |
+| `make msdos_sa1` | `build/msdos_sa1.sfc` | A 300 KB machine instead of the usual 108 KB. Asks for an SA-1 cartridge, so read the note below. |
+| `make freedos` | `build/freedos.sfc` | Boots on that same 300 KB SA-1 machine, so the same note applies. |
 | `make elks` | `build/elks.sfc` | |
-| `make msdos_big` | `build/msdos_big.sfc` | No `B:` drive available |
 | `make boot DISK=floppy.img` | `build/boot.sfc` | Needs to have a boot disk parameter, so pass it as the `DISK` parameter. This is useful when booting, for example, Flight Simulator 1.0. |
 
-> Note: some targets don't have a writeable `B:` drive because they are using the cartridge SRAM as work memory. In normal images such as `msdos`, you have a writeable `B:` that should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though.
+> Note: every DOS image has a writeable `B:` drive, and it should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though. On `msdos` that's 32 KB of plain cartridge SRAM; on the SA-1 images it's a 64 KB slice of the coprocessor's own RAM.
+
+> Note: `msdos_sa1` and `freedos` ask for an SA-1 cartridge board, and we do the rudest possible thing with it: we never start its 10 MHz CPU at all, and use the chip purely as a RAM stick. That means those two ROMs only run where SA-1 is actually implemented. Mesen is fine, and so is the FXPak Pro (it's the same support that runs Super Mario RPG). Simpler flash carts may not be, and if yours isn't, `msdos.sfc` is the one to flash.
 
 Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in [BUILDING](docs/BUILDING.md).
 
@@ -52,11 +54,11 @@ The public ROM ships only free software - all of it ours, public domain or MIT:
 * A very slow and crappy Gameboy emulator
 * A C compiler
 
-For all of the apps, you can check details and examples in our [apps/README](apps/README.md). All tools are available the in MS-DOS image. The big image also have them, but they won't have a writeable disk for you to use them, so usability is limited.
+For all of the apps, you can check details and examples in our [apps/README](apps/README.md). All tools are available in the MS-DOS image, and the big SA-1 image has them too — with a writeable `B:` of its own, so they're just as usable there.
 
 There's also a bunch of other tests I've done, mostly with shareware/licensed/weird software, and you can find them documented in [COMPATIBILITY](docs/COMPATIBILITY.md).
 
-Oh, and if you are curious of what can we do with it, here's a whole dev-workstation demo, 8086 on a SNES style: [video](assets/devstation.mp4) ([mirror](https://youtu.be/L4caINpE8gE)).
+Oh, and if you are curious of what can we do with it, here's a whole dev-workstation demo, 8086 on a SNES style: [video](docs/assets/devstation.mp4) ([mirror](https://youtu.be/L4caINpE8gE)).
 
 
 ## Legal & credits

@@ -118,7 +118,7 @@ If you get something interesting running, we'd love to hear about it.
 
 ## Memory
 
-The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the software above. A handful of memory-hungry titles need more. `make msdos_sa1` extends the guest to 300 KB by asking for an SA-1 cartridge board and using it as nothing but a RAM expander (see [BUILDING](BUILDING.md#build-targets)), which revives Rogue (its C: is the free one; overlay the local app fixture with `make msdos_sa1 OVERLAYS=disks/appmatrix` to actually run it) and is the machine FreeDOS boots on. The price is that the ROM only runs where SA-1 does: Mesen yes, most flash carts no. An earlier variant did the same trick with 64 KB of plain cartridge SRAM for a 172 KB guest; the SA-1 board beats it on every axis — more memory, and B: survives — so only the ELKS ROM still uses that layer.
+The default guest has ~108 KB of conventional RAM — enough for MS-DOS plus the software above. A handful of memory-hungry titles need more. `make msdos_sa1` extends the guest to 300 KB by asking for an SA-1 cartridge board and using it as nothing but a RAM expander (see [BUILDING](BUILDING.md#build-targets)), which revives Rogue (its C: is the free one; overlay the local app fixture with `make msdos_sa1 OVERLAYS=disks/appmatrix` to actually run it) and is the machine FreeDOS boots on. The price is that the ROM only runs where SA-1 does: Mesen yes, FXPak Pro yes (its firmware has an SA-1 core), simpler flash carts probably not. An earlier variant did the same trick with 64 KB of plain cartridge SRAM for a 172 KB guest; the SA-1 board beats it on every axis — more memory, and B: survives — so only the ELKS ROM still uses that layer.
 
 ## Known limitations
 

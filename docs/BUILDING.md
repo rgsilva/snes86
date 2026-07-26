@@ -11,7 +11,7 @@
 | nasm | assembling `GB.COM` (`apps/gb`) at image-build time | **required** — no app binaries are committed (`brew install nasm` / `apt-get install nasm`) |
 | Open Watcom v2 | cross-compiling `VI.EXE` (`apps/vi`) at image-build time | **auto-fetched** by `apps/vi/fetch_watcom.py` (pinned sha256, ~151 MB download one-time, cached in `apps/cache/watcom/`); works on macOS arm64 and Linux x64 |
 | [RGBDS](https://rgbds.gbdev.io/) | rebuilding the committed homebrew `.gb` carts (`apps/gb`) | canary/dev only — `make apps` skips the cart rebuild without it (`brew install rgbds`) |
-| [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen. The `msdos_sa1` and `freedos` ROMs additionally need **SA-1 support** — Mesen has it; a flash cart usually does not (see below) |
+| [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen. The `msdos_sa1` and `freedos` ROMs additionally need **SA-1 support** — Mesen has it, and so does the FXPak Pro; simpler flash carts may not (see below) |
 
 ## The ROM
 
@@ -115,12 +115,13 @@ What each one actually is:
   that spent plain cartridge SRAM as guest RAM and therefore had no B:,
   and it is what `make freedos` boots on too.
 
-  The catch is where it runs. Mesen runs it. A **flash cart only runs it
-  if that cart implements SA-1**, and most do not — notably the plain
-  FXPak/SD2SNES needs SA-1 support in its firmware/core, and without it
-  this ROM will not boot. Real hardware means a donor SA-1 cartridge.
-  `msdos.sfc` remains the ROM to flash if you want it to just work;
-  this one is for the emulator and for the people who own the board.
+  The catch is where it runs: **only where SA-1 is implemented**. Mesen
+  runs it, and so does the FXPak Pro / SD2SNES, whose firmware carries an
+  SA-1 core (it is how that cart runs Super Mario RPG and Kirby Super
+  Star). Simpler or older flash carts generally do not, and neither does
+  a plain repro board — for those, `msdos.sfc` remains the ROM to flash.
+  Note that none of this has been tried on real silicon yet; see
+  [FUTURE](FUTURE.md) if you own the hardware and fancy being the first.
   The header is written post-link by `snes/tools/mksa1hdr.py` (map mode
   `$23`, 256 KB SRAM), because wla-dx cannot emit an SA-1 header itself.
 
