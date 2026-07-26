@@ -384,8 +384,94 @@ mk_ptr2:
 ; EA arrives unfolded. See the norm_ptr comment below for the boot
 ; failure that hid behind getting this wrong.
 
+.IFDEF ELKS
+; ---- ELKS cart-ROM windows (sneslinux) --------------------------------
+; Two guest-physical windows read/execute straight from cart ROM:
+;   kernel  E0000-EFFFF (64 KB)  naive $8C:5000-$8D:4FFF -> banks EK_B0..+1
+;   ROMFS   80000-9FFFF (128 KB) naive $86:5000-$88:4FFF -> banks ER_B0..+3
+; A naive pointer is $7E5000+linear, so the windows live in naive banks
+; $86-$8D — well clear of the $80-$82 BW-RAM fold above, which is why the
+; two schemes compose: RAM folds first, ROM windows second, and neither
+; range can be mistaken for the other. The SA-1 Super MMC is programmed at
+; reset so that $80-$BF:8000 is the plain LoROM view of the low 2 MB
+; (EXB=$80, FXB=$81 — see Reset), so each 32 KB chunk of a window is one
+; LoROM bank's $8000-$FFFF half exactly as on a plain cart:
+;   F = linear - window_start; bank = B0 + (F>>15); off = $8000|(F&$7FFF)
+; EFOLD rewrites P (16-bit low word) / P+2 (bank byte) in place when the
+; pointer is inside a window, else leaves it naive (same contract as the
+; unbacked-bank rule above). Guest writes to a folded pointer hit the ROM
+; chip and drop — the read-only contract comes free from the hardware.
+; Enter/exit with 8-bit A (the caller just loaded the bank byte into A);
+; clobbers A only. A 16-bit access at a chunk's last byte still reads its
+; second byte naively (same class as the BIGMEM immediate-seam edge).
+.MACRO EFOLD ARGS P
+    cmp.b #$86              ; (.b everywhere: WLA sizes unsuffixed
+    bcc _efn\@              ; immediates 16-bit here and the CPU then
+    cmp.b #$8E              ; runs the spare byte as BRK — the classic)
+    bcs _efn\@              ; input is always a NAIVE pointer or sum —
+    cmp.b #$89              ; only $86:5000-$8D:4FFF can be window-resident
+    bcc _efr\@              ; $86-$88: ROMFS candidate
+    cmp.b #$8C
+    bcc _efn\@              ; $89-$8B: the unbacked A0000-DFFFF gap
+    rep #$20                ; --- kernel: Fhi = bank-$8C - (off<$5000)
+    lda P
+    cmp.w #$5000            ; C=0 when off < $5000 (borrow into Fhi)
+    sep #$20
+    lda P+2
+    sbc.b #$8C
+    bne _efn\@              ; 64 KB window: only Fhi=0 is inside
+    lda.b #EK_B0
+    bra _eff\@
+_efr\@:
+    rep #$20                ; --- ROMFS: Fhi = bank-$86 - (off<$5000)
+    lda P
+    cmp.w #$5000
+    sep #$20
+    lda P+2
+    sbc.b #$86
+    cmp.b #$02
+    bcs _efn\@              ; 128 KB window: Fhi 0/1 only
+    asl a                   ; C=0 here (A was 0/1)
+    adc.b #ER_B0
+_eff\@:                     ; A = target bank of the window's even chunk
+    pha
+    rep #$20
+    lda P
+    sec
+    sbc.w #$5000
+    sta P                   ; F low 16
+    asl a                   ; C = F bit 15 (odd chunk)
+    sep #$20
+    pla                     ; pla preserves carry
+    adc.b #$00
+    sta P+2
+    rep #$20
+    lda P
+    ora.w #$8000            ; $8000|(F&$7FFF) == F|$8000
+    sta P
+    sep #$20
+_efn\@:
+.ENDM
+
+; out-of-line EFOLD bodies (the inline form breaks branch distances in
+; the norm_* routines). Called with the bank byte in 8-bit A, pre-gated
+; to $86-$8D by the caller; X/Y preserved.
+elks_fold_mptr:
+    EFOLD mPTR
+    rts
+elks_fold_mptr2:
+    EFOLD mPTR2
+    rts
+elks_fold_sm:
+    EFOLD smSAV
+    rts
+.ENDIF
+
 ; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x): a
 ; base is one point, so only naive $80-$82 needs the -$40 fold.
+; (ELKS: ROM-window bases deliberately stay NAIVE — naive space is closed
+; under base+offset carries, the folded space is NOT. Window folding
+; happens once, at point of use, in norm_ptr/norm_ptr2/norm_fp.)
 norm_base_x:
     sep #$20
     lda.b 2,x
@@ -415,11 +501,21 @@ norm_ptr:
     cmp #$80
     bcc _np_ok              ; $7E/$7F WRAM or an already-folded $40-$43
     cmp #$83
-    bcs _np_ok              ; past 300 KB: unbacked, keep naive
+    bcs _np_hi              ; past 300 KB: unbacked (or an ELKS window)
     sec
     sbc #$40                ; $80-$82 -> BW-RAM $40-$42, offset kept
     sta mPTR+2
 _np_ok:
+    rep #$20
+    rts
+_np_hi:
+.IFDEF ELKS
+    cmp.b #$86              ; ELKS: kernel/ROMFS window -> cart ROM bank
+    bcc _np_ok              ; (cheap gate inline, fold out of line: the
+    cmp.b #$8E              ; full EFOLD body breaks the branch distances)
+    bcs _np_ok
+    jsr elks_fold_mptr
+.ENDIF
     rep #$20
     rts
 
@@ -429,11 +525,21 @@ norm_ptr2:
     cmp #$80
     bcc _np2_ok
     cmp #$83
-    bcs _np2_ok
+    bcs _np2_hi
     sec
     sbc #$40
     sta mPTR2+2
 _np2_ok:
+    rep #$20
+    rts
+_np2_hi:
+.IFDEF ELKS
+    cmp.b #$86              ; ELKS: kernel/ROMFS window -> cart ROM bank
+    bcc _np2_ok
+    cmp.b #$8E
+    bcs _np2_ok
+    jsr elks_fold_mptr2
+.ENDIF
     rep #$20
     rts
 
@@ -535,19 +641,35 @@ norm_fp:
     cmp #$80
     bcc _fp_ok
     cmp #$83
-    bcs _fp_ok
+    bcs _fp_hi
     sec
     sbc #$40
     sta smBNK
 _fp_ok:
     rep #$20
     rts
+_fp_hi:
+.IFDEF ELKS
+    cmp.b #$86              ; ELKS: XIP fetch from the kernel/ROMFS windows
+    bcc _fp_ok
+    cmp.b #$8E
+    bcs _fp_ok
+    jsr elks_fold_sm
+.ENDIF
+    rep #$20
+    rts
 
 ; keep bCS+Y inside a backed region across the WRAM->BW-RAM seam (see
-; the $70/$71 twin below for the full story). Only the WRAM top needs
-; the ebounce treatment here: an instruction STARTING in the last 5
-; bytes of $7F would spill operand bytes into $80:0000+ (system-area
-; mirror). BW bank tails are contiguous and need nothing.
+; the $70/$71 twin below for the full story). An instruction STARTING in
+; the last 5 bytes of $7F would spill operand bytes into $80:0000+
+; (system-area mirror), so those 8 bytes are bounced into ebounce and
+; this one instruction is fetched from there. BW bank tails are
+; contiguous and need nothing — but an ELKS ROM window's 32 KB chunk top
+; does: the next guest byte is the NEXT bank's ROM half ($8000), not its
+; low half. FreeDOS found the WRAM case: its kernel relocates init to
+; top-of-memory, parking code exactly across linear $1B000.
+;   $7F:FFFB+ -> next $40:0000 (BW-RAM head)
+;   ELKS $8E-$93:FFFB+ -> next bank+1:$8000 (ROM chunk top)
 fetch_rebase:
     tya
     clc
@@ -562,17 +684,46 @@ fetch_rebase:
     sep #$20
     lda smBNK
     cmp.b #$7F
+    beq _fr_wtop
+.IFDEF ELKS
+    cmp.b #EK_B0
+    bcc _fr_no8
+    cmp.b #$94
+    bcs _fr_no8
     rep #$20
-    bne _fr_fin
     lda smSAV
     cmp.w #$FFFB
-    bcc _fr_fin
-    ; bounce the WRAM tail + BW-RAM head into ebounce, fetch this one
-    ; instruction from there (next fetch_rebase re-derives from bCSc)
+    bcc _fr_no16
+    lda.w #$8000             ; next chunk = bank+1 : $8000
+    sta mOFF
+    sep #$20
+    lda smBNK
+    inc a
+    bra _fr_go8
+.ENDIF
+_fr_no8:                     ; no straddle: the bounce body below is too
+    rep #$20                 ; big for short branches, so exits funnel
+_fr_no16:                    ; through this near trampoline
+    brl _fr_fin
+_fr_wtop:
+    rep #$20
+    lda smSAV
+    cmp.w #$FFFB
+    bcc _fr_no16
+    stz mOFF                 ; next = BW-RAM head $40:0000
+    sep #$20
+    lda.b #$40
+_fr_go8:
+    sta tmp2                 ; next region's bank (8-bit store)
+    rep #$20
+    ; bounce the region tail + next region's head into ebounce, fetch
+    ; this one instruction from there (next fetch_rebase re-derives from
+    ; bCSc and leaves the bounce). Both cases straddle at $xx:FFFB+, so
+    ; n1 is always $10000 - smSAV.
     lda.w #$0000
     sec
     sbc smSAV
-    sta tmp1                 ; n1 = bytes left in WRAM ($10000 - smSAV)
+    sta tmp1                 ; n1 = bytes left in this region
     phy
     lda smSAV
     sta mPTR2                ; source = region-tail pointer
@@ -592,10 +743,11 @@ _fr_cp1:
     cpy tmp1
     bcc _fr_cp1
     sep #$20
-    lda.b #$40               ; source now = BW-RAM head $40:0000
+    lda tmp2                 ; source now = the next region's head
     sta mPTR2+2
     rep #$20
-    stz mPTR2
+    lda mOFF
+    sta mPTR2
     ldy #$0000
 _fr_cp2:
     lda [mPTR2],y
@@ -1253,6 +1405,19 @@ _ma_bank:                    ; bank carry: the WRAM top hops to BW-RAM;
     rep #$20
     rts
 _ma_nb1:
+.IFDEF ELKS
+    cmp.b #EK_B0             ; ROM-window chunk top: the next guest byte
+    bcc _ma_nb2              ; is the NEXT bank's ROM half, not its low
+    cmp.b #$94               ; half (same fold rule as EFOLD)
+    bcs _ma_nb2
+    inc a
+    sta mPTR+2
+    rep #$20
+    lda #$8000
+    sta mPTR
+    rts
+_ma_nb2:
+.ENDIF
     inc a
     sta mPTR+2
     rep #$20

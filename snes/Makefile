@@ -143,7 +143,8 @@ build/freedos$(OVSUF).sfc: build/freedos$(OVSUF).o build/freedos$(OVSUF).link to
 # build/elks_rom.bin + build/elks_romfs.bin are the kernel + ROMFS images:
 # auto-fetched from the official ELKS v0.9.1 release (GPL - fetched, not
 # committed) unless already present; a tuned local build (sneslinux tree)
-# can be copied over them and wins.
+# can be copied over them and wins.  Rides the same 300 KB SA-1 board as
+# msdos_sa1/freedos, so it takes the same post-link header fixup.
 elks: build/elks.sfc
 
 build/elks_rom.bin build/elks_romfs.bin:
@@ -152,8 +153,9 @@ build/elks_rom.bin build/elks_romfs.bin:
 build/elks.o: elks.asm $(DOSDEPS) build/elks_rom.bin build/elks_romfs.bin
 	$(AS) -o build/elks.o elks.asm
 
-build/elks.sfc: build/elks.o linkfile_elks
+build/elks.sfc: build/elks.o linkfile_elks tools/mksa1hdr.py
 	$(LD) -d -s -v -c linkfile_elks build/elks.sfc
+	python3 tools/mksa1hdr.py build/elks.sfc
 
 # --- MS-DOS boot floppy (A:).  msdos/msdos.img is a COMMITTED, free prebuilt
 # floppy: our IO.SYS + the MIT MSDOS.SYS/COMMAND.COM + AUTOEXEC.BAT.  The public

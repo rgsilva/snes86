@@ -2356,19 +2356,8 @@ _rst_bs:
     lda.b #$8C
     sta bCSc+2
     rep #$20
-    ; zero the SRAM guest RAM (banks $70/$71): Mesen powers it random and
-    ; persists .srm across runs; the C-core oracle (and a sane fresh
-    ; machine) sees zeros — keeps boots deterministic and lockstep exact
-    lda #$0000
-    ldx #$0000
-_rst_zsram:
-    sta.l $700000,x
-    sta.l $710000,x
-    inx
-    inx
-    cpx #$8000
-    bcc _rst_zsram
-.ENDIF
+.ENDIF                       ; (guest high RAM was zeroed above, with
+                             ; every other big-machine variant's)
 
 .IFDEF SA1
     ; -- B: disk on BW-RAM bank $43 (32 KB used, battery-backed via the
