@@ -70,13 +70,16 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
 
 ## Deep cuts
 
-- `make apps` — rebuilds **every app from source**: Turbo
+- `make apps` — FORCE-rebuilds **every app from source**: Turbo
   Pascal 3 is fetched (pinned + sha256-checked) and driven inside the
   emulator to recompile each `.pas`; `javac.exe` is rebuilt by the
-  Small-C toolchain the same way. Each tool verifies (VIEW by render
-  bit-compare, javac byte-identical) and reports PASS/FAIL. This is the
-  sources-don't-rot canary. Note it rebuilds the committed binaries in
-  place — `git checkout` restores them.
+  Small-C toolchain the same way. Each tool verifies and reports
+  PASS/FAIL: VIEW by bit-comparing its test-card render against a
+  pinned golden, javac by byte-comparing the DOS compiler's bytecode
+  against the clang build of the same source. This is the
+  sources-don't-rot canary — the regular image builds compile the same
+  binaries on demand (none are committed), but only `make apps` forces
+  them all and runs the verifies.
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)
   vectors, including undocumented opcodes and microcode-exact flags:
