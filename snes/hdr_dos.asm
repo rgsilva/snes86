@@ -20,6 +20,9 @@
 .IFDEF PCDOS
   NAME "SNES86 PC-DOS BOOT   "
 .ELSE
+.IFDEF SA1
+  NAME "SNES86 MS-DOS SA1300 "
+.ELSE
 .IFDEF BIGMEM
   NAME "SNES86 MS-DOS 172K   "
 .ELSE
@@ -28,15 +31,27 @@
 .ENDIF
 .ENDIF
 .ENDIF
+.ENDIF
   ;    "123456789012345678901"
   FASTROM
   LOROM
+.IFDEF SA1
+  CARTRIDGETYPE $35             ; SA-1 + RAM + battery (map-mode byte is
+                                ; patched to $23 post-link: wla has no
+                                ; SA-1 mode — see tools/mksa1hdr.py)
+.ELSE
   CARTRIDGETYPE $02             ; ROM + RAM + battery
+.ENDIF
   ROMSIZE $0C                   ; 4 MB
+.IFDEF SA1
+  SRAMSIZE $07                  ; wla caps the field at $07; mksa1hdr.py
+                                ; bumps it to $08 = 256 KB BW-RAM
+.ELSE
 .IFDEF BIGMEM
   SRAMSIZE $07                  ; 128 KB header -> 64 KB usable = guest hi RAM
 .ELSE
   SRAMSIZE $05                  ; 32 KB, the B: disk
+.ENDIF
 .ENDIF
   COUNTRY $01
   LICENSEECODE $00
