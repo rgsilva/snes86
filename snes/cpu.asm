@@ -3,8 +3,8 @@
 ; Execution model:
 ;   - native mode, A/X/Y 16-bit unless noted, D=$0000, DBR=$7E
 ;   - guest memory: linear 0x00000-0x1AFFF lives at $7E:5000-$7F:FFFF
-;     (108 KB of WRAM; BIGMEM adds 192 KB of SA-1 BW-RAM at $40-$42 for
-;     a 300 KB guest — see the region notes above norm_base_x)
+;     (108 KB of WRAM; the SA1 build adds 192 KB of SA-1 BW-RAM at
+;     $40-$42 for a 300 KB guest — region notes above norm_base_x)
 ;   - guest registers live in direct page, 8086 register order, gAX at
 ;     DP $00 so a ModRM reg field *2 IS the DP offset
 ;   - cached segment bases: bXX = GUEST_BASE + seg*16 = the 24-bit SNES
@@ -29,7 +29,7 @@
 .DEFINE VBOFS $1000          ; CGA adapter RAM, 16 KB at $7E:1000-$7E:4FFF
 .DEFINE VBUF  $7E1000        ; B000-BFFF segs map here (text page = offset 0;
                              ; text+graphics share it, like real CGA card RAM)
-.IFDEF BIGMEM
+.IFDEF SA1
 .DEFINE GUESTKB 300          ; M16: 108 KB WRAM + 192 KB SA-1 BW-RAM
 .ELSE
 .DEFINE GUESTKB 108
@@ -117,17 +117,17 @@ dMSB     dw
 dB2      dw
 dQ       dw
 dINT     dw
-smSAV    dw                  ; BIGMEM: seam-split save of mPTR low16
-smBNK    dw                  ; BIGMEM: seam-split save of mPTR bank + byte
+smSAV    dw                  ; SA1: seam-split save of mPTR low16
+smBNK    dw                  ; SA1: seam-split save of mPTR bank + byte
 gINHIB   dw                  ; 8086 one-instruction interrupt shadow: set by
                              ; sreg loads (MOV/POP sreg) and STI, consumed at
                              ; the next delivery point (run_slow / trace tick)
 bCSc     ds 3                ; NAIVE CS base (GUEST_BASE + CS*16, unfolded).
                              ; The rebased bCS is per-instruction scratch and
                              ; not a sound fold input; every fold (and every
-                             ; fetch_rebase, in ALL BIGMEM builds — a bounce
+                             ; fetch_rebase, on the SA1 machine — a bounce
                              ; rebase poisons bCS for one instruction) starts
-                             ; here. (BIGMEM machinery; harmless elsewhere.)
+                             ; here. (Big-machine state; harmless elsewhere.)
 ebounce  ds 8                ; fetch_rebase seam-bounce buffer (lives in the
                              ; DP page, NOT in adapter RAM: $7E4FE0 was the
                              ; top of the CGA buffer and graphics would have
@@ -153,7 +153,7 @@ step_lean:                   ; hot entry: Y = IP, maintained by handlers
     stz ovSEG                ; (every handler ends sty gIP with Y intact,
     stz pREP                 ; so the run loop skips the reload+halt check)
 step_fetch:
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr fetch_rebase         ; keep bCS+Y in a backed region across seams
 .ENDIF
     lda [bCS],y
@@ -177,7 +177,7 @@ step_next:
     beq _sn_slow
     stz ovSEG
     stz pREP
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr fetch_rebase         ; keep bCS+Y in a backed region across seams
 .ENDIF
     lda [bCS],y
@@ -305,7 +305,7 @@ _ea_fin_go:
     adc #0
     sta mPTR+2
     rep #$20
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr norm_ptr             ; fold the BW-RAM overflow (300 KB guest)
 .ENDIF
     stz mISREG
@@ -327,7 +327,7 @@ mk_ptr:
     adc #0
     sta mPTR+2
     rep #$20
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp norm_ptr
 .ENDIF
     rts
@@ -341,12 +341,11 @@ mk_ptr2:
     adc #0
     sta mPTR2+2
     rep #$20
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp norm_ptr2
 .ENDIF
     rts
 
-.IFDEF BIGMEM
 .IFDEF SA1
 ; ---- SA-1 region layer (M16) ----------------------------------------
 ; 300 KB guest: linear 0-108 KB lives in $7E5000-$7FFFFF as usual;
@@ -397,7 +396,7 @@ mk_ptr2:
 ; chip and drop — the read-only contract comes free from the hardware.
 ; Enter/exit with 8-bit A (the caller just loaded the bank byte into A);
 ; clobbers A only. A 16-bit access at a chunk's last byte still reads its
-; second byte naively (same class as the BIGMEM immediate-seam edge).
+; second byte naively (same class as the immediate-seam edge below).
 .MACRO EFOLD ARGS P
     cmp.b #$86              ; (.b everywhere: WLA sizes unsuffixed
     bcc _efn\@              ; immediates 16-bit here and the CPU then
@@ -772,8 +771,7 @@ _fr_fin:
     rep #$20
     rts
 
-.ENDIF                       ; BW-RAM region layer
-.ENDIF
+.ENDIF                       ; SA-1 BW-RAM region layer
 
 ; advance mPTR by one byte, carrying into the bank/region. `inc mPTR`
 ; alone wraps the low word at $FFFF WITHOUT touching the bank byte: a
@@ -782,7 +780,6 @@ _fr_fin:
 ; emulator's own direct page. Used by the m16:16 loaders (LES/LDS,
 ; CALL/JMP far m); 16-bit A in and out.
 mptr_adv1:
-.IFDEF BIGMEM
 .IFDEF SA1
     lda mPTR
     cmp #$FFFF
@@ -817,9 +814,8 @@ _ma_nb2:
     sta mPTR+2
     rep #$20
     rts
-.ENDIF                       ; SA1
 .ELSE
-    lda mPTR                 ; non-BIGMEM: only the $7E->$7F carry exists
+    lda mPTR                 ; non-SA1: only the $7E->$7F carry exists
     cmp #$FFFF
     beq _ma_bank
     inc mPTR
@@ -832,7 +828,7 @@ _ma_bank:
     sta mPTR+2
     rep #$20
     rts
-.ENDIF                       ; BIGMEM
+.ENDIF                       ; SA1
 
 ; --- mod=0
 _ea00_0:                     ; [BX+SI]
@@ -1015,7 +1011,7 @@ regoff8w:
 rm_read16:
     lda mISREG
     bne _rr16_reg
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp rd16m
 .ELSE
     lda [mPTR]
@@ -1029,7 +1025,7 @@ _rr16_reg:
 rm_write16:                  ; A = value
     ldx mISREG
     bne _rw16_reg
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp wr16m
 .ELSE
     sta [mPTR]
@@ -1785,7 +1781,7 @@ op89:                        ; MOV rm16, r16
     lda.b 0,x
     ldx mISREG
     bne _m89r
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m                ; seam-safe (word may straddle a region top)
 .ELSE
     sta [mPTR]
@@ -1817,7 +1813,7 @@ op8B:                        ; MOV r16, rm16
     jsr decode_modrm
     lda mISREG
     bne _m8Br
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; seam-safe
 .ELSE
     lda [mPTR]
@@ -1861,7 +1857,7 @@ opA1:                        ; MOV AX, [moffs16]
     jsr seg_src_x
     lda tmp0
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; seam-safe
 .ELSE
     lda [mPTR]
@@ -1892,7 +1888,7 @@ opA3:                        ; MOV [moffs16], AX
     lda tmp0
     jsr mk_ptr
     lda gAX
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m                ; seam-safe
 .ELSE
     sta [mPTR]
@@ -2076,7 +2072,7 @@ push_common:                 ; A = value to push
     ldx #30                  ; bSS
     jsr mk_ptr
     lda tmp0
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m                ; a stack word can straddle a region seam
 .ELSE
     sta [mPTR]
@@ -2091,7 +2087,7 @@ pop_common:                  ; A <- popped value
     inc a
     inc a
     sta gSP
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp rd16m
 .ELSE
     lda [mPTR]

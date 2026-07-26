@@ -5,7 +5,7 @@
 ; are in play. Same DOS/A:/C: machine and the same free C: as the
 ; public build (overlay content only via OVERLAYS=).
 ; Build: make msdos_sa1 -> build/msdos_sa1.sfc
-.DEFINE BIGMEM               ; big-guest machinery (seam-safe rd16m/wr16m,
-                             ; fetch_rebase, norm_* folds) ...
-.DEFINE SA1                  ; ... with its region layer swapped to BW-RAM
+.DEFINE SA1                  ; the big machine: BW-RAM region layer plus
+                             ; the seam-safe machinery it needs (rd16m/
+                             ; wr16m, fetch_rebase, the norm_* folds)
 .INCLUDE "dosboot.asm"

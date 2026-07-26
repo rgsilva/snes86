@@ -9,7 +9,5 @@
 ; console and keyboard just work. Build: make elks -> build/elks.sfc
 ; (needs build/elks_rom.bin + build/elks_romfs.bin — see sneslinux/PLAN.md).
 .DEFINE ELKS
-.DEFINE BIGMEM               ; big-guest machinery (seam-safe rd16m/wr16m,
-                             ; fetch_rebase, norm_* folds) ...
-.DEFINE SA1                  ; ... with its region layer on BW-RAM
+.DEFINE SA1
 .INCLUDE "dosboot.asm"

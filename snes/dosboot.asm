@@ -1032,9 +1032,9 @@ row_addr:                    ; A = row -> in-bank ($7E) addr VBOFS + row*160
 
 hle_int11:
 .IFDEF SA1
-    lda #$0061               ; SA1 keeps B:: guest high RAM is BW-RAM
-    sta gAX                  ; $40-$42 and the B: disk has bank $43 all
-    rts                      ; to itself
+    lda #$0061               ; the big machine keeps B:: guest high RAM
+    sta gAX                  ; is BW-RAM $40-$42 and the B: disk has
+    rts                      ; bank $43 all to itself
 .ELSE
     lda #$0061               ; two floppies (A: B:), 80x25 color; C: is
     sta gAX                  ; the fixed disk (INT 13h DL=80h)
@@ -1042,7 +1042,7 @@ hle_int11:
 .ENDIF
 
 hle_int12:
-    lda #GUESTKB             ; KB of guest RAM (300 in the BIGMEM variant)
+    lda #GUESTKB             ; KB of guest RAM (300 on the SA-1 board)
     sta gAX
     rts
 
@@ -1441,8 +1441,8 @@ _h13_sgo:
     adc #$8000
     sta mPTR2
 .ENDIF
-.IFDEF BIGMEM
-    jsr bigmem_seccopy       ; SRAM isn't reachable by the WRAM DMA; copy
+.IFDEF SA1
+    jsr sa1_seccopy          ; BW-RAM isn't reachable by the WRAM DMA; copy
     jmp _h13_nc              ; the sector byte-wise, seam-aware (also
 .ENDIF                       ; advances mPTR across region boundaries)
     ; DMA the 512-byte sector ROM(mPTR2) -> WRAM(mPTR) via the $2180
@@ -1490,12 +1490,12 @@ _h13_secd:
     ply
     jmp _h13_ok
 
-.IFDEF BIGMEM
-; --- BIGMEM: copy 512 bytes ROM(mPTR2) -> guest(mPTR), one byte at a
+.IFDEF SA1
+; --- big machine: copy 512 bytes ROM(mPTR2) -> guest(mPTR), one byte at a
 ; time, remapping mPTR at the WRAM->BW-RAM seam ($7F:FFFF -> $40:0000).
 ; The dest may be WRAM, BW-RAM, or straddle the seam. mPTR ends past the
 ; sector; mPTR2 is recomputed by the caller so trashing it is fine.
-bigmem_seccopy:
+sa1_seccopy:
     ldx #512
 _bsc:
     sep #$20
@@ -1619,7 +1619,7 @@ _h13_vsec:
     ; STRADDLE the WRAM -> BW-RAM seam. Plain [mPTR],y indexing walks
     ; right past that seam into $80:xxxx — the system-area mirror, i.e.
     ; the emulator's own low WRAM — so copy byte-wise through the
-    ; seam-aware gadv_ptr, exactly as bigmem_seccopy does for C:.
+    ; seam-aware gadv_ptr, exactly as sa1_seccopy does for C:.
     ; gadv_ptr leaves mPTR past the sector, so the +512 below is not
     ; needed on this path. (B: is one 64 KB bank and offsets stay under
     ; $8000, so the source `inc mPTR2` can never cross a bank.)
@@ -2257,16 +2257,16 @@ _rst_bs:
     sta bCS
     sta bSS
     sta bDS
-.IFDEF BIGMEM
+.IFDEF SA1
     sta bCSc                 ; naive CS base: fetch_rebase derives from
-.ENDIF                       ; this in every BIGMEM build
+.ENDIF                       ; this on the SA-1 machine
     sep #$20
     lda.b #$7E
     sta bES+2
     sta bCS+2
     sta bSS+2
     sta bDS+2
-.IFDEF BIGMEM
+.IFDEF SA1
     sta bCSc+2
 .ENDIF
     rep #$20
