@@ -43,11 +43,13 @@ Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are
 The public ROM ships only free software - all of it ours, public domain or MIT:
 
 * A simple nano-like text editor
+* A VI port (yes!)
 * A terrible image viewer
 * A very simple compiler and runtime for Java applications
 * A MIDI player that uses the SNES APU for playing songs
 * A very simple Sokoban game
-* Very simple benchmark utilities
+* Some very simple benchmark utilities
+* A very slow and crappy Gameboy emulator
 * A C compiler
 
 For all of the apps, you can check details and examples in our [apps/README](apps/README.md). All tools are available the in MS-DOS image. The big image also have them, but they won't have a writeable disk for you to use them, so usability is limited.
@@ -67,6 +69,8 @@ MS-DOS 2.0 is MIT-licensed ([microsoft/MS-DOS](https://github.com/microsoft/MS-D
 snes86 was built for fun and is provided **AS IS** - no warranty of any kind, express or implied; no guarantee it is correct, complete, or fit for any purpose. If you flash it, run it, or build on top of it, whatever happens — to your cartridge, your console, your save files, or your weekend — is on you.
 
 This project was built heavily on top of AI to simplify coding and make things move faster. As a software engineer myself, I have my own opinions on the matter, but this saved me months (possibly years) of working on a _fun vacation project_. That said, you can expect the classic crappy/weird coding from AI itself, and that's ok.
+
+> PS: this was also a great experiment of how much crazy stuff I can throw at AI... and turns out it's _a lot_.
 
 As a final disclaimer, this has yet to be tested on real hardware. This was current testing in Mesen and snes9x emulators as unfortunately my console is out for repairs (yey). Once this has been tested on the real deal, this will be definitely updated. Feel free to test it yourself in your console though, just don't blame me if it catches on fire!
 
