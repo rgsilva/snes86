@@ -132,8 +132,9 @@ build/msdos_sa1$(OVSUF).sfc: build/msdos_sa1$(OVSUF).o build/msdos_sa1$(OVSUF).l
 # --- FreeDOS 1.3: GPL, fetched at build time like ELKS (freedos/mkfreedos.py
 # downloads the official FD 1.3 floppy release, extracts KERNEL.SYS + FreeCOM
 # and assembles a 360 KB boot floppy — nothing copyrighted-in-the-bad-way is
-# committed).  Runs on the BIGMEM machine: FreeDOS needs the full 172 KB
-# (108 KB dies in kernel init).  Same free C: as the public build.
+# committed).  Runs on the SA-1 machine: FreeDOS needs a big guest (108 KB
+# dies in kernel init), so it rides the same 300 KB board as msdos_sa1 and
+# gets B: for free.  Same free C: as the public build.
 freedos: build/freedos$(OVSUF).sfc
 
 build/freedos_a.img: ../freedos/mkfreedos.py
@@ -142,8 +143,9 @@ build/freedos_a.img: ../freedos/mkfreedos.py
 build/freedos$(OVSUF).o: freedos.asm $(DOSDEPS) build/freedos_a.img $(HDC)
 	$(AS) $(OVDEF) -o $@ freedos.asm
 
-build/freedos$(OVSUF).sfc: build/freedos$(OVSUF).o build/freedos$(OVSUF).link
+build/freedos$(OVSUF).sfc: build/freedos$(OVSUF).o build/freedos$(OVSUF).link tools/mksa1hdr.py
 	$(LD) -d -s -v -c build/freedos$(OVSUF).link $@
+	python3 tools/mksa1hdr.py $@
 
 # sneslinux: ELKS ROM-XIP variant (not a DOS boot, hence no dosboot_ prefix).
 # build/elks_rom.bin + build/elks_romfs.bin are the kernel + ROMFS images:

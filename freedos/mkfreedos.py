@@ -10,9 +10,10 @@ its geometry from the BPB, so the 720 KB sector-0 code boots the 360 KB
 layout after the BPB fields are re-patched; KERNEL.SYS is still placed
 first and contiguous, belt and braces.
 
-Why a floppy at all: FreeDOS needs the BIGMEM machine's full 172 KB (the
-kernel dies during init at 108 KB) and boots to FreeCOM at exactly 172 KB
-— measured on runpc before this target existed.
+Why a floppy at all: FreeDOS needs a big machine (the kernel dies during
+init at 108 KB and boots to FreeCOM at exactly 172 KB — measured on runpc
+before this target existed), so `make freedos` targets the 300 KB SA-1
+board rather than the public ROM's 108 KB one.
 
 Usage: mkfreedos.py <output.img>     (cache lands in freedos/cache/)
 """
@@ -181,7 +182,7 @@ def build(bootsec, files, out):
 # ----------------------------------------------------------------- main
 
 FDCONFIG = (b"!LASTDRIVE=D\r\n"
-            b"!BUFFERS=15\r\n"                  # trimmed for the 172K box
+            b"!BUFFERS=15\r\n"                  # trimmed, from the 172K days
             b"!FILES=20\r\n"
             b"SHELL=A:\\COMMAND.COM A:\\ /E:512 /P=A:\\AUTOEXEC.BAT\r\n")
 

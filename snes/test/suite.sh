@@ -106,7 +106,7 @@ fi
 echo "== host smoke (FreeDOS boots to FreeCOM on runpc) =="
 make -s freedos >/dev/null || { echo "FAIL freedos-build"; FAIL=1; }
 if printf '' \
-     | ../core-c/build/runpc -m 172 -l 100000000 \
+     | ../core-c/build/runpc -m 300 -l 100000000 \
          -d build/hd_free.img build/freedos_a.img 2>/dev/null \
      | grep -q "FreeDOS on a SNES"; then
   echo "PASS freedos-host"
@@ -359,9 +359,10 @@ else
   # minutes; Mesen's default 100 s testrunner limit would kill it).
   [ -z "$QUICK" ] && mesen_leg "$(pwd)/build/elks.sfc" t_elks --timeout=1500
 
-  # FreeDOS end-to-end (own ROM, own timeout: BIGMEM kernel init is the
+  # FreeDOS end-to-end (own ROM, own timeout: the kernel init is the
   # slowest boot in the fleet — and it executes code straight across the
-  # WRAM->SRAM seam, which regression-guards the fetch bounce).
+  # WRAM->BW-RAM seam, which regression-guards the fetch bounce). Own
+  # .srm namespace, and the leg never touches B:, so freedos.srm survives.
   [ -z "$QUICK" ] && mesen_leg "$(pwd)/build/freedos.sfc" t_fdos --timeout=1800
 
   # SA-1 variant end-to-end (own ROM, own .srm namespace — these legs
