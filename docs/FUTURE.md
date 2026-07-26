@@ -337,16 +337,17 @@ headless minutes (or hours) to paint one frame. Under that bar:
   Text-only, so CGA/MDA and RAM are fine. Interactive speed is glacial (~1/100
   real Z80), so it's a "boots and runs a command" trophy, not a daily driver.
 
-- **Game Boy — landed, then graduated.** The payoff happened here: the
+- **Game Boy — landed, graduated, shipped back home.** The payoff happened here: the
   **Nintendo® boot logo** and the **Tetris® title screen**, rendered by
   our from-scratch real-mode SM83 core inside DOS inside the SNES — the
   shots are in the [compatibility gallery](COMPATIBILITY.md#gallery).
-  The emulator now lives as its own project,
-  [gameboy8086](https://github.com/rgsilva/gameboy8086): pure 8086
+  The emulator's home is its own project,
+  [gb8086](https://github.com/rgsilva/gb8086): pure 8086
   assembly, Blargg cpu_instrs 11/11 (verified independently under
-  DOSBox-X locked to a real 8086 CPU model), dmg-acid2 ~90%. It still
-  runs on snes86 the bring-your-own-software way: build `GB.COM` there
-  and drop it plus a 32 KB cart into `userware/`.
+  DOSBox-X locked to a real 8086 CPU model), dmg-acid2 ~90% — and it
+  ships here again as [apps/gb](../apps/gb/README.md) → `C:\GB`, with
+  homebrew test carts. Game ROMs stay bring-your-own: a 32 KB no-MBC
+  cart via `user/` or a `B:` disk.
 
 Noted, but not greenlit:
 

@@ -302,6 +302,41 @@ else
   echo "SKIP jc-desktop (no JDK on host)"
 fi
 
+echo "== host smoke (GB.COM runs a Game Boy: homebrew cart + Blargg) =="
+# GB.COM ships on C:\GB with its homebrew carts. Leg 1 is the shipped
+# experience: the smoke cart prints over the GB serial port (-t wires
+# it to the console) and STOPs — a clean exit back to DOS. Leg 2 runs
+# Blargg's "06-ld r,r" cpu_instrs ROM (fetched + cached with a pinned
+# sha256, never committed; upstream GB.COM passes all 11 — one ROM is
+# the suite-budget compromise) from a staged work floppy. Blargg ROMs
+# spin forever after the verdict, so that run rides the -l limit.
+printf 'cd gb\rgb -t smoke.gb\r' \
+  | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd_free.img build/msdos_a.img 2>/dev/null \
+  | tr -d '\r' > build/gb_host.log
+if python3 ../apps/gb/fetch_blargg.py >/dev/null 2>&1; then
+  python3 - <<'PY'
+import sys
+sys.path.insert(0, "../apps"); import fatimg
+f = fatimg.Floppy("build/msdos_a.img")
+f.add("GB.COM", open("../apps/gb/gb.com", "rb").read())
+f.add("T06.GB", open("../apps/cache/blargg06.gb", "rb").read())
+f.save("build/gbtest.img")
+PY
+  printf 'a:\rgb -t t06.gb\r' \
+    | ../core-c/build/runpc -m 108 -l 3000000000 -d build/hd_free.img \
+        build/gbtest.img 2>/dev/null \
+    | tr -d '\r' >> build/gb_host.log
+else
+  echo "gb-host: Blargg fetch failed (offline?)" >> build/gb_host.log
+fi
+if grep -q "SM83 ALIVE C=1" build/gb_host.log \
+   && grep -q "^Passed" build/gb_host.log; then
+  echo "PASS gb-host"
+else
+  echo "FAIL gb-host"
+  FAIL=1
+fi
+
 # --- Mesen legs: generic tests drive the PUBLIC ROM ---
 if [ -z "$HAVE_MESEN" ]; then
   echo "SKIP Mesen legs + parity (no Mesen at $MESEN) — the 65816 core was NOT exercised"

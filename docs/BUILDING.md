@@ -8,6 +8,7 @@
 | Python 3 | build-time asset generation + the test harness | standard library only — no `pip install` needed |
 | a C compiler (`cc`, C11) | the `core-c` reference core + `runpc` | any clang/gcc |
 | [JWasm](https://github.com/JWasm/JWasm) | rebuilding the MS-DOS `IO.SYS` | only if you change `msdos/io.asm`; build it and symlink as `msdos/jwasm` (see [MS-DOS toolchain](#the-ms-dos-toolchain-self-hosted)) |
+| nasm + [RGBDS](https://rgbds.gbdev.io/) | rebuilding `GB.COM` + its homebrew carts (`apps/gb`) | only for `make apps` / `make recompile` there — the committed binaries stage without them (`brew install nasm rgbds`) |
 | [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen |
 
 ## The ROM

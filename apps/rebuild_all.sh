@@ -1,11 +1,12 @@
 #!/bin/sh
 # `make apps` (root): the sources-don't-rot canary. No app binaries are
 # committed except vi.exe (its Watcom toolchain fetch is too heavy for
-# image builds) — every image build compiles the rest from source (see
-# the per-tool Makefiles) — so this script FORCE-rebuilds every
-# on-machine tool (TP3 inside runpc via ../tpcompile.sh, TURBO.COM
-# fetched + cached by fetch_tp3.py; javac.exe via the Small-C kit
-# committed in apps/cc; vi via fetch_watcom.py) and verifies:
+# image builds) and gb.com + its carts (nasm/RGBDS aren't build
+# prereqs) — every image build compiles the rest from source (see the
+# per-tool Makefiles) — so this script FORCE-rebuilds every on-machine
+# tool (TP3 inside runpc via ../tpcompile.sh, TURBO.COM fetched +
+# cached by fetch_tp3.py; javac.exe via the Small-C kit committed in
+# apps/cc; vi via fetch_watcom.py; gb via host nasm/RGBDS) and verifies:
 #
 #   * every TP3 tool must recompile cleanly (non-empty artifact);
 #     behavioral checks live in `make test` (ted-host, java-host, ...)
@@ -74,6 +75,21 @@ if step vi "$W/vi.log" make -s -C vi recompile \
   echo "PASS vi (byte-identical)"
 else
   echo "FAIL vi (rebuild differs from committed vi.exe)"; FAIL=1
+fi
+
+# --- GB (committed like vi — nasm + RGBDS aren't build prereqs): host
+# nasm (mksm83.py generates the SM83 handlers) is deterministic, so the
+# rebuilt GB.COM must be byte-identical; the RGBDS homebrew carts are
+# checked non-empty (RGBDS versions may stamp differently) ---
+if command -v nasm >/dev/null 2>&1 && command -v rgbasm >/dev/null 2>&1; then
+  cp gb/gb.com "$W/gb.committed"
+  ok=1
+  step gb "$W/gb.log" make -s -C gb recompile || ok=
+  cmp -s gb/gb.com "$W/gb.committed" || ok=
+  for a in gb/smoke.gb gb/gfx.gb gb/joy.gb; do [ -s "$a" ] || ok=; done
+  if [ -n "$ok" ]; then echo "PASS gb (GB.COM byte-identical)"; else echo "FAIL gb"; FAIL=1; fi
+else
+  echo "SKIP gb (needs nasm + RGBDS: brew install nasm rgbds)"
 fi
 
 # everything is freshly staged now; pack the C: the verifies run against
