@@ -69,8 +69,8 @@ by a second flag. Its original region layer added 64 KB of plain cartridge SRAM
 (banks `$70`/`$71`) above WRAM for a 172 KB guest, and that layer is what the ELKS
 ROM still runs on (see below). No DOS variant uses it any more.
 
-The SA-1 variant (`make msdos_sa1`, and `make freedos`) is `BIGMEM` plus `SA1`:
-the same machinery with a different
+The SA-1 variant (`make msdos_sa1`, and `make freedos`) is `BIGMEM` plus `SA1` —
+the same machinery aimed at a different
 region layer: guest RAM above 108 KB is the SA-1 board's 256 KB of BW-RAM,
 banks `$40`–`$42` (the fourth, `$43`, stays the B: disk), for a 300 KB guest.
 The board is a RAM expander and nothing else — the SA-1 CPU is never released
