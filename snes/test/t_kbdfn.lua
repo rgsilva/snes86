@@ -2,6 +2,10 @@
 -- labels with the shifted glyphs (and reverts on unlatch AND on the
 -- auto-unlatch after an emit), and the new F1-F10 row injects scancode-
 -- only INT16 pairs (AH<-3B..44, AL<-0) that the guest consumes.
+-- Third leg: F11 end-to-end through the EXTENDED API — DEBUG pokes
+-- "mov ah,10 / int 16 / int 3" into memory and runs it (blocking in
+-- INT 16h AH=10h), then the on-screen F11 key is pressed; the int 3
+-- register dump must show AX=8500.
 --
 -- Label proof: the kbd tilemaps live at VRAM words $0800 (BG2, even
 -- cols) / $0C00 (BG1, odd cols), tile = ascii*2 (mask $3FF: palette
@@ -21,6 +25,15 @@ local function expect(name, want1, want2, wantq)
   if a ~= want1 or b ~= want2 or c ~= wantq then
     fails[#fails + 1] = string.format("%s: got %03x/%03x/%03x", name, a, b, c)
   end
+end
+local t                      -- inject tail: picked up from the live ring
+local function inject(keys)  -- so it appends after earlier UI keypresses
+  if not t then t = emu.read16(0x7E00D8, emu.memType.snesMemory) end
+  for i = 1, #keys do
+    emu.write16(0x7E0700 + t, 0x1000 + keys:byte(i), emu.memType.snesMemory)
+    t = (t + 2) % 64
+  end
+  emu.write16(0x7E00D8, t, emu.memType.snesMemory)
 end
 local function ringhas(w)
   for i = 0, 31 do
@@ -67,9 +80,23 @@ emu.addEventCallback(function()
   if frame == 2020 then
     if not ringhas(0x3B00) then fails[#fails + 1] = "no 3B00 (F1) in ring" end
     local h = emu.read16(0x7E00D6, emu.memType.snesMemory)
-    local t = emu.read16(0x7E00D8, emu.memType.snesMemory)
-    if h ~= t then fails[#fails + 1] = "guest left ring head!=tail" end
+    local tl = emu.read16(0x7E00D8, emu.memType.snesMemory)
+    if h ~= tl then fails[#fails + 1] = "guest left ring head!=tail" end
     shot("t_kbdfn_fkeys.png")
+  end
+  -- F11/AH=10h leg: park DEBUG in an extended read, then press F11
+  -- (leading \r flushes the '!' the shift leg left on the command line:
+  -- one harmless "Bad command", COMMAND v2.02 doesn't do backspace)
+  if frame == 2050 then inject("\rdebug\r") end
+  if frame == 2150 then inject("e 100 b4 10 cd 16 cc\r") end
+  if frame == 2250 then inject("g\r") end
+  if frame == 2700 then
+    local sel = emu.read16(0x7E00E0, emu.memType.snesMemory)
+    if sel ~= 64 then fails[#fails + 1] = "kSEL=" .. sel .. " (want 64=F11)" end
+  end
+  if frame == 2850 then
+    if not bufhas("AX=8500") then fails[#fails + 1] = "no AX=8500 (F11 via AH=10h)" end
+    shot("t_kbdfn_f11.png")
     if #fails == 0 then print("RESULT PASS t_kbdfn")
     else print("RESULT FAIL t_kbdfn (" .. table.concat(fails, "; ") .. ")") end
     emu.stop(0)
@@ -92,4 +119,8 @@ emu.addEventCallback(function()
   press(1860, "right")       -- SPACE -> TAB
   press(1900, "right")       -- TAB -> F1
   press(1950, "a")           -- press F1: ring gets 3B00
+  for i = 0, 9 do            -- F1 -> F11 while DEBUG waits in AH=10h
+    press(2320 + i * 40, "right")
+  end
+  press(2740, "a")           -- press F11: AH=10h returns 8500, int 3 fires
 end, emu.eventType.inputPolled)

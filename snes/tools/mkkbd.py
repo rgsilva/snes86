@@ -32,10 +32,11 @@ ROWS = [
     [(c, ord(c), ord(c.upper() if c.isalpha() else SH.get(c, c)), SCAN[c])
      for c in "zxcvbnm,./"] + [("SHIFT", 0xFF, 0xFF, 0), ("CTRL", 0xFE, 0xFE, 0)],
     # F1-F10: BIOS scancodes 3B-44, ASCII 0 (like the arrow keys).
-    # F11/F12 (0x85/0x86) need the extended INT 16h API (AH=10h/11h),
-    # which the HLE BIOS doesn't implement — deliberately absent.
+    # F11/F12 (0x85/0x86) are extended-API keys (INT 16h AH=10h/11h);
+    # hle_int16 aliases those onto AH=0/1, so they ride the same ring.
     [("SPACE", 32, 32, 0x39), ("TAB", 9, 9, 0x0F)]
-    + [("F%d" % i, 0, 0, 0x3A + i) for i in range(1, 11)],
+    + [("F%d" % i, 0, 0, 0x3A + i) for i in range(1, 11)]
+    + [("F11", 0, 0, 0x85), ("F12", 0, 0, 0x86)],
 ]
 
 rows_txt = []
