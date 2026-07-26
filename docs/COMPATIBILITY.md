@@ -67,6 +67,8 @@ All captured from snes86 running in Mesen.
 
 > 🎬 The MIDI synth is best heard, not screenshotted — there's a short clip of the demo
 > tune playing in [The SNES is your sound card](#the-snes-is-your-sound-card) below.
+>
+> 🎬 And the whole dev-workstation story in one take: [boot MS-DOS, write HELLO.C in vi, build it with Small-C, run it](assets/devstation.mp4) — the ~13-minute compile compressed into a short timelapse, everything on the SNES.
 
 ## Tested software
 
