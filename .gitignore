@@ -24,7 +24,8 @@ apps/*/hostbuild/
 apps/cache/
 
 # apps: the on-machine binaries are BUILD PRODUCTS, rebuilt from source
-# by every image build (TP3 / Small-C inside runpc) — never committed.
+# by every image build (TP3 / Small-C inside runpc; host nasm for
+# gb.com) — never committed.
 # (apps/cc/*.EXE is different: a vendored public-domain toolchain.)
 apps/view/view.com
 apps/ted/ted.com
@@ -36,6 +37,7 @@ apps/bench/hello.com
 apps/bench/bench.com
 apps/java/java.com
 apps/java/javac.exe
+apps/gb/gb.com
 
 # user/ -> C:\USER: bring-your-own software, never committed
 user/*
