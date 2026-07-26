@@ -1036,19 +1036,13 @@ hle_int11:
     sta gAX                  ; $40-$42 and the B: disk has bank $43 all
     rts                      ; to itself
 .ELSE
-.IFDEF BIGMEM
-    lda #$0021               ; ONE floppy: under BIGMEM the SRAM banks are
-    sta gAX                  ; guest RAM above 108 KB, so the B: vdisk is
-    rts                      ; gone (a B: access would read guest memory
-.ELSE                        ; as a FAT and a write would corrupt it)
     lda #$0061               ; two floppies (A: B:), 80x25 color; C: is
     sta gAX                  ; the fixed disk (INT 13h DL=80h)
     rts
 .ENDIF
-.ENDIF
 
 hle_int12:
-    lda #GUESTKB             ; KB of guest RAM (172 in the BIGMEM variant)
+    lda #GUESTKB             ; KB of guest RAM (300 in the BIGMEM variant)
     sta gAX
     rts
 
@@ -1363,18 +1357,11 @@ _h13_al0:
     lda #$0001               ; invalid request
     jmp _h13_err
 .ELSE
-.IFDEF BIGMEM
-_h13_al0:                    ; BIGMEM: no B: — the SRAM banks are guest
-    ply                      ; RAM above 108 KB (see hle_int11)
-    lda #$0001               ; invalid request
-    jmp _h13_err
-.ELSE
     jmp _h13_vdisk           ; DL=1 -> B: VRAM disk
 _h13_al0:
     ply
     lda #$0001               ; invalid request
     jmp _h13_err
-.ENDIF
 .ENDIF
 _h13_romA:
     lda #$0082               ; A: ROM disk, banks $82+
@@ -1505,10 +1492,9 @@ _h13_secd:
 
 .IFDEF BIGMEM
 ; --- BIGMEM: copy 512 bytes ROM(mPTR2) -> guest(mPTR), one byte at a
-; time, remapping mPTR at each region seam ($7F:FFFF->$70:0000 WRAM->
-; SRAM page 0, $70:7FFF->$71:0000 page 0->page 1). The dest may be
-; WRAM, SRAM, or straddle a seam. mPTR ends past the sector; mPTR2 is
-; recomputed by the caller so trashing it is fine.
+; time, remapping mPTR at the WRAM->BW-RAM seam ($7F:FFFF -> $40:0000).
+; The dest may be WRAM, BW-RAM, or straddle the seam. mPTR ends past the
+; sector; mPTR2 is recomputed by the caller so trashing it is fine.
 bigmem_seccopy:
     ldx #512
 _bsc:
@@ -1522,11 +1508,10 @@ _bsc:
     bne _bsc
     rts
 
-; advance mPTR by one guest byte, folding region boundaries into the
-; real WRAM/SRAM banks (A/X/Y preserved except A).
-.IFDEF SA1
-gadv_ptr:                    ; SA1: the only fold is WRAM top -> BW-RAM
-    rep #$20                 ; $40; BW banks $40-$42 carry natively
+; advance mPTR by one guest byte, folding the region boundary into the
+; real WRAM/BW-RAM banks (A/X/Y preserved except A).
+gadv_ptr:                    ; the only fold is WRAM top -> BW-RAM $40;
+    rep #$20                 ; BW banks $40-$42 carry natively
     inc mPTR
     beq _ga_wrap
     rts
@@ -1541,46 +1526,6 @@ _ga_wrap:
 _ga_wd:
     rep #$20
     rts
-.ELSE
-gadv_ptr:
-    rep #$20
-    inc mPTR
-    beq _ga_wrap             ; low16 $FFFF -> 0: bank changed (WRAM top)
-    lda mPTR
-    cmp #$8000
-    beq _ga_8000             ; possible SRAM page boundary
-    rts
-_ga_wrap:
-    sep #$20
-    inc mPTR+2
-    lda mPTR+2
-    cmp #$80                 ; $7F -> $80: WRAM end -> SRAM page 0
-    bne _ga_wd
-    lda #$70
-    sta mPTR+2
-_ga_wd:
-    rep #$20
-    rts
-_ga_8000:
-    sep #$20
-    lda mPTR+2
-    cmp #$70                 ; page 0 end -> page 1 start
-    beq _ga_71
-    cmp #$71                 ; page 1 end -> wrap page 0 (past 172 KB)
-    bne _ga_8d
-    lda #$70
-    bra _ga_8w
-_ga_71:
-    lda #$71
-_ga_8w:
-    sta mPTR+2
-    rep #$20
-    stz mPTR
-    rts
-_ga_8d:
-    rep #$20
-    rts
-.ENDIF                       ; SA1
 .ENDIF
 
     ; ---- C: fixed disk (DL=80h): 107 cyl x 4 heads x 17 spt, ROM banks
@@ -1660,7 +1605,7 @@ _h13_vsec:
 .IFDEF SA1
     lda.b #$43               ; B: disk = BW-RAM bank $43
 .ELSE
-    lda.b #$70               ; SRAM bank
+    lda.b #$70               ; plain-cart SRAM bank
 .ENDIF
     sta mPTR2+2
     rep #$20
@@ -2243,18 +2188,6 @@ _rst_zs:
     inx
     inx
     bne _rst_zs
-.ELSE
-.IFDEF BIGMEM
-    ; -- guest high RAM (108-172 KB) is the 64 KB cart SRAM, banks $70/$71
-    ldx #$0000
-_rst_zs:
-    sta.l $700000,x
-    sta.l $710000,x
-    inx
-    inx
-    cpx #$8000
-    bcc _rst_zs
-.ENDIF
 .ENDIF
 
     ; -- IVT: all 256 vectors -> 0000:04F0 (IRET stub in BDA scratch,
@@ -2382,11 +2315,9 @@ _rst_fmt:
     bcc _rst_fmt
 _rst_fmtd:
 .ELSE
-.IFNDEF BIGMEM
     ; -- B: SRAM disk ($70:0000, 32 KB, battery-backed). Format from the
     ; ROM template ONLY if the boot signature is missing — a formatted
     ; disk means the battery kept the user's files: preserve them.
-    ; (In the BIGMEM variant the SRAM is guest high RAM, not B:.)
     lda.l $7001FE
     cmp #$AA55
     bne _rst_dofmt
@@ -2404,7 +2335,6 @@ _rst_fmt:
     cpx #4608
     bcc _rst_fmt
 _rst_fmtd:
-.ENDIF
 .ENDIF
 
     ; -- on-screen keyboard: draw into its tilemaps, set up the HDMA
@@ -5025,11 +4955,7 @@ boot_banner:
 .IFDEF SA1
     .db "snes86: 8086 core up, 300KB guest RAM (SA-1)", $0D, $0A
 .ELSE
-.IFDEF BIGMEM
-    .db "snes86: 8086 core up, 172KB guest RAM", $0D, $0A
-.ELSE
     .db "snes86: 8086 core up, 108KB guest RAM", $0D, $0A
-.ENDIF
 .ENDIF
 .IFDEF PCDOS
     .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0

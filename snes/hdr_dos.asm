@@ -23,11 +23,7 @@
 .IFDEF SA1
   NAME "SNES86 MS-DOS SA1300 "
 .ELSE
-.IFDEF BIGMEM
-  NAME "SNES86 MS-DOS 172K   "
-.ELSE
   NAME "SNES86 MS-DOS BOOT   "
-.ENDIF
 .ENDIF
 .ENDIF
 .ENDIF
@@ -47,11 +43,7 @@
   SRAMSIZE $07                  ; wla caps the field at $07; mksa1hdr.py
                                 ; bumps it to $08 = 256 KB BW-RAM
 .ELSE
-.IFDEF BIGMEM
-  SRAMSIZE $07                  ; 128 KB header -> 64 KB usable = guest hi RAM
-.ELSE
   SRAMSIZE $05                  ; 32 KB, the B: disk
-.ENDIF
 .ENDIF
   COUNTRY $01
   LICENSEECODE $00
