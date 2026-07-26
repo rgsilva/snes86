@@ -188,6 +188,40 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (TED direct Ctrl-key bindings on runpc) =="
+# Keyboard-only path: ^S save, ^A save-as, ^L/^O load, ^F search,
+# ^G goto, ^U undo, ^Q quit — no Esc-menu trips. Three sessions against
+# one fresh image; each marker letter lands only if the binding that
+# positioned/saved it worked. (F-keys can't ride runpc stdin — AH comes
+# from AL there — so the F-key aliases are t_ted.lua's job under Mesen.)
+python3 tools/mktedimg.py >/dev/null
+# 1: ^G 1, ^F two -> X before the match, ^S, ^A -> u.txt, ^Q
+printf 'ted t.txt\rline one\rline two\rline three\0071\r\006two\rX\023\001\010\010\010\010\010u.txt\r\021\r' \
+  | ../core-c/build/runpc -m 108 -l 900000000 -w build/tedtest.img >/dev/null 2>&1
+# 2: ^G 2 -> Q, ^G 3 -> AB then ^U undoes it, ^S, ^Q
+printf 'ted t.txt\r\0072\rQ\0073\rAB\025\023\021\r' \
+  | ../core-c/build/runpc -m 108 -l 900000000 -w build/tedtest.img >/dev/null 2>&1
+# 3: ^O loads t.txt into an empty TED -> W, ^S, ^L u.txt -> E, ^S, ^Q
+printf 'ted\r\017t.txt\rW\023\014\010\010\010\010\010u.txt\rE\023\021\r' \
+  | ../core-c/build/runpc -m 108 -l 900000000 -w build/tedtest.img >/dev/null 2>&1
+python3 tools/mktedimg.py --extract T.TXT build/ted_keys_t.txt >/dev/null 2>&1
+python3 tools/mktedimg.py --extract U.TXT build/ted_keys_u.txt >/dev/null 2>&1
+if python3 -c '
+import sys
+wt = b"Wline one\r\nQline Xtwo\r\nline three\r\n"
+wu = b"Eline one\r\nline Xtwo\r\nline three\r\n"
+try:
+    ok = open("build/ted_keys_t.txt","rb").read() == wt \
+     and open("build/ted_keys_u.txt","rb").read() == wu
+    sys.exit(0 if ok else 1)
+except Exception:
+    sys.exit(1)'; then
+  echo "PASS ted-host-keys"
+else
+  echo "FAIL ted-host-keys"
+  FAIL=1
+fi
+
 echo "== host smoke (JAVA runs javac bytecode on runpc) =="
 # HELLO.CLA is real javac --release 8 output; JAVA.COM interprets it.
 # FIB.CLA exercises the 32-bit int core + branches + a static method.
@@ -258,12 +292,12 @@ fi
 if [ -z "$HAVE_MESEN" ]; then
   echo "SKIP Mesen legs + parity (no Mesen at $MESEN) — the 65816 core was NOT exercised"
 else
-  TESTS="t_boot t_dirb t_kbd t_cga t_cga6 t_midi t_ted"
+  TESTS="t_boot t_dirb t_kbd t_cga t_cga6 t_midi t_ted t_tedfk"
   [ -n "$QUICK" ] && TESTS="t_boot t_cga"
 
   for t in $TESTS; do
-    if [ "$t" = "t_ted" ]; then
-      # t_ted saves to B:; Mesen keys .srm files by ROM name, and stale B:
+    if [ "$t" = "t_ted" ] || [ "$t" = "t_tedfk" ]; then
+      # the TED legs save to B:; Mesen keys .srm files by ROM name, and stale B:
       # contents from an earlier run would leak into the assertion.
       # NOTE: this DELETES the user's B: drive for any same-named ROM
       # (msdos.srm) — suite runs are destructive to B:, by design.
