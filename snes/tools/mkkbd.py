@@ -26,12 +26,16 @@ ROWS = [
     [(c, ord(c), ord(SH.get(c, c)), SCAN[c]) for c in "1234567890-="]
     + [("BS", 8, 8, 0x0E), ("ESC", 27, 27, 0x01)],
     [(c, ord(c), ord(c.upper() if c.isalpha() else SH.get(c, c)), SCAN[c])
-     for c in "qwertyuiop[]\\"] + [("F3", 0, 0, 0x3D)],
+     for c in "qwertyuiop[]\\"],
     [(c, ord(c), ord(c.upper() if c.isalpha() else SH.get(c, c)), SCAN[c])
      for c in "asdfghjkl;'`"] + [("ENTER", 13, 13, 0x1C)],
     [(c, ord(c), ord(c.upper() if c.isalpha() else SH.get(c, c)), SCAN[c])
      for c in "zxcvbnm,./"] + [("SHIFT", 0xFF, 0xFF, 0), ("CTRL", 0xFE, 0xFE, 0)],
-    [("SPACE", 32, 32, 0x39), ("TAB", 9, 9, 0x0F)],
+    # F1-F10: BIOS scancodes 3B-44, ASCII 0 (like the arrow keys).
+    # F11/F12 (0x85/0x86) need the extended INT 16h API (AH=10h/11h),
+    # which the HLE BIOS doesn't implement — deliberately absent.
+    [("SPACE", 32, 32, 0x39), ("TAB", 9, 9, 0x0F)]
+    + [("F%d" % i, 0, 0, 0x3A + i) for i in range(1, 11)],
 ]
 
 rows_txt = []
