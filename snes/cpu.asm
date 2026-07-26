@@ -654,8 +654,9 @@ _fp_hi:
 
 ; keep bCS+Y inside a backed region across the WRAM->BW-RAM seam, so
 ; the opcode/immediate fetches (lda [bCS],y at 53 sites) never walk off
-; the end of one. An instruction STARTING in the last 5 bytes of $7F would spill operand bytes into $80:0000+
-; (system-area mirror), so those 8 bytes are bounced into ebounce and
+; the end of one. An instruction STARTING in the last 5 bytes of $7F
+; would spill operand bytes into $80:0000+ (the system-area mirror), so
+; the region tail + the next region's head are bounced into ebounce and
 ; this one instruction is fetched from there. BW bank tails are
 ; contiguous and need nothing — but an ELKS ROM window's 32 KB chunk top
 ; does: the next guest byte is the NEXT bank's ROM half ($8000), not its
