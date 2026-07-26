@@ -68,6 +68,38 @@ ALU bodies, routes through them under BIGMEM. It's an experiment for DOS (see
 [FUTURE](FUTURE.md)), off by default — but it is the foundation of the ELKS
 machine below.
 
+The SA-1 variant (`make msdos_sa1`) reuses that machinery with a different
+region layer: guest RAM above 108 KB is the SA-1 board's 256 KB of BW-RAM,
+banks `$40`–`$42` (the fourth, `$43`, stays the B: disk), for a 300 KB guest.
+The board is a RAM expander and nothing else — the SA-1 CPU is never released
+from reset; only the Super MMC and the BW-RAM chip are used. BW-RAM banks are
+*contiguous* in SNES address space, unlike the `$70`/`$71` half-banks of the
+172 KB layer, so 24-bit pointer arithmetic carries `$40:FFFF → $41:0000` on its
+own and the only real seam left in the guest is WRAM top → BW-RAM.
+
+The fold itself is one rule — a naive pointer is `$7E5000 + linear`, so guest
+RAM above 108 KB appears at naive banks `$80`–`$82` and folds to `$40`–`$42`
+with the offset kept; naive `$83`+ is past the top of memory and is deliberately
+left unfolded. The trap is *where* that rule has to be applied. Segment bases
+are folded once at load time (`norm_base_x`), so `norm_ptr` normally only has to
+catch a WRAM base spilling into `$80` — **except** that a `2E` (CS) segment
+override deliberately feeds the *naive* `bCSc` base into the EA math, so a
+CS-relative access can arrive at `norm_ptr` as `$81` or `$82`. Folding only
+`$80` there looks correct and boots fine up to 172 KB, because that is exactly
+where naive bank `$80` runs out. Above it, MS-DOS 2.0 relocates SYSINIT to the
+top of memory and runs it there, and SYSINIT is full of `2E A1` CS-relative
+loads — every one of them silently read the SA-1 system-area mirror as 0, the
+DOS kernel's INT 20h–2Fh vectors never got installed, and the `EXEC` of
+`COMMAND.COM` fell through to the BIOS `IRET` stub. Every fold site
+(`norm_base_x`, `norm_ptr`, `norm_ptr2`, `norm_fp`) must use the full
+`$80`–`$82` map, not just `$80`.
+
+That same "past the seam is real memory now" property is what makes the SA-1
+build the only one whose B: sector copies have to be seam-aware: it is the only
+machine where a B: drive and guest RAM above `$7F:FFFF` coexist, so a guest
+sector buffer can straddle the seam, and naive `[mPTR],y` indexing would run off
+into `$80:xxxx` — which on this map is the emulator's own low WRAM.
+
 ---
 
 ## The HLE BIOS and the "machine"
@@ -79,9 +111,9 @@ dispatches BIOS calls natively.
 | INT | service |
 |---|---|
 | 10h video | set mode (40/80-col text, CGA graphics 4/5/6), cursor, scroll, read/write char+attr, teletype, set pixel / read pixel, palette/border. Includes an ANSI/CSI escape parser (cursor moves, clears, SGR colors) for `ANSI.SYS`-style output. |
-| 11h equipment | returns "two floppies, 80×25 color" (one floppy under BIGMEM — the SRAM banks are guest RAM there, so B: is gone). |
-| 12h memory size | returns the guest RAM size (108 KB, or 172 under BIGMEM). |
-| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable 32 KB battery-backed SRAM disk (absent under BIGMEM); C: is a hard-disk image. Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
+| 11h equipment | returns "two floppies, 80×25 color" (one floppy under BIGMEM — the SRAM banks are guest RAM there, so B: is gone; the SA-1 build keeps both, since B: has a BW-RAM bank to itself). |
+| 12h memory size | returns the guest RAM size (108 KB, 172 under BIGMEM, 300 on the SA-1 board). |
+| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable 32 KB battery-backed SRAM disk (absent under BIGMEM; BW-RAM bank $43 on the SA-1 board); C: is a hard-disk image, whose upper 2 MB needs a bank fixup on the SA-1 map ($C0-$DF linear, not the LoROM mirrors). Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
 | 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags — the extended API (AH=10h/11h/12h) aliases onto these, since the single unfiltered ring makes the extended read the same read (that's how F11/F12 from the on-screen keyboard reach a guest). Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |

@@ -368,9 +368,21 @@ mk_ptr2:
 ; = 300 KB-1); the fold is bank -= $40 with the offset kept. Bank $83+
 ; is past 300 KB and UNBACKED - left naive, and the same HAZARD note as
 ; below applies (those banks' low halves are live system-area mirrors).
+; On THIS map that hazard is a little sharper than on plain LoROM: the
+; SA-1 puts a BW-RAM window at $6000-$7FFF of every $80-$BF bank, and
+; BMAPS defaults to block 0, so a guest poking naive $83+:6000-7FFF
+; aliases onto BW-RAM $40:0000-$1FFF - i.e. onto its own RAM at
+; 108-116 KB - where LoROM would have given it open bus. There is no
+; free fix: all four BW-RAM banks are in use, so every BMAPS choice
+; aliases something.
 ; A folded $42 pointer that carries into $43 lands on the B: disk: a
 ; guest addressing past its top of memory can corrupt B: - the same
 ; broken-guest class, deliberately unchecked for the same reason.
+;
+; EVERY fold site here must use the full $80-$82 map, not just $80: the
+; CS-override path (opP2E) feeds mk_ptr the NAIVE bCSc, so a CS-relative
+; EA arrives unfolded. See the norm_ptr comment below for the boot
+; failure that hid behind getting this wrong.
 
 ; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x): a
 ; base is one point, so only naive $80-$82 needs the -$40 fold.
