@@ -164,7 +164,7 @@ io:
 # --- the C: drive. One packer (tools/mkhd_free.py): every staged
 # apps/<tool>/build/ becomes C:\<TOOL>, msdos/bin/ becomes C:\DOS,
 # user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
-APPSTOOLS := view ted java midi sokoban bench cc
+APPSTOOLS := view ted java midi sokoban bench cc gb
 
 apps-stage:
 	@for t in $(APPSTOOLS); do $(MAKE) -s -C ../apps/$$t stage || exit 1; done
