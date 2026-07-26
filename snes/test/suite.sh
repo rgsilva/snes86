@@ -93,7 +93,7 @@ fi
 echo "== host smoke (ELKS boots to login on runpc) =="
 make -s elks >/dev/null || { echo "FAIL elks-build"; FAIL=1; }
 if printf '' \
-     | ../core-c/build/runpc -m 172 -l 100000000 \
+     | ../core-c/build/runpc -m 300 -l 100000000 \
          -rom build/elks_rom.bin@e000 -rom build/elks_romfs.bin@8000 \
          -entry e000:0014 2>/dev/null \
      | grep -qE "login:|# "; then

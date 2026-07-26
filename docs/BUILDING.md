@@ -11,7 +11,7 @@
 | nasm | assembling `GB.COM` (`apps/gb`) at image-build time | **required** — no app binaries are committed (`brew install nasm` / `apt-get install nasm`) |
 | Open Watcom v2 | cross-compiling `VI.EXE` (`apps/vi`) at image-build time | **auto-fetched** by `apps/vi/fetch_watcom.py` (pinned sha256, ~151 MB download one-time, cached in `apps/cache/watcom/`); works on macOS arm64 and Linux x64 |
 | [RGBDS](https://rgbds.gbdev.io/) | rebuilding the committed homebrew `.gb` carts (`apps/gb`) | canary/dev only — `make apps` skips the cart rebuild without it (`brew install rgbds`) |
-| [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen. The `msdos_sa1` and `freedos` ROMs additionally need **SA-1 support** — Mesen has it, and so does the FXPak Pro; simpler flash carts may not (see below) |
+| [Mesen](https://www.mesen.ca/) | running/testing the ROM | any accurate SNES emulator works; the test scripts drive Mesen. The `msdos_sa1`, `freedos` and `elks` ROMs additionally need **SA-1 support** — Mesen has it, and so does the FXPak Pro; simpler flash carts may not (see below) |
 
 ## The ROM
 
@@ -34,7 +34,7 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 |---|---|---|---|
 | `make` / `make msdos` | `msdos.sfc` | MS-DOS 2.0, free C: | no — TP3 auto-fetched (compiles the apps) |
 | `make freedos` | `freedos.sfc` | FreeDOS 1.3, 300 KB guest, SA-1 board | no — FreeDOS auto-fetched |
-| `make elks` | `elks.sfc` | ELKS (Linux), no DOS | no — ELKS images auto-fetched |
+| `make elks` | `elks.sfc` | ELKS (Linux), 300 KB guest, SA-1 board, no DOS | no — ELKS images auto-fetched |
 | `make msdos_sa1` | `msdos_sa1.sfc` | MS-DOS, 300 KB guest, SA-1 board | no — TP3 auto-fetched |
 | `make boot DISK=img` | `boot.sfc` | a self-booting disk, no DOS | the disk image |
 | `make test` | — | the public suite | no (Mesen legs skip without Mesen) |
@@ -52,8 +52,11 @@ build.
 What each one actually is:
 
 - `make elks` — Linux on the SNES: boots [ELKS](https://github.com/ghaerr/elks)
-  0.9.1 to a root shell on the 172 KB BIGMEM machine, with the kernel and userland
-  executing in place from cartridge ROM. The kernel/ROMFS images are fetched from
+  0.9.1 to a root shell on the 300 KB SA-1 machine, with the kernel and userland
+  executing in place from cartridge ROM. Like `msdos_sa1` and `freedos` it needs
+  the SA-1 board, and it earns it: at 172 KB the kernel could not fork
+  `/etc/rc.sys` and `ls` died for want of memory, where at 300 KB the boot scripts
+  run and 171 KB is free at the shell. The kernel/ROMFS images are fetched from
   the official ELKS release by `test/fetch_elks.sh` on first build (GPL software —
   fetched, never committed, like the CPU test vectors); a custom-built ELKS can be
   copied over `build/elks_rom.bin` / `build/elks_romfs.bin` and wins. See
@@ -110,16 +113,18 @@ What each one actually is:
   guest RAM above 108 KB; the fourth stays the battery-backed B: disk.
   So the fastest enhancement chip ever put in a SNES cartridge is doing
   duty here as a RAM stick, which is either the best or the worst thing
-  in this repo. Same free C: as the public build. This is also the only
-  big-guest DOS machine there is: it replaced an earlier 172 KB variant
-  that spent plain cartridge SRAM as guest RAM and therefore had no B:,
-  and it is what `make freedos` boots on too.
+  in this repo. Same free C: as the public build. It is also the only
+  big machine there is: it replaced an earlier 172 KB variant that spent
+  plain cartridge SRAM as guest RAM and therefore had no B:, and every
+  other big-guest ROM — `make freedos`, `make elks` — boots on it now.
 
   The catch is where it runs: **only where SA-1 is implemented**. Mesen
   runs it, and so does the FXPak Pro / SD2SNES, whose firmware carries an
   SA-1 core (it is how that cart runs Super Mario RPG and Kirby Super
   Star). Simpler or older flash carts generally do not, and neither does
   a plain repro board — for those, `msdos.sfc` remains the ROM to flash.
+  The same caveat applies to `freedos.sfc` and `elks.sfc`, which share
+  the board.
   Note that none of this has been tried on real silicon yet; see
   [FUTURE](FUTURE.md) if you own the hardware and fancy being the first.
   The header is written post-link by `snes/tools/mksa1hdr.py` (map mode

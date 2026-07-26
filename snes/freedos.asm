@@ -6,6 +6,5 @@
 ; and a B: drive on BW-RAM bank $43. Same free C: as the public MS-DOS
 ; build. Build: make freedos -> build/freedos.sfc
 .DEFINE FREEDOS
-.DEFINE BIGMEM
 .DEFINE SA1
 .INCLUDE "dosboot.asm"

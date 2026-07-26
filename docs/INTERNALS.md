@@ -61,22 +61,27 @@ video memory (segments `B000`–`BFFF`) is mapped to a 16 KB CGA/MDA buffer at
 scans out.
 
 Anything past 108 KB has to come off the cartridge, and the code that makes that
-possible is the `BIGMEM` build flag: 16-bit accesses that straddle a region seam
-go through seam-safe helpers (`rd16m`/`wr16m`) that split the word across regions,
-and every 16-bit path — the stack, `MOV`, the flattened ALU bodies — routes through
-them. `BIGMEM` is the machinery, not a machine: what it is *pointed at* is chosen
-by a second flag. Its original region layer added 64 KB of plain cartridge SRAM
-(banks `$70`/`$71`) above WRAM for a 172 KB guest, and that layer is what the ELKS
-ROM still runs on (see below). No DOS variant uses it any more.
+possible is the `SA1` build flag. It buys one machine and one only: guest RAM above
+108 KB is the SA-1 board's 256 KB of BW-RAM, banks `$40`–`$42` (the fourth, `$43`,
+stays the B: disk), for a 300 KB guest. The board is a RAM expander and nothing
+else — the SA-1 CPU is never released from reset; only the Super MMC and the BW-RAM
+chip are used. Three variants ride it: `make msdos_sa1`, `make freedos`, and
+`make elks`.
 
-The SA-1 variant (`make msdos_sa1`, and `make freedos`) is `BIGMEM` plus `SA1` —
-the same machinery aimed at a different
-region layer: guest RAM above 108 KB is the SA-1 board's 256 KB of BW-RAM,
-banks `$40`–`$42` (the fourth, `$43`, stays the B: disk), for a 300 KB guest.
-The board is a RAM expander and nothing else — the SA-1 CPU is never released
-from reset; only the Super MMC and the BW-RAM chip are used. BW-RAM banks are
-*contiguous* in SNES address space, unlike the `$70`/`$71` half-banks of the
-172 KB layer, so 24-bit pointer arithmetic carries `$40:FFFF → $41:0000` on its
+`SA1` is both the region layer and the machinery the layer needs: 16-bit accesses
+that straddle the seam go through seam-safe helpers (`rd16m`/`wr16m`) that split
+the word across regions, and every 16-bit path — the stack, `MOV`, the flattened
+ALU bodies — routes through them. There used to be a second flag, `BIGMEM`, that
+held the machinery separate from the machine, because the big guest could once be
+aimed at either of two region layers: BW-RAM, or 64 KB of plain cartridge SRAM as
+two 32 KB half-banks at `$70`/`$71`, which made a 172 KB guest. The SRAM layer is
+gone — its last user, the ELKS ROM, moved to the SA-1 board — and with only one
+big machine left the two flags were synonyms, so they were collapsed into `SA1`.
+The name states the hardware requirement, which is the thing a reader most needs
+to know.
+
+BW-RAM banks are *contiguous* in SNES address space, unlike the `$70`/`$71`
+half-banks were, so 24-bit pointer arithmetic carries `$40:FFFF → $41:0000` on its
 own and the only real seam left in the guest is WRAM top → BW-RAM.
 
 The fold itself is one rule — a naive pointer is `$7E5000 + linear`, so guest
@@ -87,8 +92,8 @@ are folded once at load time (`norm_base_x`), so `norm_ptr` normally only has to
 catch a WRAM base spilling into `$80` — **except** that a `2E` (CS) segment
 override deliberately feeds the *naive* `bCSc` base into the EA math, so a
 CS-relative access can arrive at `norm_ptr` as `$81` or `$82`. Folding only
-`$80` there looks correct and boots fine up to 172 KB, because that is exactly
-where naive bank `$80` runs out. Above it, MS-DOS 2.0 relocates SYSINIT to the
+`$80` there looks correct and boots fine up to 172 KB of guest, because that is
+exactly where naive bank `$80` runs out. Above it, MS-DOS 2.0 relocates SYSINIT to the
 top of memory and runs it there, and SYSINIT is full of `2E A1` CS-relative
 loads — every one of them silently read the SA-1 system-area mirror as 0, the
 DOS kernel's INT 20h–2Fh vectors never got installed, and the `EXEC` of
@@ -113,9 +118,9 @@ dispatches BIOS calls natively.
 | INT | service |
 |---|---|
 | 10h video | set mode (40/80-col text, CGA graphics 4/5/6), cursor, scroll, read/write char+attr, teletype, set pixel / read pixel, palette/border. Includes an ANSI/CSI escape parser (cursor moves, clears, SGR colors) for `ANSI.SYS`-style output. |
-| 11h equipment | returns "two floppies, 80×25 color" — on every shipping DOS machine, since B: always has somewhere to live (32 KB of cart SRAM on the public build, BW-RAM bank `$43` on the SA-1 one). The 172 KB SRAM-as-guest-RAM layer answers "one floppy" instead, because B: has been spent as memory there. |
-| 12h memory size | returns the guest RAM size (108 KB, 300 on the SA-1 board, 172 on the SRAM layer). |
-| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable battery-backed disk — 32 KB of cart SRAM normally, BW-RAM bank $43 on the SA-1 board (absent only on the SRAM-as-guest-RAM layer); C: is a hard-disk image, whose upper 2 MB needs a bank fixup on the SA-1 map ($C0-$DF linear, not the LoROM mirrors). Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
+| 11h equipment | returns "two floppies, 80×25 color" — on every machine, since B: always has somewhere to live: 32 KB of cart SRAM on the public build, BW-RAM bank `$43` on the SA-1 board. |
+| 12h memory size | returns the guest RAM size — 108 KB, or 300 on the SA-1 board. |
+| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable battery-backed disk — 32 KB of cart SRAM normally, BW-RAM bank $43 on the SA-1 board; C: is a hard-disk image, whose upper 2 MB needs a bank fixup on the SA-1 map ($C0-$DF linear, not the LoROM mirrors). Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
 | 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags — the extended API (AH=10h/11h/12h) aliases onto these, since the single unfiltered ring makes the extended read the same read (that's how F11/F12 from the on-screen keyboard reach a guest). Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |
@@ -228,18 +233,30 @@ boot [ELKS](https://github.com/ghaerr/elks) 0.9.1 — a real Linux-family kernel
 real-mode x86 — to a root shell. Everything below is `.IFDEF ELKS`-gated; the DOS
 builds are byte-identical with the variant compiled out.
 
+It needs the SA-1 cartridge, like `msdos_sa1` and `freedos`, and for Linux that is
+not a detail. On the old 172 KB machine the kernel could not fork `/etc/rc.sys`
+and `ls` answered *"not enough memory"*; at 300 KB `rc.sys` runs, `ls` works, and
+`meminfo` reports 233 KB used / 171 KB free where it used to report 105 KB free.
+Moving ELKS onto the SA-1 board was what let the second region layer be deleted,
+so the unification and the feature arrived together.
+
 **Execute-in-place from cartridge ROM.** ELKS's ROM configuration keeps kernel
 *code* in ROM and only its data in RAM, and since v0.9.0 application text also runs
 in place from the ROM filesystem. snes86 maps two windows of the guest's 1 MB
 address space straight onto cart ROM banks: the 64 KB kernel at guest `E0000`
-(banks 14–15) and the 128 KB ROMFS at `80000` (banks 16–19). RAM is the 172 KB
-BIGMEM pool — with the kernel's code out of the way, over 100 KB is free for
-processes at the shell. Boot enters the kernel image's option-ROM INT 19h handler
+(banks 14–15) and the 128 KB ROMFS at `80000` (banks 16–19). RAM is the 300 KB
+SA-1 pool — with the kernel's code out of the way, 171 KB is free for processes
+at the shell. Boot enters the kernel image's option-ROM INT 19h handler
 at `E000:0014`; the root filesystem mounts from the ROMFS window with zero disk
 I/O.
 
-**The fold, and why bases stay naive.** A guest pointer into a window has to land
-in a LoROM bank's `$8000–$FFFF` half: `bank = B0 + (F>>15)`, `off = $8000 |
+**The fold, and why bases stay naive.** The two windows live at naive banks
+`$86`–`$8D` (a naive pointer is `$7E5000 + linear`), which is clear of the
+`$80`–`$82` range the SA-1 layer folds into BW-RAM — that disjointness is why the
+two schemes compose without either having to know about the other. The SA-1 Super
+MMC is programmed at reset so that `$80–$BF:8000` is the plain LoROM view of the
+low 2 MB, so a window bank addresses exactly the ROM file bank it always did. A
+guest pointer into a window has to land in a LoROM bank's `$8000–$FFFF` half: `bank = B0 + (F>>15)`, `off = $8000 |
 (F & $7FFF)` for window offset `F`. The crucial design rule, learned the hard way:
 **segment bases are left "naive"** (plain `GUEST_BASE + seg*16`), and the fold
 happens exactly once, at point of use, on the summed pointer (`norm_ptr` /
@@ -279,8 +296,8 @@ tick due during the shadow lands one instruction late, in lockstep.
 **Small BIOS honesty.** INT 15h answers CF=1/AH=86h (the XT "unsupported" reply —
 vectoring to the IRET stub makes ELKS's A20 probe "succeed" with garbage); port 64h
 reads as an idle keyboard controller; INT 13h reports no fixed disk (banks 14+ hold
-the ELKS images, not C:); SRAM is zeroed at reset so the machine is deterministic
-and matches the C-core oracle (Mesen randomizes and persists SRAM).
+the ELKS images, not C:); BW-RAM is zeroed at reset so the machine is deterministic
+and matches the C-core oracle (Mesen randomizes and persists it).
 
 **Lockstep, deep.** `test/elkstrace.sh` is tracewin's ELKS twin, with one upgrade:
 both sides tick *deterministically on the instruction count* — `runpc -T` fires
@@ -413,7 +430,7 @@ at any depth, and the ELKS boot is verified register-exact through step 450,000.
 | you want… | start at |
 |---|---|
 | the CPU core + dispatch + lazy flags | `snes/cpu.asm` (header block is the best summary) |
-| memory access, segment bases, string/mul/div, BIGMEM seam | `snes/cpu2.asm` |
+| memory access, segment bases, string/mul/div, the SA-1 seam | `snes/cpu2.asm` |
 | the HLE BIOS, the machine, the MIDI card, boot | `snes/dosboot.asm` |
 | the ELKS variant: ROM windows, folds, seam bounce | `snes/elks.asm` + the `.IFDEF ELKS` blocks in `cpu.asm`/`cpu2.asm`/`dosboot.asm` |
 | the deep ELKS lockstep harness | `snes/test/elkstrace.sh` |

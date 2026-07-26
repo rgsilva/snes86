@@ -21,7 +21,7 @@ push16v:                     ; push A onto the guest stack (no gIP commit)
     ldx #30                  ; bSS
     jsr mk_ptr
     lda tmp1
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp wr16m
 .ELSE
     sta [mPTR]
@@ -36,7 +36,7 @@ pop16v:                      ; A <- popped word
     inc a
     inc a
     sta gSP
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp rd16m
 .ELSE
     lda [mPTR]
@@ -114,7 +114,7 @@ _ub_norm:
     sep #$20
     sta.b 2,x
     rep #$20
-.IFDEF BIGMEM
+.IFDEF SA1
     cpx.w #27                ; CS reload: stash the NAIVE base in bCSc
     bne _ub_nocs             ; BEFORE the fold — fetch_rebase (and under
     lda.b 0,x                ; ELKS the CS-override fold too) must start
@@ -124,7 +124,7 @@ _ub_norm:
     sta bCSc+2
     rep #$20
 _ub_nocs:
-    jmp norm_base_x          ; fold a 108-172 KB base ($80) into SRAM
+    jmp norm_base_x          ; fold a base past 108 KB into BW-RAM
 .ENDIF
     rts
 
@@ -139,7 +139,7 @@ opP26: lda #24
        sta ovSEG
        jmp step_fetch
 opP2E:
-.IFDEF BIGMEM
+.IFDEF SA1
        lda #bCSc             ; CS override: start from the naive base —
 .ELSE                        ; bCS is fetch scratch and a seam bounce may
        lda #27               ; have rebased it this very instruction
@@ -230,7 +230,7 @@ op8F:                        ; POP rm16
 
 opC4:                        ; LES r16, m32
     jsr decode_modrm
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; both words seam-safe; mptr_adv1 carries the
 .ELSE                        ; bank byte (bare inc mPTR wrapped inside the
     lda [mPTR]               ; bank and read the segment word from DP!)
@@ -239,7 +239,7 @@ opC4:                        ; LES r16, m32
     sta.b 0,x
     jsr mptr_adv1
     jsr mptr_adv1
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -252,7 +252,7 @@ opC4:                        ; LES r16, m32
 
 opC5:                        ; LDS r16, m32
     jsr decode_modrm
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -261,7 +261,7 @@ opC5:                        ; LDS r16, m32
     sta.b 0,x
     jsr mptr_adv1
     jsr mptr_adv1
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -602,7 +602,7 @@ g5_call:
     jmp step_next
 
 g5_callf:                    ; CALL far m16:16
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; seam-safe + bank-carrying, like LES/LDS
 .ELSE
     lda [mPTR]
@@ -610,7 +610,7 @@ g5_callf:                    ; CALL far m16:16
     sta tmp0
     jsr mptr_adv1
     jsr mptr_adv1
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -632,7 +632,7 @@ g5_jmp:
     jmp step_next
 
 g5_jmpf:
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; seam-safe + bank-carrying, like LES/LDS
 .ELSE
     lda [mPTR]
@@ -640,7 +640,7 @@ g5_jmpf:
     sta tmp0
     jsr mptr_adv1
     jsr mptr_adv1
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -698,9 +698,9 @@ _rd\@:
 _mf\@:
     lda gCX
     beq _md\@
-.IFDEF BIGMEM
-    jmp _mb\@                ; 172 KB: per-element re-normalises each ptr so
-.ENDIF                       ; the copy folds correctly across WRAM/SRAM seams
+.IFDEF SA1
+    jmp _mb\@                ; big guest: per-element re-normalises each ptr
+.ENDIF                       ; so the copy folds across the WRAM/BW-RAM seam
     lda fSTATIC
     and #F_DF
     bne _mb\@                ; backward: rare, keep per-element
@@ -809,8 +809,8 @@ _mb\@:
 _sf\@:
     lda gCX
     beq _sd\@
-.IFDEF BIGMEM
-    jmp _sb\@                ; 172 KB: per-element, seam-correct (see REPMOVF)
+.IFDEF SA1
+    jmp _sb\@                ; big guest: per-element, seam-correct (REPMOVF)
 .ENDIF
     lda fSTATIC
     and #F_DF
@@ -950,7 +950,7 @@ movs16_once:
     jsr seg_src_x
     lda gSI
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; source word (seam-safe), then dest via mPTR
     pha
     ldx #24
@@ -983,7 +983,7 @@ stos16_once:
     lda gDI
     jsr mk_ptr
     lda gAX
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m
 .ELSE
     sta [mPTR]
@@ -1004,7 +1004,7 @@ lods16_once:
     jsr seg_src_x
     lda gSI
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -1033,7 +1033,7 @@ cmps16_once:
     jsr seg_src_x
     lda gSI
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -1042,7 +1042,7 @@ cmps16_once:
     ldx #24
     lda gDI
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]
@@ -1071,7 +1071,7 @@ scas16_once:
     ldx #24
     lda gDI
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m
 .ELSE
     lda [mPTR]

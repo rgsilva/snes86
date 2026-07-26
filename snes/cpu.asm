@@ -3,9 +3,8 @@
 ; Execution model:
 ;   - native mode, A/X/Y 16-bit unless noted, D=$0000, DBR=$7E
 ;   - guest memory: linear 0x00000-0x1AFFF lives at $7E:5000-$7F:FFFF
-;     (108 KB of WRAM; BIGMEM adds 64 KB of cart SRAM at $70/$71 for a
-;     172 KB guest; SA1 adds 192 KB of SA-1 BW-RAM at $40-$42 for a
-;     300 KB guest — see the region notes above norm_base_x)
+;     (108 KB of WRAM; the SA1 build adds 192 KB of SA-1 BW-RAM at
+;     $40-$42 for a 300 KB guest — region notes above norm_base_x)
 ;   - guest registers live in direct page, 8086 register order, gAX at
 ;     DP $00 so a ModRM reg field *2 IS the DP offset
 ;   - cached segment bases: bXX = GUEST_BASE + seg*16 = the 24-bit SNES
@@ -30,12 +29,8 @@
 .DEFINE VBOFS $1000          ; CGA adapter RAM, 16 KB at $7E:1000-$7E:4FFF
 .DEFINE VBUF  $7E1000        ; B000-BFFF segs map here (text page = offset 0;
                              ; text+graphics share it, like real CGA card RAM)
-.IFDEF BIGMEM
 .IFDEF SA1
 .DEFINE GUESTKB 300          ; M16: 108 KB WRAM + 192 KB SA-1 BW-RAM
-.ELSE
-.DEFINE GUESTKB 172          ; M15: 108 KB WRAM + 64 KB cart SRAM
-.ENDIF
 .ELSE
 .DEFINE GUESTKB 108
 .ENDIF
@@ -122,17 +117,17 @@ dMSB     dw
 dB2      dw
 dQ       dw
 dINT     dw
-smSAV    dw                  ; BIGMEM: seam-split save of mPTR low16
-smBNK    dw                  ; BIGMEM: seam-split save of mPTR bank + byte
+smSAV    dw                  ; SA1: seam-split save of mPTR low16
+smBNK    dw                  ; SA1: seam-split save of mPTR bank + byte
 gINHIB   dw                  ; 8086 one-instruction interrupt shadow: set by
                              ; sreg loads (MOV/POP sreg) and STI, consumed at
                              ; the next delivery point (run_slow / trace tick)
 bCSc     ds 3                ; NAIVE CS base (GUEST_BASE + CS*16, unfolded).
                              ; The rebased bCS is per-instruction scratch and
                              ; not a sound fold input; every fold (and every
-                             ; fetch_rebase, in ALL BIGMEM builds — a bounce
+                             ; fetch_rebase, on the SA1 machine — a bounce
                              ; rebase poisons bCS for one instruction) starts
-                             ; here. (BIGMEM machinery; harmless elsewhere.)
+                             ; here. (Big-machine state; harmless elsewhere.)
 ebounce  ds 8                ; fetch_rebase seam-bounce buffer (lives in the
                              ; DP page, NOT in adapter RAM: $7E4FE0 was the
                              ; top of the CGA buffer and graphics would have
@@ -158,7 +153,7 @@ step_lean:                   ; hot entry: Y = IP, maintained by handlers
     stz ovSEG                ; (every handler ends sty gIP with Y intact,
     stz pREP                 ; so the run loop skips the reload+halt check)
 step_fetch:
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr fetch_rebase         ; keep bCS+Y in a backed region across seams
 .ENDIF
     lda [bCS],y
@@ -182,7 +177,7 @@ step_next:
     beq _sn_slow
     stz ovSEG
     stz pREP
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr fetch_rebase         ; keep bCS+Y in a backed region across seams
 .ENDIF
     lda [bCS],y
@@ -310,8 +305,8 @@ _ea_fin_go:
     adc #0
     sta mPTR+2
     rep #$20
-.IFDEF BIGMEM
-    jsr norm_ptr             ; fold the SRAM overflow (172 KB guest)
+.IFDEF SA1
+    jsr norm_ptr             ; fold the BW-RAM overflow (300 KB guest)
 .ENDIF
     stz mISREG
     rts
@@ -332,7 +327,7 @@ mk_ptr:
     adc #0
     sta mPTR+2
     rep #$20
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp norm_ptr
 .ENDIF
     rts
@@ -346,18 +341,16 @@ mk_ptr2:
     adc #0
     sta mPTR2+2
     rep #$20
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp norm_ptr2
 .ENDIF
     rts
 
-.IFDEF BIGMEM
 .IFDEF SA1
 ; ---- SA-1 region layer (M16) ----------------------------------------
 ; 300 KB guest: linear 0-108 KB lives in $7E5000-$7FFFFF as usual;
 ; 108-300 KB is SA-1 BW-RAM, banks $40-$42 (64 KB each; bank $43 holds
-; the B: disk). Unlike the $70/$71 SRAM pages of the twin layer below,
-; BW-RAM banks are CONTIGUOUS in SNES address space: 24-bit data
+; the B: disk). BW-RAM banks are CONTIGUOUS in SNES address space: 24-bit data
 ; accesses ([mPTR] / [bCS],y) carry $40:FFFF -> $41:0000 by themselves,
 ; so the only real seam in the whole guest is WRAM top -> BW-RAM
 ; ($7F:FFFF -> $40:0000, whose naive successor $80:0000 is the system-
@@ -384,8 +377,94 @@ mk_ptr2:
 ; EA arrives unfolded. See the norm_ptr comment below for the boot
 ; failure that hid behind getting this wrong.
 
+.IFDEF ELKS
+; ---- ELKS cart-ROM windows (sneslinux) --------------------------------
+; Two guest-physical windows read/execute straight from cart ROM:
+;   kernel  E0000-EFFFF (64 KB)  naive $8C:5000-$8D:4FFF -> banks EK_B0..+1
+;   ROMFS   80000-9FFFF (128 KB) naive $86:5000-$88:4FFF -> banks ER_B0..+3
+; A naive pointer is $7E5000+linear, so the windows live in naive banks
+; $86-$8D — well clear of the $80-$82 BW-RAM fold above, which is why the
+; two schemes compose: RAM folds first, ROM windows second, and neither
+; range can be mistaken for the other. The SA-1 Super MMC is programmed at
+; reset so that $80-$BF:8000 is the plain LoROM view of the low 2 MB
+; (EXB=$80, FXB=$81 — see Reset), so each 32 KB chunk of a window is one
+; LoROM bank's $8000-$FFFF half exactly as on a plain cart:
+;   F = linear - window_start; bank = B0 + (F>>15); off = $8000|(F&$7FFF)
+; EFOLD rewrites P (16-bit low word) / P+2 (bank byte) in place when the
+; pointer is inside a window, else leaves it naive (same contract as the
+; unbacked-bank rule above). Guest writes to a folded pointer hit the ROM
+; chip and drop — the read-only contract comes free from the hardware.
+; Enter/exit with 8-bit A (the caller just loaded the bank byte into A);
+; clobbers A only. A 16-bit access at a chunk's last byte still reads its
+; second byte naively (same class as the immediate-seam edge below).
+.MACRO EFOLD ARGS P
+    cmp.b #$86              ; (.b everywhere: WLA sizes unsuffixed
+    bcc _efn\@              ; immediates 16-bit here and the CPU then
+    cmp.b #$8E              ; runs the spare byte as BRK — the classic)
+    bcs _efn\@              ; input is always a NAIVE pointer or sum —
+    cmp.b #$89              ; only $86:5000-$8D:4FFF can be window-resident
+    bcc _efr\@              ; $86-$88: ROMFS candidate
+    cmp.b #$8C
+    bcc _efn\@              ; $89-$8B: the unbacked A0000-DFFFF gap
+    rep #$20                ; --- kernel: Fhi = bank-$8C - (off<$5000)
+    lda P
+    cmp.w #$5000            ; C=0 when off < $5000 (borrow into Fhi)
+    sep #$20
+    lda P+2
+    sbc.b #$8C
+    bne _efn\@              ; 64 KB window: only Fhi=0 is inside
+    lda.b #EK_B0
+    bra _eff\@
+_efr\@:
+    rep #$20                ; --- ROMFS: Fhi = bank-$86 - (off<$5000)
+    lda P
+    cmp.w #$5000
+    sep #$20
+    lda P+2
+    sbc.b #$86
+    cmp.b #$02
+    bcs _efn\@              ; 128 KB window: Fhi 0/1 only
+    asl a                   ; C=0 here (A was 0/1)
+    adc.b #ER_B0
+_eff\@:                     ; A = target bank of the window's even chunk
+    pha
+    rep #$20
+    lda P
+    sec
+    sbc.w #$5000
+    sta P                   ; F low 16
+    asl a                   ; C = F bit 15 (odd chunk)
+    sep #$20
+    pla                     ; pla preserves carry
+    adc.b #$00
+    sta P+2
+    rep #$20
+    lda P
+    ora.w #$8000            ; $8000|(F&$7FFF) == F|$8000
+    sta P
+    sep #$20
+_efn\@:
+.ENDM
+
+; out-of-line EFOLD bodies (the inline form breaks branch distances in
+; the norm_* routines). Called with the bank byte in 8-bit A, pre-gated
+; to $86-$8D by the caller; X/Y preserved.
+elks_fold_mptr:
+    EFOLD mPTR
+    rts
+elks_fold_mptr2:
+    EFOLD mPTR2
+    rts
+elks_fold_sm:
+    EFOLD smSAV
+    rts
+.ENDIF
+
 ; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x): a
 ; base is one point, so only naive $80-$82 needs the -$40 fold.
+; (ELKS: ROM-window bases deliberately stay NAIVE — naive space is closed
+; under base+offset carries, the folded space is NOT. Window folding
+; happens once, at point of use, in norm_ptr/norm_ptr2/norm_fp.)
 norm_base_x:
     sep #$20
     lda.b 2,x
@@ -407,7 +486,7 @@ _nbx_ok:
 ; so a sum here can land anywhere in naive $80-$82. Use the full
 ; norm_base_x map, not just $80: with a $81/$82 base the guest would
 ; otherwise read the SA-1 system-area mirror. (MS-DOS 2.0's SYSINIT
-; found this: relocated above 172 KB it is full of `2E A1` CS-relative
+; found this: relocated above 108 KB it is full of `2E A1` CS-relative
 ; loads, which silently returned 0 and left the DOS vectors uninstalled.)
 norm_ptr:
     sep #$20
@@ -415,11 +494,21 @@ norm_ptr:
     cmp #$80
     bcc _np_ok              ; $7E/$7F WRAM or an already-folded $40-$43
     cmp #$83
-    bcs _np_ok              ; past 300 KB: unbacked, keep naive
+    bcs _np_hi              ; past 300 KB: unbacked (or an ELKS window)
     sec
     sbc #$40                ; $80-$82 -> BW-RAM $40-$42, offset kept
     sta mPTR+2
 _np_ok:
+    rep #$20
+    rts
+_np_hi:
+.IFDEF ELKS
+    cmp.b #$86              ; ELKS: kernel/ROMFS window -> cart ROM bank
+    bcc _np_ok              ; (cheap gate inline, fold out of line: the
+    cmp.b #$8E              ; full EFOLD body breaks the branch distances)
+    bcs _np_ok
+    jsr elks_fold_mptr
+.ENDIF
     rep #$20
     rts
 
@@ -429,11 +518,21 @@ norm_ptr2:
     cmp #$80
     bcc _np2_ok
     cmp #$83
-    bcs _np2_ok
+    bcs _np2_hi
     sec
     sbc #$40
     sta mPTR2+2
 _np2_ok:
+    rep #$20
+    rts
+_np2_hi:
+.IFDEF ELKS
+    cmp.b #$86              ; ELKS: kernel/ROMFS window -> cart ROM bank
+    bcc _np2_ok
+    cmp.b #$8E
+    bcs _np2_ok
+    jsr elks_fold_mptr2
+.ENDIF
     rep #$20
     rts
 
@@ -535,19 +634,36 @@ norm_fp:
     cmp #$80
     bcc _fp_ok
     cmp #$83
-    bcs _fp_ok
+    bcs _fp_hi
     sec
     sbc #$40
     sta smBNK
 _fp_ok:
     rep #$20
     rts
+_fp_hi:
+.IFDEF ELKS
+    cmp.b #$86              ; ELKS: XIP fetch from the kernel/ROMFS windows
+    bcc _fp_ok
+    cmp.b #$8E
+    bcs _fp_ok
+    jsr elks_fold_sm
+.ENDIF
+    rep #$20
+    rts
 
-; keep bCS+Y inside a backed region across the WRAM->BW-RAM seam (see
-; the $70/$71 twin below for the full story). Only the WRAM top needs
-; the ebounce treatment here: an instruction STARTING in the last 5
-; bytes of $7F would spill operand bytes into $80:0000+ (system-area
-; mirror). BW bank tails are contiguous and need nothing.
+; keep bCS+Y inside a backed region across the WRAM->BW-RAM seam, so
+; the opcode/immediate fetches (lda [bCS],y at 53 sites) never walk off
+; the end of one. An instruction STARTING in the last 5 bytes of $7F
+; would spill operand bytes into $80:0000+ (the system-area mirror), so
+; the region tail + the next region's head are bounced into ebounce and
+; this one instruction is fetched from there. BW bank tails are
+; contiguous and need nothing — but an ELKS ROM window's 32 KB chunk top
+; does: the next guest byte is the NEXT bank's ROM half ($8000), not its
+; low half. FreeDOS found the WRAM case: its kernel relocates init to
+; top-of-memory, parking code exactly across linear $1B000.
+;   $7F:FFFB+ -> next $40:0000 (BW-RAM head)
+;   ELKS $8E-$93:FFFB+ -> next bank+1:$8000 (ROM chunk top)
 fetch_rebase:
     tya
     clc
@@ -562,17 +678,46 @@ fetch_rebase:
     sep #$20
     lda smBNK
     cmp.b #$7F
+    beq _fr_wtop
+.IFDEF ELKS
+    cmp.b #EK_B0
+    bcc _fr_no8
+    cmp.b #$94
+    bcs _fr_no8
     rep #$20
-    bne _fr_fin
     lda smSAV
     cmp.w #$FFFB
-    bcc _fr_fin
-    ; bounce the WRAM tail + BW-RAM head into ebounce, fetch this one
-    ; instruction from there (next fetch_rebase re-derives from bCSc)
+    bcc _fr_no16
+    lda.w #$8000             ; next chunk = bank+1 : $8000
+    sta mOFF
+    sep #$20
+    lda smBNK
+    inc a
+    bra _fr_go8
+.ENDIF
+_fr_no8:                     ; no straddle: the bounce body below is too
+    rep #$20                 ; big for short branches, so exits funnel
+_fr_no16:                    ; through this near trampoline
+    brl _fr_fin
+_fr_wtop:
+    rep #$20
+    lda smSAV
+    cmp.w #$FFFB
+    bcc _fr_no16
+    stz mOFF                 ; next = BW-RAM head $40:0000
+    sep #$20
+    lda.b #$40
+_fr_go8:
+    sta tmp2                 ; next region's bank (8-bit store)
+    rep #$20
+    ; bounce the region tail + next region's head into ebounce, fetch
+    ; this one instruction from there (next fetch_rebase re-derives from
+    ; bCSc and leaves the bounce). Both cases straddle at $xx:FFFB+, so
+    ; n1 is always $10000 - smSAV.
     lda.w #$0000
     sec
     sbc smSAV
-    sta tmp1                 ; n1 = bytes left in WRAM ($10000 - smSAV)
+    sta tmp1                 ; n1 = bytes left in this region
     phy
     lda smSAV
     sta mPTR2                ; source = region-tail pointer
@@ -592,10 +737,11 @@ _fr_cp1:
     cpy tmp1
     bcc _fr_cp1
     sep #$20
-    lda.b #$40               ; source now = BW-RAM head $40:0000
+    lda tmp2                 ; source now = the next region's head
     sta mPTR2+2
     rep #$20
-    stz mPTR2
+    lda mOFF
+    sta mPTR2
     ldy #$0000
 _fr_cp2:
     lda [mPTR2],y
@@ -626,607 +772,7 @@ _fr_fin:
     rep #$20
     rts
 
-.ELSE
-; 172 KB guest (M15): linear 0-108 KB lives in $7E5000-$7FFFFF as usual;
-; 108-172 KB is the cart's 64 KB SRAM, banks $70 (page 0) + $71 (page 1),
-; each 32 KB ($xx:0000-$xx:7FFF; the $8000-$FFFF half of those banks is
-; ROM and must never be touched by a guest access).
-;
-; Two-level scheme so all 53 instruction-fetch sites stay `lda [bCS],y`
-; with no per-fetch cost:
-;   - norm_base_x folds a freshly-built segment base (a single point, so
-;     it lands in exactly one region) at seg-load time. A base >= 108 KB
-;     comes out of upd_base_x as bank $80/$81 and is rewritten to $70/$71.
-;     Fetch/stack/EA then start from a base that already points at real
-;     WRAM or SRAM.
-;   - norm_ptr folds base+offset. Because the base is already normalised,
-;     the sum can leave its region in any direction: a WRAM base can spill
-;     up into $80 (-> SRAM), a $70 base can spill past $70:7FFF into page 1,
-;     a $71 base can spill past $71:7FFF and must wrap to page 0. It maps
-;     every case to a canonical $70/$71/$7E/$7F pointer. (An access that
-;     itself straddles a 32 KB seam still only normalises its start byte —
-;     that is the M15b seam-split work; whole-operand-in-region is fine.)
-
-.IFDEF ELKS
-; ---- ELKS cart-ROM windows (sneslinux) --------------------------------
-; Two guest-physical windows read/execute straight from cart ROM:
-;   kernel  E0000-EFFFF (64 KB)  naive $8C:5000-$8D:4FFF -> banks EK_B0..+1
-;   ROMFS   80000-9FFFF (128 KB) naive $86:5000-$88:4FFF -> banks ER_B0..+3
-; A naive pointer is $7E5000+linear. Each 32 KB chunk of a window lands in
-; one LoROM bank's $8000-$FFFF half:
-;   F = linear - window_start; bank = B0 + (F>>15); off = $8000|(F&$7FFF)
-; EFOLD rewrites P (16-bit low word) / P+2 (bank byte) in place when the
-; pointer is inside a window, else leaves it naive (same contract as the
-; unbacked-bank rule below). Guest writes to a folded pointer hit the ROM
-; chip and drop — the read-only contract comes free from the hardware.
-; Enter/exit with 8-bit A (the caller just loaded the bank byte into A);
-; clobbers A only. A 16-bit access at a chunk's last byte still reads its
-; second byte naively (same class as the BIGMEM immediate-seam edge).
-.MACRO EFOLD ARGS P
-    cmp.b #$86              ; (.b everywhere: WLA sizes unsuffixed
-    bcc _efn\@              ; immediates 16-bit here and the CPU then
-    cmp.b #$8E              ; runs the spare byte as BRK — the classic)
-    bcs _efn\@              ; input is always a NAIVE pointer or sum —
-    cmp.b #$89              ; only $86:5000-$8D:4FFF can be window-resident
-    bcc _efr\@              ; $86-$88: ROMFS candidate
-    cmp.b #$8C
-    bcc _efn\@              ; $89-$8B: the unbacked A0000-DFFFF gap
-    rep #$20                ; --- kernel: Fhi = bank-$8C - (off<$5000)
-    lda P
-    cmp.w #$5000            ; C=0 when off < $5000 (borrow into Fhi)
-    sep #$20
-    lda P+2
-    sbc.b #$8C
-    bne _efn\@              ; 64 KB window: only Fhi=0 is inside
-    lda.b #EK_B0
-    bra _eff\@
-_efr\@:
-    rep #$20                ; --- ROMFS: Fhi = bank-$86 - (off<$5000)
-    lda P
-    cmp.w #$5000
-    sep #$20
-    lda P+2
-    sbc.b #$86
-    cmp.b #$02
-    bcs _efn\@              ; 128 KB window: Fhi 0/1 only
-    asl a                   ; C=0 here (A was 0/1)
-    adc.b #ER_B0
-_eff\@:                     ; A = target bank of the window's even chunk
-    pha
-    rep #$20
-    lda P
-    sec
-    sbc.w #$5000
-    sta P                   ; F low 16
-    asl a                   ; C = F bit 15 (odd chunk)
-    sep #$20
-    pla                     ; pla preserves carry
-    adc.b #$00
-    sta P+2
-    rep #$20
-    lda P
-    ora.w #$8000            ; $8000|(F&$7FFF) == F|$8000
-    sta P
-    sep #$20
-_efn\@:
-.ENDM
-.ENDIF
-
-; Region banks after a valid fold: $7E/$7F = WRAM; $70 = SRAM page 0
-; ($70:0000-7FFF); $71 = SRAM page 1 ($71:0000-7FFF). The $8000-$FFFF
-; half of $70/$71 is ROM. A NAIVE pointer $7E5000+linear reaches SRAM
-; only in bank $80 exactly: $80:0000 = linear $1B000 (SRAM start),
-; $80:FFFF = linear $2AFFF (SRAM end). Bank $81+ is past 172 KB and
-; UNBACKED — it must be left naive rather than folded, or high segments
-; like F000 (BIOS) would alias into SRAM.
-;   HAZARD, not harmless: in LoROM the $81+ banks mirror the system area
-; in their low half — $0000-$1FFF is low WRAM (this emulator's state)
-; and $2100-$43FF is live PPU/APU/DMA MMIO; only $8000+ is ROM. A guest
-; that reads/writes past its top of memory lands there, so a buggy guest
-; can corrupt HOST state or poke registers, where the C core's flat 1 MB
-; just reads zeros. Deliberately unchecked: a fold gate on every access
-; would tax all guests to protect only broken ones.
-
-; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x). A base
-; is one point: only bank $80 is the SRAM window; $7E/$7F (WRAM) and $81+
-; (unbacked) pass through unchanged.
-norm_base_x:
-    sep #$20
-    lda.b 2,x
-    cmp #$80
-    bne _nbx_ok             ; not $80: WRAM ($7E/$7F) or unbacked ($81+)
-    rep #$20
-    lda.b 0,x
-    cmp #$8000
-    bcc _nbx_p0
-    sec
-    sbc #$8000
-    sta.b 0,x               ; page 1: offset -= $8000, bank $71
-    sep #$20
-    lda #$71
-    sta.b 2,x
-    rep #$20
-    rts
-_nbx_p0:
-    sep #$20
-    lda #$70                ; page 0: bank $70, offset kept
-    sta.b 2,x
-    rep #$20
-    rts
-_nbx_ok:
-    ; (ELKS: ROM-window bases deliberately stay NAIVE — naive space is
-    ; closed under base+offset carries, the folded space is NOT. Folding
-    ; happens once, at point of use, in norm_ptr/norm_ptr2/norm_fp.)
-    rep #$20
-    rts
-
-; fold a full base+offset pointer in mPTR to a canonical region pointer.
-; The base is already normalised, so the sum leaves a region as: WRAM ->
-; $80 (SRAM window), $70 -> $71 (page 0 spills into page 1), $71 -> ROM
-; (page 1 spills past the top, left unbacked). Whole-operand-in-region.
-norm_ptr:
-    sep #$20
-    lda mPTR+2
-    cmp #$80
-    beq _np_w80             ; bank $80: SRAM window / WRAM overflow
-    cmp #$70
-    beq _np_70              ; bank $70: page 0 (may spill to page 1)
-    cmp #$71
-    beq _np_71              ; bank $71: page 1 (may spill to unbacked ROM)
-.IFDEF ELKS
-    cmp.b #$86              ; ELKS: kernel/ROMFS window -> cart ROM bank
-    bcc _np_nef             ; (cheap gate inline, fold out of line: the
-    cmp.b #$8E              ; full EFOLD body breaks the beq distances)
-    bcs _np_nef
-    jsr elks_fold_mptr
-_np_nef:
-.ENDIF
-    rep #$20               ; $7E/$7F WRAM or unbacked: leave as-is
-    rts
-_np_w80:
-    rep #$20
-    lda mPTR
-    cmp #$8000
-    bcc _np_p0
-_np_p1:                     ; offset >= $8000 -> page 1
-    sec
-    sbc #$8000
-    sta mPTR
-    sep #$20
-    lda #$71
-    sta mPTR+2
-    rep #$20
-    rts
-_np_p0:                     ; offset < $8000 -> page 0
-    sep #$20
-    lda #$70
-    sta mPTR+2
-    rep #$20
-    rts
-_np_70:
-    rep #$20
-    lda mPTR
-    cmp #$8000
-    bcc _np_leave           ; page 0, in range
-    bra _np_p1              ; spilled past page 0 -> page 1
-_np_71:                     ; page 1 in range, or spilled to ROM: leave either
-    rep #$20
-_np_leave:
-    rts
-
-; same fold for the second pointer (string destination).
-norm_ptr2:
-    sep #$20
-    lda mPTR2+2
-    cmp #$80
-    beq _np2_w80
-    cmp #$70
-    beq _np2_70
-    cmp #$71
-    beq _np2_71
-.IFDEF ELKS
-    cmp.b #$86              ; ELKS: kernel/ROMFS window -> cart ROM bank
-    bcc _np2_nef
-    cmp.b #$8E
-    bcs _np2_nef
-    jsr elks_fold_mptr2
-_np2_nef:
-.ENDIF
-    rep #$20
-    rts
-_np2_w80:
-    rep #$20
-    lda mPTR2
-    cmp #$8000
-    bcc _np2_p0
-_np2_p1:
-    sec
-    sbc #$8000
-    sta mPTR2
-    sep #$20
-    lda #$71
-    sta mPTR2+2
-    rep #$20
-    rts
-_np2_p0:
-    sep #$20
-    lda #$70
-    sta mPTR2+2
-    rep #$20
-    rts
-_np2_70:
-    rep #$20
-    lda mPTR2
-    cmp #$8000
-    bcc _np2_leave
-    bra _np2_p1
-_np2_71:
-    rep #$20
-_np2_leave:
-    rts
-
-; --- seam-safe 16-bit access. A word straddles a region seam only when
-; mPTR is the last backed byte of its region: $7F:FFFF (WRAM top),
-; $70:7FFF (page 0 top) or $71:7FFF (page 1 top). Every other address is
-; contiguous, so the common case is a single [mPTR]. On a seam the two
-; bytes are done separately, each in its own region; mPTR is preserved so
-; a read-modify-write (rm_read16 then rm_write16) still targets the word.
-; advance from a seam byte to the next region's byte 0:
-;   $7F:FFFF -> $70:0000   $70:7FFF -> $71:0000   $71:7FFF -> $70:0000 (top)
-
-rd16m:                        ; A(16) <- word at mPTR, seam-safe
-    lda mPTR
-    cmp #$7FFF
-    beq _rd_cp
-    cmp #$FFFF
-    beq _rd_cw
-    lda [mPTR]
-    rts
-_rd_cw:
-    sep #$20
-    lda mPTR+2
-    cmp #$7F
-    rep #$20
-    beq _rd_split
-    lda [mPTR]
-    rts
-_rd_cp:
-    sep #$20
-    lda mPTR+2
-    cmp #$70
-    beq _rd_yp
-    cmp #$71
-    beq _rd_yp
-    rep #$20
-    lda [mPTR]
-    rts
-_rd_yp:
-    rep #$20
-_rd_split:
-    lda mPTR
-    sta smSAV                 ; save mPTR low16
-    sep #$20
-    lda mPTR+2
-    sta smBNK                 ; save bank
-    lda [mPTR]                ; low data byte
-    pha                       ; park it on the stack (8-bit push)
-    jsr _sm_adv               ; mPTR -> next region : 0000
-    lda [mPTR]                ; high data byte
-    xba                       ; -> A high
-    pla                       ; A low = low data byte
-    rep #$20                  ; A = (high<<8)|low
-    pha
-    jsr _sm_rst
-    pla
-    rts
-
-wr16m:                        ; write A(16) to mPTR, seam-safe
-    pha
-    lda mPTR
-    cmp #$7FFF
-    beq _wr_cp
-    cmp #$FFFF
-    beq _wr_cw
-    pla
-    sta [mPTR]
-    rts
-_wr_cw:
-    sep #$20
-    lda mPTR+2
-    cmp #$7F
-    rep #$20
-    beq _wr_split
-    pla
-    sta [mPTR]
-    rts
-_wr_cp:
-    sep #$20
-    lda mPTR+2
-    cmp #$70
-    beq _wr_yp
-    cmp #$71
-    beq _wr_yp
-    rep #$20
-    pla
-    sta [mPTR]
-    rts
-_wr_yp:
-    rep #$20
-_wr_split:
-    lda mPTR
-    sta smSAV
-    sep #$20
-    lda mPTR+2
-    sta smBNK
-    rep #$20
-    pla                       ; value (16-bit, balances entry pha)
-    sep #$20
-    sta [mPTR]                ; low byte -> seam byte
-    xba
-    pha                       ; park value high byte (8-bit push)
-    jsr _sm_adv               ; mPTR -> next region : 0000
-    pla                       ; value high byte
-    sta [mPTR]                ; -> next region
-    jsr _sm_rst
-    rts
-
-; advance mPTR from a seam byte to the next region's byte 0. A/8-bit in.
-_sm_adv:
-    lda smBNK
-    cmp #$7F
-    bne _sma1
-    lda #$70                  ; WRAM top -> page 0
-    bra _smset
-_sma1:
-    cmp #$70
-    bne _sma2
-    lda #$71                  ; page 0 top -> page 1
-    bra _smset
-_sma2:
-    lda #$70                  ; page 1 top -> page 0 (wrap, ~never)
-_smset:
-    sta mPTR+2
-    rep #$20
-    stz mPTR
-    sep #$20
-    rts
-; restore mPTR from the seam save. enters 8-bit A, exits 16-bit.
-_sm_rst:
-    rep #$20
-    lda smSAV
-    sta mPTR
-    sep #$20
-    lda smBNK
-    sta mPTR+2
-    rep #$20
-    rts
-
-; fold the fetch pointer smSAV(low16)/smBNK(bank) to a canonical region,
-; same map as norm_ptr. Used by fetch_rebase.
-norm_fp:
-    sep #$20
-    lda smBNK
-    cmp #$80
-    beq _fp_w80
-    cmp #$70
-    beq _fp_70
-    cmp #$71
-    beq _fp_71
-.IFDEF ELKS
-    cmp.b #$86              ; ELKS: XIP fetch from the kernel/ROMFS windows
-    bcc _fp_nef
-    cmp.b #$8E
-    bcs _fp_nef
-    jsr elks_fold_sm
-_fp_nef:
-.ENDIF
-    rep #$20
-    rts
-_fp_w80:
-    rep #$20
-    lda smSAV
-    cmp #$8000
-    bcc _fp_p0
-_fp_p1:
-    sec
-    sbc #$8000
-    sta smSAV
-    sep #$20
-    lda #$71
-    sta smBNK
-    rep #$20
-    rts
-_fp_p0:
-    sep #$20
-    lda #$70
-    sta smBNK
-    rep #$20
-    rts
-_fp_70:
-    rep #$20
-    lda smSAV
-    cmp #$8000
-    bcc _fp_leave
-    bra _fp_p1
-_fp_71:
-    rep #$20
-_fp_leave:
-    rts
-
-.IFDEF ELKS
-; out-of-line EFOLD bodies (the inline form breaks branch distances in
-; the norm_* routines). Called with the bank byte in 8-bit A, pre-gated
-; to $86-$8D by the caller; X/Y preserved.
-elks_fold_mptr:
-    EFOLD mPTR
-    rts
-elks_fold_mptr2:
-    EFOLD mPTR2
-    rts
-elks_fold_sm:
-    EFOLD smSAV
-    rts
-.ENDIF
-
-; Keep bCS+Y inside a backed region so the opcode/immediate fetches
-; (lda [bCS],y at 53 sites) never read the ROM half of an SRAM bank when
-; sequential execution walks a code segment across a seam. Runs once per
-; instruction. Derives the fetch pointer from the NAIVE bCSc (sound under
-; offset carries, and immune to a previous bounce's rebase — bCS itself
-; is derived scratch), folds it to its real region and rebases
-; bCS = folded - Y, so bCS+Y is unchanged when already in region (a
-; no-op for WRAM code) and corrected when it has crossed. Y preserved.
-fetch_rebase:
-    tya
-    clc
-    adc bCSc                 ; naive base + Y: sound fold input (naive
-    sta smSAV                ; space is closed under offset carries)
-    sep #$20
-    lda bCSc+2
-    adc #0
-    sta smBNK
-    rep #$20
-    jsr norm_fp
-    ; Seam straddle: an instruction STARTING in the last 5 bytes of its
-    ; region spills operand bytes into the wrong SNES bytes — the next
-    ; bank's low half (WRAM-mirror garbage) after a ROM chunk, or plain
-    ; pointer arithmetic past an SRAM page top — because [bCS],y only
-    ; carries the flat 24-bit pointer. ($7E WRAM needs nothing: its next
-    ; guest byte IS the next SNES byte.) Bounce 8 bytes (region tail +
-    ; next region head) into ebounce and fetch this one instruction from
-    ; there; the next fetch_rebase re-derives from bCSc and leaves the
-    ; bounce. FreeDOS found the WRAM->SRAM case: its kernel relocates
-    ; init to top-of-memory, parking code exactly across linear $1B000.
-    ;   $7F:FFFB+ -> next $70:0000   $70:7FFB+ -> next $71:0000
-    ;   $71:7FFB+ -> next $70:0000 (wrap, ~never)
-    ;   ELKS $8E-$94:FFFB+ -> next bank+1:$8000 (ROM chunk top)
-    sep #$20
-    lda smBNK
-    cmp.b #$7F
-    beq _fr_wtop
-    cmp.b #$70
-    beq _fr_p0
-    cmp.b #$71
-    beq _fr_p1
-.IFDEF ELKS
-    cmp.b #EK_B0
-    bcc _fr_no8
-    cmp.b #$95
-    bcs _fr_no8
-    rep #$20
-    lda smSAV
-    cmp.w #$FFFB
-    bcc _fr_no16
-    lda.w #$8000             ; next chunk = bank+1 : $8000
-    sta mOFF
-    sep #$20
-    lda smBNK
-    inc a
-    bra _fr_go8
-.ELSE
-    bra _fr_no8
-.ENDIF
-_fr_no8:                     ; no straddle: the bounce body below is too
-    rep #$20                 ; big for short branches, so exits funnel
-_fr_no16:                    ; through this near trampoline
-    brl _fr_strad16
-_fr_wtop:
-    rep #$20
-    lda smSAV
-    cmp.w #$FFFB
-    bcc _fr_no16
-    stz mOFF                 ; next = SRAM page 0 : 0000
-    sep #$20
-    lda.b #$70
-    bra _fr_go8
-_fr_p0:
-    rep #$20
-    lda smSAV
-    cmp.w #$7FFB
-    bcc _fr_no16
-    stz mOFF                 ; next = SRAM page 1 : 0000
-    sep #$20
-    lda.b #$71
-    bra _fr_go8
-_fr_p1:
-    rep #$20
-    lda smSAV
-    cmp.w #$7FFB
-    bcc _fr_no16
-    stz mOFF                 ; top of guest memory: wrap (~never)
-    sep #$20
-    lda.b #$70
-_fr_go8:
-    sta tmp2                 ; next region's bank (8-bit store)
-    rep #$20
-    lda smSAV                ; n1 = bytes left in this region:
-    and.w #$8000             ; $FFFB+ cases: $10000 - smSAV (= 0 - smSAV)
-    beq _fr_n8k              ; $7FFB+ cases: $8000 - smSAV
-    lda.w #$0000
-    sec
-    sbc smSAV
-    bra _fr_n1
-_fr_n8k:
-    lda.w #$8000
-    sec
-    sbc smSAV
-_fr_n1:
-    sta tmp1
-    phy
-    lda smSAV
-    sta mPTR2                ; source = region-tail pointer
-    sep #$20
-    lda smBNK
-    sta mPTR2+2
-    rep #$20
-    ldx #$0000
-    ldy #$0000
-_fr_cp1:
-    lda [mPTR2],y
-    sep #$20
-    sta.l $7E0000+ebounce,x
-    rep #$20
-    inx
-    iny
-    cpy tmp1
-    bcc _fr_cp1
-    sep #$20
-    lda tmp2                 ; source now = next region's head
-    sta mPTR2+2
-    rep #$20
-    lda mOFF
-    sta mPTR2
-    ldy #$0000
-_fr_cp2:
-    lda [mPTR2],y
-    sep #$20
-    sta.l $7E0000+ebounce,x
-    rep #$20
-    inx
-    iny
-    cpx.w #$0008
-    bcc _fr_cp2
-    ply
-    lda.w #ebounce           ; fetch this instruction from the bounce
-    sta smSAV
-    sep #$20
-    lda.b #$7E
-    sta smBNK
-    rep #$20
-_fr_strad16:
-    sty tmp0
-    lda smSAV
-    sec
-    sbc tmp0
-    sta bCS
-    sep #$20
-    lda smBNK
-    sbc #0
-    sta bCS+2
-    rep #$20
-    rts
-.ENDIF                       ; SA1 (BW-RAM) / $70-$71 (SRAM) region layer
-.ENDIF
+.ENDIF                       ; SA-1 BW-RAM region layer
 
 ; advance mPTR by one byte, carrying into the bank/region. `inc mPTR`
 ; alone wraps the low word at $FFFF WITHOUT touching the bank byte: a
@@ -1235,7 +781,6 @@ _fr_strad16:
 ; emulator's own direct page. Used by the m16:16 loaders (LES/LDS,
 ; CALL/JMP far m); 16-bit A in and out.
 mptr_adv1:
-.IFDEF BIGMEM
 .IFDEF SA1
     lda mPTR
     cmp #$FFFF
@@ -1253,51 +798,6 @@ _ma_bank:                    ; bank carry: the WRAM top hops to BW-RAM;
     rep #$20
     rts
 _ma_nb1:
-    inc a
-    sta mPTR+2
-    rep #$20
-    rts
-.ELSE
-    lda mPTR
-    cmp #$7FFF
-    beq _ma_top              ; maybe an SRAM page top
-    cmp #$FFFF
-    beq _ma_bank
-    inc mPTR
-    rts
-_ma_top:                     ; $xx:7FFF: a region top only in $70/$71
-    sep #$20
-    lda mPTR+2
-    cmp #$70
-    beq _ma_p0t
-    cmp #$71
-    beq _ma_p1t
-    rep #$20
-    inc mPTR
-    rts
-_ma_p0t:
-    lda #$71                 ; page 0 top -> page 1 : 0000
-    sta mPTR+2
-    rep #$20
-    stz mPTR
-    rts
-_ma_p1t:
-    lda #$70                 ; page 1 top -> page 0 (wrap, ~never)
-    sta mPTR+2
-    rep #$20
-    stz mPTR
-    rts
-_ma_bank:                    ; $xx:FFFF: bank carry or region hop
-    stz mPTR
-    sep #$20
-    lda mPTR+2
-    cmp #$7F
-    bne _ma_nb1
-    lda #$70                 ; WRAM top -> SRAM page 0 (linear $1B000)
-    sta mPTR+2
-    rep #$20
-    rts
-_ma_nb1:
 .IFDEF ELKS
     cmp.b #EK_B0             ; ROM-window chunk top: the next guest byte
     bcc _ma_nb2              ; is the NEXT bank's ROM half, not its low
@@ -1311,13 +811,12 @@ _ma_nb1:
     rts
 _ma_nb2:
 .ENDIF
-    inc a                    ; plain carry ($7E->$7F, naive space)
+    inc a
     sta mPTR+2
     rep #$20
     rts
-.ENDIF                       ; SA1 (BW-RAM) / $70-$71 (SRAM)
 .ELSE
-    lda mPTR                 ; non-BIGMEM: only the $7E->$7F carry exists
+    lda mPTR                 ; non-SA1: only the $7E->$7F carry exists
     cmp #$FFFF
     beq _ma_bank
     inc mPTR
@@ -1330,7 +829,7 @@ _ma_bank:
     sta mPTR+2
     rep #$20
     rts
-.ENDIF                       ; BIGMEM
+.ENDIF                       ; SA1
 
 ; --- mod=0
 _ea00_0:                     ; [BX+SI]
@@ -1513,7 +1012,7 @@ regoff8w:
 rm_read16:
     lda mISREG
     bne _rr16_reg
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp rd16m
 .ELSE
     lda [mPTR]
@@ -1527,7 +1026,7 @@ _rr16_reg:
 rm_write16:                  ; A = value
     ldx mISREG
     bne _rw16_reg
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp wr16m
 .ELSE
     sta [mPTR]
@@ -2283,7 +1782,7 @@ op89:                        ; MOV rm16, r16
     lda.b 0,x
     ldx mISREG
     bne _m89r
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m                ; seam-safe (word may straddle a region top)
 .ELSE
     sta [mPTR]
@@ -2315,7 +1814,7 @@ op8B:                        ; MOV r16, rm16
     jsr decode_modrm
     lda mISREG
     bne _m8Br
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; seam-safe
 .ELSE
     lda [mPTR]
@@ -2359,7 +1858,7 @@ opA1:                        ; MOV AX, [moffs16]
     jsr seg_src_x
     lda tmp0
     jsr mk_ptr
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr rd16m                ; seam-safe
 .ELSE
     lda [mPTR]
@@ -2390,7 +1889,7 @@ opA3:                        ; MOV [moffs16], AX
     lda tmp0
     jsr mk_ptr
     lda gAX
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m                ; seam-safe
 .ELSE
     sta [mPTR]
@@ -2574,7 +2073,7 @@ push_common:                 ; A = value to push
     ldx #30                  ; bSS
     jsr mk_ptr
     lda tmp0
-.IFDEF BIGMEM
+.IFDEF SA1
     jsr wr16m                ; a stack word can straddle a region seam
 .ELSE
     sta [mPTR]
@@ -2589,7 +2088,7 @@ pop_common:                  ; A <- popped value
     inc a
     inc a
     sta gSP
-.IFDEF BIGMEM
+.IFDEF SA1
     jmp rd16m
 .ELSE
     lda [mPTR]
