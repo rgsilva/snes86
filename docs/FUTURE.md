@@ -281,11 +281,31 @@ suite's OVERLAYS test fixture.
 
 ## Windows 1.01 — it boots on the SNES; input is the milestone left
 
-Windows 3.0 is out of reach and stays out: its real mode — already the
-low-memory fallback — wants 640 KB installed / 384 KB free and DOS 3.1+, more
-than twice anything this cart can back (see the RAM levers above; even wiring
-every theoretical LoROM SRAM bank stays emulator-only fantasy). Windows 2.03
-(512 KB, DOS 3.0) sits on the same wrong side of the wall.
+Windows 3.0 is out of reach and stays out — but the box quotes were worth
+checking, and one of them was wrong. Both were installed from real media and
+run on `runpc`, and both **boot their GUI on our 8086 + HLE BIOS** (the CPU
+and the machine are fine); the wall is purely RAM. Measured floors, not
+box quotes — bisected with `runpc -m`, MS-DOS 3.30, `BUFFERS=2 FILES=20`,
+CGA driver, C: read-only:
+
+| | box quote | measured floor | free RAM it needs | verdict vs 364 KB ceiling |
+|---|---|---|---|---|
+| Windows 3.0 real mode | 640 KB / 384 KB free | **430 KB** (420 KB lean DOS) | ~381,900 bytes | **impossible** — 364 KB is only 372,736 bytes *total*, ~9 KB below what Windows wants free before DOS exists at all |
+| Windows 2.03 | 512 KB | **343 KB** | ~306,700 bytes | **fits** — on the 364 KB (no-B:) SA-1 board, with ~21 KB spare. Not on the 300 KB board (43 KB short). |
+
+So Windows 3.0 stays a desktop-core trophy: it installs and reaches Program
+Manager in CGA 640×200 on `runpc` (~7 M guest instructions), and it can never
+run on the console. Windows 2.03 reaches the MS-DOS Executive in <3 M guest
+instructions and *does* fit the arithmetic — but it wants **DOS 3.x**: under
+our MIT MS-DOS 2.0 it paints its logo, calls the DOS-3 internals (INT 21h
+AH=52h list-of-lists, AH=57h) and exits silently, with or without a faked
+version number. Shipping it would mean a DOS 3 on the cart *and* the whole
+SA-1 BW-RAM-as-conventional-RAM plumbing *and* the read-only-C: work below —
+i.e. all of Windows 1.01's milestone plus a new DOS. Windows 1.01 remains the
+right first target.
+
+Windows 3.1 and the Windows/286 + Windows/386 2.x variants need a 286/386
+and are out on the CPU, not the RAM.
 
 **Windows 1.01 is a different story: 8088, 256 KB, CGA, DOS 2.0 — the exact DOS
 we already boot. It boots.** Microsoft Windows 1.01 comes up to its **MS-DOS
