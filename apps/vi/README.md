@@ -20,6 +20,10 @@ the current drive unless you `SET TMP=B:\` first (on the SNES, do).
 What's missing: `:!` and `:r !cmd` (no subshell on a 108 KB machine),
 tags across files, and anything your muscle memory borrowed from vim.
 
-`make recompile` rebuilds `vi.exe` from source: it fetches a pinned
-Open Watcom v2 snapshot into `apps/cache/watcom/` (149 MB, one-time)
-and cross-compiles the vendored levee source with `snescall.c`.
+No `vi.exe` is committed — `make stage` (and so every image build)
+builds it from source: `fetch_watcom.py` fetches a pinned Open Watcom
+v2 snapshot into `apps/cache/watcom/` (~151 MB download, one-time,
+cached; only the host bin dir + headers + 16-bit libs are unpacked)
+and cross-compiles the vendored levee source with `snescall.c`. Works
+on macOS arm64 and Linux x64 alike — the Watcom host bin dir is picked
+per-OS at build time. `make recompile` forces the rebuild.

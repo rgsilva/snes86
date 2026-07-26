@@ -47,8 +47,9 @@ Our additions, all new code, same license terms as levee:
 Built with **Open Watcom v2** (open source, Sybase Open Watcom Public
 License), 2026-07-13 release snapshot, pinned by sha256 in
 `fetch_watcom.py`; 16-bit DOS target, small memory model
-(`wcl -bcl=dos -ms -0 -os`). The committed `vi.exe` keeps the ROM
-buildable from a clean checkout; `make recompile` reproduces it.
+(`wcl -bcl=dos -ms -0 -os`). No `vi.exe` is committed — every image
+build compiles it from this source (`make stage`); the per-OS Watcom
+host bin dir (macOS arm64 / Linux x64) is resolved at build time.
 
 ## Vendored file hashes (sha256)
 

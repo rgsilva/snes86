@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
-"""Fetch Open Watcom v2 for the vi `recompile` pipeline.
+"""Fetch Open Watcom v2 for the vi build (stage compiles vi.exe).
 
 Open Watcom is open source (Sybase Open Watcom Public License) but at
-149 MB the snapshot has no business inside this repo, so — exactly like
-TP3, the ELKS and FreeDOS images — it is FETCHED at build time with a
-pinned hash and cached locally (fetch-at-build pattern, see
+~151 MB the snapshot has no business inside this repo, so — exactly
+like TP3, the ELKS and FreeDOS images — it is FETCHED at build time
+with a pinned hash and cached locally (fetch-at-build pattern, see
 apps/fetch_tp3.py).
 
 We pin the dated 2026-07-13 release snapshot (the "Current-build" tag
-moves) and unpack only what the cross-build needs:
+moves). The release's only per-host artifacts are self-extracting
+installers (~128 MB each, no plain archive inside), so the multi-host
+ow-snapshot.tar.xz is the smallest artifact we can actually unpack —
+one URL, one sha256, every host. We unpack only what the cross-build
+needs on THIS host:
 
-  armo64/   macOS arm64 host binaries (wcc, wlink, wcl, ...)
-  h/        target headers
-  lib286/   16-bit DOS runtime libraries
+  <hostbin>/  host compiler binaries (wcc, wlink, wcl, ...):
+              armo64 = macOS arm64, bino64 = macOS x64,
+              binl64 = Linux x64,   arml64 = Linux arm64
+  h/          target headers
+  lib286/     16-bit DOS runtime libraries
 
-Output: apps/cache/watcom/ ready for `make recompile`.
+Output: apps/cache/watcom/ ready for the vi Makefile (which asks
+`fetch_watcom.py --bindir` for the host bin dir instead of hardcoding
+one).
 """
 import hashlib
 import os
+import platform
 import subprocess
 import sys
 import urllib.request
@@ -31,11 +40,25 @@ URL = ("https://github.com/open-watcom/open-watcom-v2/releases/download/"
        "2026-07-13-Build/ow-snapshot.tar.xz")
 SHA = "35e9c56ca93234ba0b8b596387815399317ea0548aeac1318f0674dca3921314"
 
-WANT = ["./armo64", "./h", "./lib286", "./license.txt"]
+HOSTDIRS = {
+    ("Darwin", "arm64"): "armo64",
+    ("Darwin", "x86_64"): "bino64",
+    ("Linux", "x86_64"): "binl64",
+    ("Linux", "aarch64"): "arml64",
+}
+
+
+def hostdir():
+    key = (platform.system(), platform.machine())
+    try:
+        return HOSTDIRS[key]
+    except KeyError:
+        raise SystemExit(f"fetch_watcom.py: unsupported host {key} — "
+                         f"known: {sorted(HOSTDIRS)}")
 
 
 def have():
-    return os.path.exists(os.path.join(DEST, "armo64", "wcl")) \
+    return os.path.exists(os.path.join(DEST, hostdir(), "wcl")) \
        and os.path.exists(os.path.join(DEST, "h", "stdio.h")) \
        and os.path.exists(os.path.join(DEST, "lib286", "dos", "clibs.lib"))
 
@@ -49,6 +72,10 @@ def sha256(path):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--bindir":
+        # resolve-only mode for the Makefile: never fetches
+        print(os.path.abspath(os.path.join(DEST, hostdir())))
+        return
     if have():
         return
     os.makedirs(CACHE, exist_ok=True)
@@ -60,8 +87,9 @@ def main():
             raise SystemExit(f"ow-snapshot.tar.xz: sha256 mismatch ({got}) "
                              "— refusing")
     os.makedirs(DEST, exist_ok=True)
-    subprocess.run(["tar", "xJf", TARBALL, "-C", DEST] + WANT, check=True)
-    print("Open Watcom v2 ready in apps/cache/watcom/")
+    want = ["./" + hostdir(), "./h", "./lib286", "./license.txt"]
+    subprocess.run(["tar", "xJf", TARBALL, "-C", DEST] + want, check=True)
+    print(f"Open Watcom v2 ({hostdir()}) ready in apps/cache/watcom/")
 
 
 if __name__ == "__main__":
