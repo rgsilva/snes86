@@ -1120,7 +1120,10 @@ hle_int16:
     lda gAX
     xba
     and #$00FF
-    bne _h16_n0
+    beq _h16_r0
+    cmp #$0010               ; AH=10h extended read = AH=0: the single
+    bne _h16_n0              ; ring never filters, same read serves both
+_h16_r0:
     ; AH=0: pop key (DOS 2.0 polls AH=1 first, so this never blocks)
     ldx #1
     jsr bda_pop
@@ -1146,7 +1149,10 @@ _h16_empty0:
     rts
 _h16_n0:
     cmp #$0001
+    beq _h16_r1
+    cmp #$0011               ; AH=11h extended status = AH=1
     bne _h16_n1
+_h16_r1:
     jsr flags_norm
     ldx #0                   ; peek the BIOS BDA ring first
     jsr bda_pop
@@ -1174,7 +1180,13 @@ _h16_zf1:
     rts
 _h16_n1:
     cmp #$0002
-    bne _h16_ret
+    beq _h16_r2
+    cmp #$0012               ; AH=12h extended shift flags: AL is the
+    bne _h16_ret             ; AH=2 byte; extended byte (AH) reads 0 too
+    sep #$20
+    stz gAX+1
+    rep #$20
+_h16_r2:
     sep #$20
     stz gAX
     rep #$20

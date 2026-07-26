@@ -82,7 +82,7 @@ dispatches BIOS calls natively.
 | 11h equipment | returns "two floppies, 80×25 color" (one floppy under BIGMEM — the SRAM banks are guest RAM there, so B: is gone). |
 | 12h memory size | returns the guest RAM size (108 KB, or 172 under BIGMEM). |
 | 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable 32 KB battery-backed SRAM disk (absent under BIGMEM); C: is a hard-disk image. Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
-| 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags. Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
+| 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags — the extended API (AH=10h/11h/12h) aliases onto these, since the single unfiltered ring makes the extended read the same read (that's how F11/F12 from the on-screen keyboard reach a guest). Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |
 
