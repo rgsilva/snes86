@@ -29,14 +29,14 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 
 | target | output | what | needs local (uncommitted) files? |
 |---|---|---|---|
-| `make` / `make msdos` | `msdos.sfc` | MS-DOS 2.0, free C: | no — builds from the repo |
+| `make` / `make msdos` | `msdos.sfc` | MS-DOS 2.0, free C: | no — TP3 auto-fetched (compiles the apps) |
 | `make freedos` | `freedos.sfc` | FreeDOS 1.3, 172 KB guest | no — FreeDOS auto-fetched |
 | `make elks` | `elks.sfc` | ELKS (Linux), no DOS | no — ELKS images auto-fetched |
-| `make msdos_big` | `msdos_big.sfc` | MS-DOS, 172 KB guest | no |
+| `make msdos_big` | `msdos_big.sfc` | MS-DOS, 172 KB guest | no — TP3 auto-fetched |
 | `make boot DISK=img` | `boot.sfc` | a self-booting disk, no DOS | the disk image |
 | `make test` | — | the public suite | no (Mesen legs skip without Mesen) |
 | `make test-extra` | — | the copyrighted app legs | yes — a complete `disks/` |
-| `make apps` | — | rebuild every tool from source | no |
+| `make apps` | — | force-rebuild every tool + verify | no |
 
 **OVERLAYS** is a uniform optional flag on every DOS-booting target
 (`msdos`, `msdos_big`, `freedos`, `boot`):
@@ -64,11 +64,23 @@ What each one actually is:
   utilities: CHKDSK, DEBUG, EDLIN, MORE, FIND, SORT) becomes `C:\DOS`,
   and `user/` at the repo root becomes
   `C:\USER`. The DOS `PATH` is `C:\;C:\DOS;C:\TED;C:\CC` — everything else
-  is a `CD` away. Builds with nothing but what's in this repo.
-  (`C:\JAVA\JAVAC.EXE` is a committed binary; it rebuilds byte-identically
-  from the public-domain Small-C kit committed in `apps/cc/` —
-  `make -C apps/java javac-dos`, see
-  [docs/notes/JAVAC-PORTING](notes/JAVAC-PORTING.md).)
+  is a `CD` away.
+
+  **No app binaries are committed** — the build compiles every one of
+  them from source, on the emulated machine itself: the Turbo Pascal
+  tools (VIEW, TED, SOKOBAN, MIDPLAY/MIDCONV, SIEVE/HELLO, JAVA.COM)
+  via `apps/tpcompile.sh` (TP3's IDE driven inside `runpc`), and
+  `C:\JAVA\JAVAC.EXE` from `javac.c` with the public-domain Small-C kit
+  committed in `apps/cc/` (`make -C apps/java javac-dos`, see
+  [docs/notes/JAVAC-PORTING](notes/JAVAC-PORTING.md)). That makes
+  **Turbo Pascal 3.01A a required build dependency of the MS-DOS
+  images**: `apps/fetch_tp3.py` downloads it on first build (pinned
+  sha256, cached in `apps/cache/`, checked against a local
+  `disks/tp301.img` first) — the same fetch-at-build stance as the
+  FreeDOS and ELKS images, since Borland retains all rights and we
+  never redistribute it. First `make msdos` therefore needs the
+  network (or the local disk image); after that everything is cached
+  and the compiles are incremental.
 
 - `make freedos` — the same machine on the 172 KB BIGMEM base, booting
   [FreeDOS](https://www.freedos.org/) 1.3 to FreeCOM instead of MS-DOS.
@@ -100,7 +112,9 @@ There is no public target for the copyrighted app matrix: the suite's
 `--check` prints the manifest of required local files) onto the public
 machine via the same OVERLAYS mechanism. Nothing from it ships.
 
-Every target above builds from committed or auto-fetched free software.
+Every target above builds from committed sources or auto-fetched
+software (the ELKS/FreeDOS images, Turbo Pascal 3) — no binaries of
+ours are committed, and nothing fetched is ever redistributed.
 PC-DOS is no longer a build target; the code path survives behind
 `.IFDEF PCDOS` in `dosboot.asm` but nothing builds it.
 
@@ -154,12 +168,13 @@ make test-extra    # ONLY the copyrighted app legs (Zork/GW-BASIC/
                    # WordStar/Multiplan/MODE) on a private fixture ROM;
                    # refuses to run unless disks/ is complete
                    # (disks/mkappmatrix.py --check lists what's needed)
-make apps          # rebuild every app from source (TP3 inside
+make apps          # FORCE-rebuild every app from source (TP3 inside
                    # runpc; javac.exe via Small-C) and verify — VIEW by
-                   # render bit-compare, javac.exe byte-identical. The
-                   # rebuilt .COMs overwrite the committed ones in place
-                   # (a TP3 rebuild differs by 3 inert load-segment
-                   # stamp bytes — git checkout restores)
+                   # render-vs-golden bit-compare, javac.exe by
+                   # byte-compare against the clang build of the same
+                   # compiler source. The regular image builds already
+                   # compile the apps (nothing binary is committed);
+                   # this is the force-everything canary
 
 # 8086 core correctness (C reference vs SingleStepTests 8088 v2 vectors)
 cd core-c && make && tests/vectors/fetch.sh   # one-time, ~760 MB of vectors

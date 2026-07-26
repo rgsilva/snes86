@@ -97,11 +97,12 @@ All binaries are **stock** — nothing was patched. The 108 KB fit and the
 read-only-C: operation are purely command-line and environment matters
 (see "Mechanics" below).
 
-This directory is also the complete Small-C kit for rebuilding
-`apps/java/javac.exe` (`make -C apps/java javac-dos`): CC.EXE +
-ASM.EXE + `lib/*.OBJ` are exactly the pieces that build needs, so the
-rebuild runs from a clean checkout with no external kit. The rebuilt
-`javac.exe` is byte-identical to the committed one.
+This directory is also the complete Small-C kit that builds
+`apps/java/javac.exe` (`make -C apps/java javac-dos` — javac.exe is a
+build product, not committed): CC.EXE + ASM.EXE + `lib/*.OBJ` are
+exactly the pieces that build needs, so it runs from a clean checkout
+with no external kit, and the pipeline is deterministic (every rebuild
+is byte-identical).
 
 ### Provenance & hashes
 

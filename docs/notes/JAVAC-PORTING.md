@@ -4,9 +4,10 @@
 (format version 49.0) for the subset JAVA.COM interprets. One source,
 two binaries:
 
-- **`javac.exe`** (committed) — the DOS binary that ships in `C:\JAVA`.
-  Built by the 1988 Small-C 2.2 toolchain running on MS-DOS 2.0 inside
-  our own emulator (`tools/mkjavac_dos.sh`, deterministic —
+- **`javac.exe`** (a build product — not committed; every image build
+  recreates it) — the DOS binary that ships in `C:\JAVA`. Built by the
+  1988 Small-C 2.2 toolchain running on MS-DOS 2.0 inside our own
+  emulator (`tools/mkjavac_dos.sh`, deterministic —
   re-running rebuilds it byte-identically). Compiles every sample at
   `-m 108` (108 KB of guest RAM).
 - **`make javac-dev`** — the same compiler built with clang for the
@@ -40,9 +41,10 @@ deduplicated in-memory constant-pool builder. No AST.
 
 Ricardo has since dropped the self-hosting goal (`javac.c` will not be
 compiled ON the SNES), so the dialect below documents how `javac.exe`
-was built; it is not a rule for future edits. If you change javac.c
-and only verify with clang, rebuild `javac.exe` via
-`tools/mkjavac_dos.sh` or note the divergence.
+was built; it is not a rule for future edits. If you change javac.c,
+also check the Small-C build still compiles it (`make apps` rebuilds
+`javac.exe` via `tools/mkjavac_dos.sh` and byte-compares its output
+against the clang build's).
 
 The 1988 Small-C 2.2 (Hendrix, rev 117) rules, each found the hard way:
 
