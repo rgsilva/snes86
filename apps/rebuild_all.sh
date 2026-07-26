@@ -59,11 +59,11 @@ else
   echo "FAIL view"; FAIL=1
 fi
 
-# --- the other TP3 tools: rebuilt from .pas; behavioral checks live in
-# `make test` (ted-host/t_ted, java-host, t_midi ...) ---
+# --- the other tools (TP3 .pas + the Watcom vi): rebuilt from source;
+# behavioral checks live in `make test` (ted-host, vi-host, t_midi ...) ---
 for spec in "ted:ted/ted.com" "midi:midi/midplay.com midi/midconv.com" \
             "sokoban:sokoban/sokoban.com" "bench:bench/sieve.com bench/hello.com" \
-            "java:java/java.com"; do
+            "java:java/java.com" "vi:vi/vi.exe"; do
   t=${spec%%:*}; arts=${spec#*:}
   ok=1
   step "$t" "$W/$t.log" make -s -C "$t" recompile || ok=

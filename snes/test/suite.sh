@@ -188,6 +188,20 @@ else
   FAIL=1
 fi
 
+echo "== host smoke (VI - levee - edits a file on runpc) =="
+# a real vi (levee 4.0b, BIOS INT10 screen layer) on the 108 KB machine:
+# insert two lines, 1G dd p swaps them, :wq writes CRLF to A: (C: is
+# read-only), TYPE proves the round trip inside the same session.
+printf 'cd vi\rvi a:v.txt\rivi on a SNES, line one\rand line two\0331Gddp:wq\rtype a:v.txt\r' \
+  | ../core-c/build/runpc -m 108 -l 1500000000 -d build/hd_free.img build/msdos_a.img 2>/dev/null \
+  | tr -d '\r' > build/vi_host.log
+if grep -A1 "^and line two" build/vi_host.log | grep -q "^vi on a SNES, line one"; then
+  echo "PASS vi-host"
+else
+  echo "FAIL vi-host"
+  FAIL=1
+fi
+
 echo "== host smoke (JAVA runs javac bytecode on runpc) =="
 # HELLO.CLA is real javac --release 8 output; JAVA.COM interprets it.
 # FIB.CLA exercises the 32-bit int core + branches + a static method.
