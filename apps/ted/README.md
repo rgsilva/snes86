@@ -66,6 +66,6 @@ it — a one-line, one-level safety net, not a history.
   injects real F-key scancode words into the INT16 ring and walks every
   F binding plus ^Q.
 
-Rebuild with `make recompile` (drives the real TP3 IDE under runpc; the
-committed `ted.com` differs from a rebuild by 3 inert loader-stamp
-bytes, so compare behavior, not bytes).
+`ted.com` is not committed — every image build compiles it from source
+(`make recompile` drives the real TP3 IDE under runpc; note TP3 stamps
+its load segment into the binary, so compare behavior, not bytes).

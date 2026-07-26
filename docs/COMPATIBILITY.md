@@ -76,10 +76,11 @@ All captured from snes86 running in Mesen.
 | Our tools | MIDPLAY / MIDCONV | ✅ shipped | the SNES-MIDI synth (below), with source |
 | | SOKOBAN | ✅ shipped | our own CGA-graphics game, with source |
 | | SIEVE / HELLO / CGATEST / CGA6TST | ✅ shipped | our benchmarks + CGA test cards in `C:\BENCH`, with source |
-| | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source) in `C:\TED`, on the PATH: modeless, Y-button menu, ~50 ms keystrokes; saving to `B:` writes battery-backed cartridge SRAM |
-| | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\VIEW` ships generated test cards |
+| | TED | ✅ shipped | our controller-first text editor (Turbo Pascal, with source) in `C:\TED`, on the PATH: modeless, Y-button menu, ~50 ms keystrokes, plus keyboard-only bindings (F1 help, F2 save, F5 search … and Ctrl fallbacks); saving to `B:` writes battery-backed cartridge SRAM |
+| | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour in either CGA palette (`VIEW PIC.BMP 4 0` for green/red/brown), wildcard slideshows (`VIEW *.BMP`); `C:\VIEW` ships generated test cards |
 | | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
 | | JAVAC | ✅ shipped | our Java compiler running ON the machine (C, built by Small-C 2.2 on MS-DOS 2.0 inside the emulator): `JAVAC HELLO.JAV B:HELLO.CLA` then `JAVA B:HELLO` — the SNES compiles Java and runs it; output byte-identical to the clang build of the same source |
+| | VI | ✅ shipped | a real vi — levee 4.0b (BSD-style license, see [apps/vi/ORIGIN](../apps/vi/ORIGIN.md)) cross-compiled for MS-DOS 2.0 with Open Watcom: modal editing, `dd`/`p`/`u`/`/search`/`:wq`, wildcard `:n` chains, in `C:\VI` |
 | | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
 | Third-party | Small-C toolchain | ✅ shipped | public-domain C compiler + assembler + the MIT 1982 linker in `C:\CC`: `CC HELLO` compiles, links and runs C on the 108 KB machine (~14 min at SNES speed, measured); samples ship with source — the machine can build them; provenance and hashes in [apps/cc/README](../apps/cc/README.md) |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |

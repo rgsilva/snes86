@@ -34,14 +34,15 @@ to its nearest colour, black.
   in globals.
 - `mkviewasm.py` — generates the `inline()` machine-code blocks.
 - `mkcard.py` — generates `CARD.BMP`, the CC0 test card.
-- `view.com` — the committed binary. Rebuild with `make recompile`
-  (TP3 driven inside runpc — see `../tpcompile.sh`); a rebuilt .COM can
-  differ from the committed one by a few inert load-segment bytes, so
+- `view.com` — not committed; every image build compiles it from
+  source (`make recompile`, TP3 driven inside runpc — see
+  `../tpcompile.sh`). TP3 stamps its load segment into the binary, so
   compare behaviour (rendered output), never bytes.
 
 ## Verification
 
-`apps/rebuild_all.sh` recompiles view.com and requires the rebuilt
-binary to render `CARD.BMP` bit-identically to the committed one;
+`apps/rebuild_all.sh` recompiles view.com and requires it to render
+`CARD.BMP` bit-identically to a pinned golden sha256 (refresh the pin
+after an intentional view.pas/mkcard.py change);
 `snes/test/suite.sh` has a `view-host` leg that paints the test cards
 under runpc and checks the CGA framebuffer dump.
