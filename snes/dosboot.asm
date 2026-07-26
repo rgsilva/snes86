@@ -1668,6 +1668,40 @@ _h13_vsec:
     xba
     and #$00FF
     cmp #$0003
+.IFDEF SA1
+    ; SA-1 is the only machine where B: and guest RAM past $7F:FFFF
+    ; coexist, so it is the only one where the guest's sector buffer can
+    ; STRADDLE the WRAM -> BW-RAM seam. Plain [mPTR],y indexing walks
+    ; right past that seam into $80:xxxx — the system-area mirror, i.e.
+    ; the emulator's own low WRAM — so copy byte-wise through the
+    ; seam-aware gadv_ptr, exactly as bigmem_seccopy does for C:.
+    ; gadv_ptr leaves mPTR past the sector, so the +512 below is not
+    ; needed on this path. (B: is one 64 KB bank and offsets stay under
+    ; $8000, so the source `inc mPTR2` can never cross a bank.)
+    beq _h13_vw
+    ldx #512
+_h13_vr:
+    sep #$20
+    lda [mPTR2]              ; BW-RAM -> guest
+    sta [mPTR]
+    rep #$20
+    inc mPTR2
+    jsr gadv_ptr
+    dex
+    bne _h13_vr
+    bra _h13_vnc
+_h13_vw:
+    ldx #512
+_h13_vwl:
+    sep #$20
+    lda [mPTR]               ; guest -> BW-RAM
+    sta [mPTR2]
+    rep #$20
+    inc mPTR2
+    jsr gadv_ptr
+    dex
+    bne _h13_vwl
+.ELSE
     beq _h13_vw
     ldy #0
 _h13_vr:
@@ -1696,6 +1730,7 @@ _h13_vnext:
     sep #$20
     inc mPTR+2
     rep #$20
+.ENDIF
 _h13_vnc:
     inc cT0
     dec cT1
