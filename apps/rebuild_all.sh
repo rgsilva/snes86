@@ -71,6 +71,21 @@ for spec in "ted:ted/ted.com" "midi:midi/midplay.com midi/midconv.com" \
   if [ -n "$ok" ]; then echo "PASS $t"; else echo "FAIL $t"; FAIL=1; fi
 done
 
+# --- GB: host nasm (mksm83.py generates the SM83 handlers) + RGBDS for
+# the homebrew carts. nasm -f bin is deterministic, so the rebuilt
+# GB.COM must be byte-identical to the committed one; the carts are
+# checked non-empty (RGBDS versions may stamp differently) ---
+if command -v nasm >/dev/null 2>&1 && command -v rgbasm >/dev/null 2>&1; then
+  cp gb/gb.com "$W/gb.committed"
+  ok=1
+  step gb "$W/gb.log" make -s -C gb recompile || ok=
+  cmp -s gb/gb.com "$W/gb.committed" || ok=
+  for a in gb/smoke.gb gb/gfx.gb gb/joy.gb; do [ -s "$a" ] || ok=; done
+  if [ -n "$ok" ]; then echo "PASS gb (GB.COM byte-identical)"; else echo "FAIL gb"; FAIL=1; fi
+else
+  echo "SKIP gb (needs nasm + RGBDS: brew install nasm rgbds)"
+fi
+
 # --- JAVAC: Small-C toolchain inside runpc; deterministic, so the
 # rebuild must be byte-identical to the committed javac.exe ---
 cp java/javac.exe "$W/javac.committed"
