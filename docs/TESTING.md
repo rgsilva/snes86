@@ -33,7 +33,7 @@ speed):
 | leg | what it proves |
 |---|---|
 | `host-smoke` | MS-DOS 2.0 boots and reads the C: drive |
-| `elks-host` | ELKS 0.9.1 (Linux) boots to `login:` |
+| `elks-host` | ELKS 0.9.1 (Linux) boots to `login:` (at `-m 300`, the SA-1 machine's size) |
 | `freedos-host` | FreeDOS 1.3 boots to FreeCOM (at `-m 300`, the SA-1 machine's size — `runpc` has no SA-1, so the board is just a memory size to it) |
 | `cga6-host` | CGA mode 6 renders true 640×200 (1-px stripes survive) |
 | `view-host` | VIEW paints both test cards; the BMP and PCX renders are bit-identical |
@@ -50,7 +50,9 @@ saves to battery SRAM, `TYPE`s it back), and the ones that need their own
 ROM and their own timeout — ELKS boot-to-login, FreeDOS boot, and the two
 SA-1 legs (`t_sa1boot` boots the 300 KB machine; `t_sa1mem` proves it
 really is 300 KB by round-tripping a pattern through guest RAM at 256 KB
-and reading it back out of BW-RAM).
+and reading it back out of BW-RAM). The ELKS and FreeDOS ROMs are SA-1
+builds too, so between them those four legs exercise the one memory
+layer from three different guests.
 
 The suite deletes `msdos.srm` before the legs that write to B:, so a stale
 save can't leak into an assertion — **a `make test` run destroys the B:

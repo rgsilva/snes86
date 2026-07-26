@@ -22,4 +22,6 @@ Why the big machine: measured on `runpc`, the FD 1.3 kernel dies during init
 at 108 KB and reaches FreeCOM at exactly 172 KB, so it cannot run on the
 public ROM's machine. It rides the SA-1 board (the same one `make msdos_sa1`
 uses), which gives it 300 KB and — unlike the old 172 KB cart-SRAM machine,
-where the SRAM *was* the extra guest RAM — a working `B:` drive as well.
+where the SRAM *was* the extra guest RAM — a working `B:` drive as well. That
+older machine is gone: `make elks` moved onto the SA-1 board too, and with no
+users left the second memory layer was deleted.

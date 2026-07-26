@@ -23,8 +23,10 @@ Reports, screenshots, and videos are genuinely wanted. See
 The default guest has ~108 KB — everything above that lives on the cartridge, and
 the emulator has to fold guest addresses into it. `make msdos_sa1` does this with an
 SA-1 board's 256 KB of BW-RAM and gets a 300 KB guest (plus a B: drive); it's what
-revives memory-hungry titles like Rogue, and it's the machine FreeDOS boots on. The
-cost is that the big machines are currently ~1.7× slower than the public build.
+revives memory-hungry titles like Rogue, and it's the machine FreeDOS and ELKS boot
+on. There is only one big machine now — the older 172 KB cartridge-SRAM layer was
+deleted once ELKS moved off it — so this is the single thing to make fast. The
+cost today is that it is ~1.7× slower than the public build.
 
 The slowdown is pure "correctness tax" from handling the WRAM↔cartridge address seam;
 the standard build is untouched. There's a clear path to making it fast, if someone
@@ -93,9 +95,12 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
 - Other DOS versions, or entirely different self-booting guests (the Flight Simulator
   build already proves a non-DOS boot works via `make boot DISK=`), are open territory.
 - One of them landed: **Linux**. `make elks` boots ELKS 0.9.1 to a root shell —
-  kernel and apps executing in place from cart ROM on the 172 KB cartridge-SRAM
-  machine (see [INTERNALS](INTERNALS.md#booting-linux-the-elks-machine)); it is
-  now the only guest that still uses that region layer. It also gives the
+  kernel and apps executing in place from cart ROM on the 300 KB SA-1 machine
+  (see [INTERNALS](INTERNALS.md#booting-linux-the-elks-machine)). It moved there
+  from a 172 KB cartridge-SRAM machine of its own, which both unified the
+  codebase on one memory layer and turned out to be a real feature: at 172 KB the
+  kernel could not fork `/etc/rc.sys` and `ls` ran out of memory, where at 300 KB
+  the boot scripts run and 171 KB is free at the shell. It also gives the
   big-machine speedups above a real customer: the ELKS boot pays the seam tax in
   full.
 - Another one landed the same week it was checked: **FreeDOS**. `make freedos`
@@ -105,7 +110,8 @@ an OPL2/AdLib (FM) approximation for games that target port 388h instead of MIDI
   fetches the official release and re-packs a 360 KB boot floppy. FreeCOM stays
   fully resident without XMS, but with 300 KB underneath it there is real room —
   `MEM` reports ~168 KB free for programs, and it moved to the SA-1 board partly
-  to get that and partly because the board leaves B: intact.
+  to get that and partly because the board leaves B: intact. ELKS followed it
+  there, and the old layer went with them.
 
 ## Homegrown userware: VIEW, a C toolchain, vi, a JVM
 

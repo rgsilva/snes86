@@ -80,7 +80,9 @@ jobs:
         run: make -C snes PVBIN="$PVBIN" msdos_sa1
 
       # The ELKS ROM: Linux (well, the Embeddable Linux Kernel Subset) on a
-      # SNES. The kernel + ROMFS images are fetched from the official ELKS
+      # SNES, on the same 300 KB SA-1 machine as msdos_sa1/freedos - the
+      # extra RAM is what lets its boot scripts fork at all.
+      # The kernel + ROMFS images are fetched from the official ELKS
       # v0.9.1 release by test/fetch_elks.sh (GPL software - fetched at build
       # time, never committed here; unmodified upstream binaries, source at
       # github.com/ghaerr/elks). Bundling them in the ROM alongside our MIT
@@ -157,7 +159,9 @@ jobs:
               bundles the unmodified official FreeDOS kernel + FreeCOM
               (GPL — source at https://github.com/FDOS).
             - `elks.sfc` — ELKS 0.9.1 (Linux for the 8086) booting to a root
-              shell; bundles the unmodified official ELKS release images
+              shell on the same 300 KB SA-1 machine (same SA-1 requirement):
+              the extra RAM is what lets `/etc/rc.sys` fork and `ls` run.
+              Bundles the unmodified official ELKS release images
               (GPL — source at https://github.com/ghaerr/elks).
             - Full source is in the auto-generated "Source code" archives below.
 
