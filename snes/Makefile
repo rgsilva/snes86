@@ -75,7 +75,7 @@ console-test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test test-extra console-test clean msdos msdos_big boot freedos elks io apps-stage parity cputest sramtest
+.PHONY: all run test test-extra console-test clean msdos msdos_big msdos_sa1 boot freedos elks io apps-stage parity cputest sramtest
 
 # --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) +
 # a free C: (tools/mkhd_free.py; no copyrighted software).  See
@@ -115,6 +115,19 @@ build/msdos_big$(OVSUF).o: msdos_big.asm $(DOSDEPS) build/msdos_a.img $(HDC)
 
 build/msdos_big$(OVSUF).sfc: build/msdos_big$(OVSUF).o build/msdos_big$(OVSUF).link
 	$(LD) -d -s -v -c build/msdos_big$(OVSUF).link $@
+
+# --- SA-1 variant: the SA-1 board as a pure RAM expander (the SA-1 CPU
+# is never started). 256 KB of BW-RAM = 192 KB more guest RAM (300 KB
+# machine) + 64 KB for B:. tools/mksa1hdr.py fixes the header bytes wla
+# can't emit (SA-1 map mode, 256 KB SRAM size).
+msdos_sa1: build/msdos_sa1$(OVSUF).sfc
+
+build/msdos_sa1$(OVSUF).o: msdos_sa1.asm $(DOSDEPS) build/msdos_a.img $(HDC)
+	$(AS) $(OVDEF) -o $@ msdos_sa1.asm
+
+build/msdos_sa1$(OVSUF).sfc: build/msdos_sa1$(OVSUF).o build/msdos_sa1$(OVSUF).link tools/mksa1hdr.py
+	$(LD) -d -s -v -c build/msdos_sa1$(OVSUF).link $@
+	python3 tools/mksa1hdr.py $@
 
 # --- FreeDOS 1.3: GPL, fetched at build time like ELKS (freedos/mkfreedos.py
 # downloads the official FD 1.3 floppy release, extracts KERNEL.SYS + FreeCOM

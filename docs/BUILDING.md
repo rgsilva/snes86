@@ -36,13 +36,14 @@ on the C: drive, the memory size, or what boots at all. Outputs land in
 | `make freedos` | `freedos.sfc` | FreeDOS 1.3, 172 KB guest | no — FreeDOS auto-fetched |
 | `make elks` | `elks.sfc` | ELKS (Linux), no DOS | no — ELKS images auto-fetched |
 | `make msdos_big` | `msdos_big.sfc` | MS-DOS, 172 KB guest | no — TP3 auto-fetched |
+| `make msdos_sa1` | `msdos_sa1.sfc` | MS-DOS, 300 KB guest, SA-1 board | no — TP3 auto-fetched |
 | `make boot DISK=img` | `boot.sfc` | a self-booting disk, no DOS | the disk image |
 | `make test` | — | the public suite | no (Mesen legs skip without Mesen) |
 | `make test-extra` | — | the copyrighted app legs | yes — a complete `disks/` |
 | `make apps` | — | force-rebuild every tool + verify | no |
 
 **OVERLAYS** is a uniform optional flag on every DOS-booting target
-(`msdos`, `msdos_big`, `freedos`, `boot`):
+(`msdos`, `msdos_big`, `msdos_sa1`, `freedos`, `boot`):
 `make msdos OVERLAYS="path/to/dir path/to/floppy.img"` merges each
 overlay's tree onto the free C: (last wins, with a warning) and writes
 `snes/build/msdos_overlay.sfc` — an overlay build never clobbers the
@@ -105,6 +106,27 @@ What each one actually is:
   machine that has it). Same free C: as the public build. It's an
   experiment — see BIGMEM in [INTERNALS](INTERNALS.md) and
   [FUTURE](FUTURE.md).
+
+- `make msdos_sa1` — the biggest machine in the fleet: a 300 KB guest
+  (108 KB of WRAM + 192 KB of cartridge RAM), and it keeps the B: drive.
+  It gets there by asking for an **SA-1 cartridge board** and then using
+  none of it: the SA-1's selling point was its 10 MHz coprocessor, but
+  this build never releases that CPU from reset. All it wants is the two
+  boring parts of the board — the Super MMC, and the 256 KB of BW-RAM
+  the coprocessor was supposed to work in. Three of those banks become
+  guest RAM above 108 KB; the fourth stays the battery-backed B: disk.
+  So the fastest enhancement chip ever put in a SNES cartridge is doing
+  duty here as a RAM stick, which is either the best or the worst thing
+  in this repo. Same free C: as the public build.
+
+  The catch is where it runs. Mesen runs it. A **flash cart only runs it
+  if that cart implements SA-1**, and most do not — notably the plain
+  FXPak/SD2SNES needs SA-1 support in its firmware/core, and without it
+  this ROM will not boot. Real hardware means a donor SA-1 cartridge.
+  `msdos.sfc` remains the ROM to flash if you want it to just work;
+  this one is for the emulator and for the people who own the board.
+  The header is written post-link by `snes/tools/mksa1hdr.py` (map mode
+  `$23`, 256 KB SRAM), because wla-dx cannot emit an SA-1 header itself.
 
 - `make boot DISK=path/to/disk.img` — boots a self-booting disk directly
   instead of DOS: the disk replaces the A: floppy wholesale and the BIOS

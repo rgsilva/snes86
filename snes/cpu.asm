@@ -4,7 +4,8 @@
 ;   - native mode, A/X/Y 16-bit unless noted, D=$0000, DBR=$7E
 ;   - guest memory: linear 0x00000-0x1AFFF lives at $7E:5000-$7F:FFFF
 ;     (108 KB of WRAM; BIGMEM adds 64 KB of cart SRAM at $70/$71 for a
-;     172 KB guest — see the region notes above norm_base_x)
+;     172 KB guest; SA1 adds 192 KB of SA-1 BW-RAM at $40-$42 for a
+;     300 KB guest — see the region notes above norm_base_x)
 ;   - guest registers live in direct page, 8086 register order, gAX at
 ;     DP $00 so a ModRM reg field *2 IS the DP offset
 ;   - cached segment bases: bXX = GUEST_BASE + seg*16 = the 24-bit SNES
@@ -30,7 +31,11 @@
 .DEFINE VBUF  $7E1000        ; B000-BFFF segs map here (text page = offset 0;
                              ; text+graphics share it, like real CGA card RAM)
 .IFDEF BIGMEM
+.IFDEF SA1
+.DEFINE GUESTKB 300          ; M16: 108 KB WRAM + 192 KB SA-1 BW-RAM
+.ELSE
 .DEFINE GUESTKB 172          ; M15: 108 KB WRAM + 64 KB cart SRAM
+.ENDIF
 .ELSE
 .DEFINE GUESTKB 108
 .ENDIF
@@ -347,6 +352,281 @@ mk_ptr2:
     rts
 
 .IFDEF BIGMEM
+.IFDEF SA1
+; ---- SA-1 region layer (M16) ----------------------------------------
+; 300 KB guest: linear 0-108 KB lives in $7E5000-$7FFFFF as usual;
+; 108-300 KB is SA-1 BW-RAM, banks $40-$42 (64 KB each; bank $43 holds
+; the B: disk). Unlike the $70/$71 SRAM pages of the twin layer below,
+; BW-RAM banks are CONTIGUOUS in SNES address space: 24-bit data
+; accesses ([mPTR] / [bCS],y) carry $40:FFFF -> $41:0000 by themselves,
+; so the only real seam in the whole guest is WRAM top -> BW-RAM
+; ($7F:FFFF -> $40:0000, whose naive successor $80:0000 is the system-
+; area mirror, NOT the next guest byte).
+;
+; A NAIVE pointer $7E5000+linear reaches BW-RAM in banks $80-$82
+; exactly ($80:0000 = linear $1B000 = 108 KB; $82:FFFF = linear $4AFFF
+; = 300 KB-1); the fold is bank -= $40 with the offset kept. Bank $83+
+; is past 300 KB and UNBACKED - left naive, and the same HAZARD note as
+; below applies (those banks' low halves are live system-area mirrors).
+; On THIS map that hazard is a little sharper than on plain LoROM: the
+; SA-1 puts a BW-RAM window at $6000-$7FFF of every $80-$BF bank, and
+; BMAPS defaults to block 0, so a guest poking naive $83+:6000-7FFF
+; aliases onto BW-RAM $40:0000-$1FFF - i.e. onto its own RAM at
+; 108-116 KB - where LoROM would have given it open bus. There is no
+; free fix: all four BW-RAM banks are in use, so every BMAPS choice
+; aliases something.
+; A folded $42 pointer that carries into $43 lands on the B: disk: a
+; guest addressing past its top of memory can corrupt B: - the same
+; broken-guest class, deliberately unchecked for the same reason.
+;
+; EVERY fold site here must use the full $80-$82 map, not just $80: the
+; CS-override path (opP2E) feeds mk_ptr the NAIVE bCSc, so a CS-relative
+; EA arrives unfolded. See the norm_ptr comment below for the boot
+; failure that hid behind getting this wrong.
+
+; normalise a freshly-built 3-byte segment base at DP (0,x)/(2,x): a
+; base is one point, so only naive $80-$82 needs the -$40 fold.
+norm_base_x:
+    sep #$20
+    lda.b 2,x
+    cmp #$80
+    bcc _nbx_ok             ; $7E/$7F WRAM: keep
+    cmp #$83
+    bcs _nbx_ok             ; past 300 KB: unbacked, keep naive
+    sec
+    sbc #$40                ; $80-$82 -> BW-RAM $40-$42, offset kept
+    sta.b 2,x
+_nbx_ok:
+    rep #$20
+    rts
+
+; fold a full base+offset pointer. Most sums arrive from an ALREADY
+; normalised base, where the only cross-region case is a WRAM base
+; spilling into bank $80 (BW bases carry $40->$41->$42 natively) — but
+; the CS-override path (opP2E) hands mk_ptr the NAIVE bCSc on purpose,
+; so a sum here can land anywhere in naive $80-$82. Use the full
+; norm_base_x map, not just $80: with a $81/$82 base the guest would
+; otherwise read the SA-1 system-area mirror. (MS-DOS 2.0's SYSINIT
+; found this: relocated above 172 KB it is full of `2E A1` CS-relative
+; loads, which silently returned 0 and left the DOS vectors uninstalled.)
+norm_ptr:
+    sep #$20
+    lda mPTR+2
+    cmp #$80
+    bcc _np_ok              ; $7E/$7F WRAM or an already-folded $40-$43
+    cmp #$83
+    bcs _np_ok              ; past 300 KB: unbacked, keep naive
+    sec
+    sbc #$40                ; $80-$82 -> BW-RAM $40-$42, offset kept
+    sta mPTR+2
+_np_ok:
+    rep #$20
+    rts
+
+norm_ptr2:
+    sep #$20
+    lda mPTR2+2
+    cmp #$80
+    bcc _np2_ok
+    cmp #$83
+    bcs _np2_ok
+    sec
+    sbc #$40
+    sta mPTR2+2
+_np2_ok:
+    rep #$20
+    rts
+
+; --- seam-safe 16-bit access. The only word that straddles a region is
+; the one STARTING at $7F:FFFF (WRAM top). Everything else - including
+; the BW bank tops - is contiguous under 24-bit pointer arithmetic.
+rd16m:                        ; A(16) <- word at mPTR, seam-safe
+    lda mPTR
+    cmp #$FFFF
+    beq _rd_cw
+    lda [mPTR]
+    rts
+_rd_cw:
+    sep #$20
+    lda mPTR+2
+    cmp #$7F
+    rep #$20
+    beq _rd_split
+    lda [mPTR]                ; $7E/$40/$41: the 24-bit carry is correct
+    rts
+_rd_split:
+    lda mPTR
+    sta smSAV                 ; save mPTR low16
+    sep #$20
+    lda mPTR+2
+    sta smBNK                 ; save bank
+    lda [mPTR]                ; low data byte
+    pha                       ; park it on the stack (8-bit push)
+    jsr _sm_adv               ; mPTR -> $40:0000
+    lda [mPTR]                ; high data byte
+    xba                       ; -> A high
+    pla                       ; A low = low data byte
+    rep #$20                  ; A = (high<<8)|low
+    pha
+    jsr _sm_rst
+    pla
+    rts
+
+wr16m:                        ; write A(16) to mPTR, seam-safe
+    pha
+    lda mPTR
+    cmp #$FFFF
+    beq _wr_cw
+    pla
+    sta [mPTR]
+    rts
+_wr_cw:
+    sep #$20
+    lda mPTR+2
+    cmp #$7F
+    rep #$20
+    beq _wr_split
+    pla
+    sta [mPTR]
+    rts
+_wr_split:
+    lda mPTR
+    sta smSAV
+    sep #$20
+    lda mPTR+2
+    sta smBNK
+    rep #$20
+    pla                       ; value (16-bit, balances entry pha)
+    sep #$20
+    sta [mPTR]                ; low byte -> seam byte
+    xba
+    pha                       ; park value high byte (8-bit push)
+    jsr _sm_adv               ; mPTR -> $40:0000
+    pla                       ; value high byte
+    sta [mPTR]                ; -> BW-RAM byte 0
+    jsr _sm_rst
+    rts
+
+; advance mPTR from the seam byte to BW-RAM byte 0 (the only split case
+; is $7F:FFFF). A/8-bit in.
+_sm_adv:
+    lda #$40
+    sta mPTR+2
+    rep #$20
+    stz mPTR
+    sep #$20
+    rts
+; restore mPTR from the seam save. enters 8-bit A, exits 16-bit.
+_sm_rst:
+    rep #$20
+    lda smSAV
+    sta mPTR
+    sep #$20
+    lda smBNK
+    sta mPTR+2
+    rep #$20
+    rts
+
+; fold the fetch pointer smSAV(low16)/smBNK(bank) - always a NAIVE
+; bCSc+Y sum - to a canonical region, same map as norm_base_x.
+norm_fp:
+    sep #$20
+    lda smBNK
+    cmp #$80
+    bcc _fp_ok
+    cmp #$83
+    bcs _fp_ok
+    sec
+    sbc #$40
+    sta smBNK
+_fp_ok:
+    rep #$20
+    rts
+
+; keep bCS+Y inside a backed region across the WRAM->BW-RAM seam (see
+; the $70/$71 twin below for the full story). Only the WRAM top needs
+; the ebounce treatment here: an instruction STARTING in the last 5
+; bytes of $7F would spill operand bytes into $80:0000+ (system-area
+; mirror). BW bank tails are contiguous and need nothing.
+fetch_rebase:
+    tya
+    clc
+    adc bCSc                 ; naive base + Y: sound fold input
+    sta smSAV
+    sep #$20
+    lda bCSc+2
+    adc #0
+    sta smBNK
+    rep #$20
+    jsr norm_fp
+    sep #$20
+    lda smBNK
+    cmp.b #$7F
+    rep #$20
+    bne _fr_fin
+    lda smSAV
+    cmp.w #$FFFB
+    bcc _fr_fin
+    ; bounce the WRAM tail + BW-RAM head into ebounce, fetch this one
+    ; instruction from there (next fetch_rebase re-derives from bCSc)
+    lda.w #$0000
+    sec
+    sbc smSAV
+    sta tmp1                 ; n1 = bytes left in WRAM ($10000 - smSAV)
+    phy
+    lda smSAV
+    sta mPTR2                ; source = region-tail pointer
+    sep #$20
+    lda smBNK
+    sta mPTR2+2
+    rep #$20
+    ldx #$0000
+    ldy #$0000
+_fr_cp1:
+    lda [mPTR2],y
+    sep #$20
+    sta.l $7E0000+ebounce,x
+    rep #$20
+    inx
+    iny
+    cpy tmp1
+    bcc _fr_cp1
+    sep #$20
+    lda.b #$40               ; source now = BW-RAM head $40:0000
+    sta mPTR2+2
+    rep #$20
+    stz mPTR2
+    ldy #$0000
+_fr_cp2:
+    lda [mPTR2],y
+    sep #$20
+    sta.l $7E0000+ebounce,x
+    rep #$20
+    inx
+    iny
+    cpx.w #$0008
+    bcc _fr_cp2
+    ply
+    lda.w #ebounce           ; fetch this instruction from the bounce
+    sta smSAV
+    sep #$20
+    lda.b #$7E
+    sta smBNK
+    rep #$20
+_fr_fin:
+    sty tmp0
+    lda smSAV
+    sec
+    sbc tmp0
+    sta bCS
+    sep #$20
+    lda smBNK
+    sbc #0
+    sta bCS+2
+    rep #$20
+    rts
+
+.ELSE
 ; 172 KB guest (M15): linear 0-108 KB lives in $7E5000-$7FFFFF as usual;
 ; 108-172 KB is the cart's 64 KB SRAM, banks $70 (page 0) + $71 (page 1),
 ; each 32 KB ($xx:0000-$xx:7FFF; the $8000-$FFFF half of those banks is
@@ -945,6 +1225,7 @@ _fr_strad16:
     sta bCS+2
     rep #$20
     rts
+.ENDIF                       ; SA1 (BW-RAM) / $70-$71 (SRAM) region layer
 .ENDIF
 
 ; advance mPTR by one byte, carrying into the bank/region. `inc mPTR`
@@ -955,6 +1236,28 @@ _fr_strad16:
 ; CALL/JMP far m); 16-bit A in and out.
 mptr_adv1:
 .IFDEF BIGMEM
+.IFDEF SA1
+    lda mPTR
+    cmp #$FFFF
+    beq _ma_bank
+    inc mPTR
+    rts
+_ma_bank:                    ; bank carry: the WRAM top hops to BW-RAM;
+    stz mPTR                 ; everywhere else a plain carry is right -
+    sep #$20                 ; $7E->$7F and $40->$41->$42 are contiguous
+    lda mPTR+2               ; ($42->$43 is the past-top B: hazard, by
+    cmp #$7F                 ; design - see the region notes)
+    bne _ma_nb1
+    lda #$40                 ; WRAM top -> BW-RAM $40 (linear $1B000)
+    sta mPTR+2
+    rep #$20
+    rts
+_ma_nb1:
+    inc a
+    sta mPTR+2
+    rep #$20
+    rts
+.ELSE
     lda mPTR
     cmp #$7FFF
     beq _ma_top              ; maybe an SRAM page top
@@ -1012,6 +1315,7 @@ _ma_nb2:
     sta mPTR+2
     rep #$20
     rts
+.ENDIF                       ; SA1 (BW-RAM) / $70-$71 (SRAM)
 .ELSE
     lda mPTR                 ; non-BIGMEM: only the $7E->$7F carry exists
     cmp #$FFFF
@@ -1026,7 +1330,7 @@ _ma_bank:
     sta mPTR+2
     rep #$20
     rts
-.ENDIF
+.ENDIF                       ; BIGMEM
 
 ; --- mod=0
 _ea00_0:                     ; [BX+SI]

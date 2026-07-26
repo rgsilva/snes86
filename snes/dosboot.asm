@@ -1031,6 +1031,11 @@ row_addr:                    ; A = row -> in-bank ($7E) addr VBOFS + row*160
     rts
 
 hle_int11:
+.IFDEF SA1
+    lda #$0061               ; SA1 keeps B:: guest high RAM is BW-RAM
+    sta gAX                  ; $40-$42 and the B: disk has bank $43 all
+    rts                      ; to itself
+.ELSE
 .IFDEF BIGMEM
     lda #$0021               ; ONE floppy: under BIGMEM the SRAM banks are
     sta gAX                  ; guest RAM above 108 KB, so the B: vdisk is
@@ -1039,6 +1044,7 @@ hle_int11:
     lda #$0061               ; two floppies (A: B:), 80x25 color; C: is
     sta gAX                  ; the fixed disk (INT 13h DL=80h)
     rts
+.ENDIF
 .ENDIF
 
 hle_int12:
@@ -1350,6 +1356,13 @@ _h13_flp:
     lda gDX
     and #$00FF
     beq _h13_romA
+.IFDEF SA1
+    jmp _h13_vdisk           ; DL=1 -> B: (BW-RAM bank $43)
+_h13_al0:
+    ply
+    lda #$0001               ; invalid request
+    jmp _h13_err
+.ELSE
 .IFDEF BIGMEM
 _h13_al0:                    ; BIGMEM: no B: — the SRAM banks are guest
     ply                      ; RAM above 108 KB (see hle_int11)
@@ -1361,6 +1374,7 @@ _h13_al0:
     ply
     lda #$0001               ; invalid request
     jmp _h13_err
+.ENDIF
 .ENDIF
 _h13_romA:
     lda #$0082               ; A: ROM disk, banks $82+
@@ -1387,6 +1401,34 @@ _h13_sec:
     lsr a
     clc
     adc cT2n                 ; per-drive bank base (fast mirrors)
+.IFDEF SA1
+    ; naive LoROM banks $C0-$FF (file banks 64-127, the upper 2 MB of
+    ; C:) don't exist on the SA-1 map — that half of the ROM is linear
+    ; at $C0-$DF (MB2/MB3 via CXB/DXB, see Reset): file bank 64+d is
+    ; $C0+(d>>1) : (d odd ? $8000 : $0000). Below $C0 the EXB/FXB
+    ; projection reproduces the LoROM fast mirrors, unchanged.
+    cmp #$00C0
+    bcc _h13_slo
+    and #$003F               ; d = file bank - 64
+    lsr a                    ; A = d>>1, C = d bit 0
+    php
+    clc
+    adc #$00C0
+    sep #$20
+    sta mPTR2+2
+    rep #$20
+    lda cT0
+    and #$003F
+    asl a
+    xba
+    and #$FE00               ; (LBA & 63) * 512
+    plp
+    bcc _h13_seve
+    ora #$8000               ; odd file bank: the $8000 half
+_h13_seve:
+    sta mPTR2
+    bra _h13_sgo
+_h13_slo:
     sep #$20
     sta mPTR2+2
     rep #$20
@@ -1398,6 +1440,20 @@ _h13_sec:
     clc
     adc #$8000
     sta mPTR2
+_h13_sgo:
+.ELSE
+    sep #$20
+    sta mPTR2+2
+    rep #$20
+    lda cT0
+    and #$003F
+    asl a
+    xba
+    and #$FE00
+    clc
+    adc #$8000
+    sta mPTR2
+.ENDIF
 .IFDEF BIGMEM
     jsr bigmem_seccopy       ; SRAM isn't reachable by the WRAM DMA; copy
     jmp _h13_nc              ; the sector byte-wise, seam-aware (also
@@ -1468,6 +1524,24 @@ _bsc:
 
 ; advance mPTR by one guest byte, folding region boundaries into the
 ; real WRAM/SRAM banks (A/X/Y preserved except A).
+.IFDEF SA1
+gadv_ptr:                    ; SA1: the only fold is WRAM top -> BW-RAM
+    rep #$20                 ; $40; BW banks $40-$42 carry natively
+    inc mPTR
+    beq _ga_wrap
+    rts
+_ga_wrap:
+    sep #$20
+    inc mPTR+2
+    lda mPTR+2
+    cmp #$80                 ; $7F -> $80: WRAM end -> BW-RAM $40
+    bne _ga_wd
+    lda #$40
+    sta mPTR+2
+_ga_wd:
+    rep #$20
+    rts
+.ELSE
 gadv_ptr:
     rep #$20
     inc mPTR
@@ -1506,6 +1580,7 @@ _ga_8w:
 _ga_8d:
     rep #$20
     rts
+.ENDIF                       ; SA1
 .ENDIF
 
     ; ---- C: fixed disk (DL=80h): 107 cyl x 4 heads x 17 spt, ROM banks
@@ -1582,13 +1657,51 @@ _h13_vsec:
     asl a                    ; LBA*512 -> SRAM offset
     sta mPTR2
     sep #$20
+.IFDEF SA1
+    lda.b #$43               ; B: disk = BW-RAM bank $43
+.ELSE
     lda.b #$70               ; SRAM bank
+.ENDIF
     sta mPTR2+2
     rep #$20
     lda gAX
     xba
     and #$00FF
     cmp #$0003
+.IFDEF SA1
+    ; SA-1 is the only machine where B: and guest RAM past $7F:FFFF
+    ; coexist, so it is the only one where the guest's sector buffer can
+    ; STRADDLE the WRAM -> BW-RAM seam. Plain [mPTR],y indexing walks
+    ; right past that seam into $80:xxxx — the system-area mirror, i.e.
+    ; the emulator's own low WRAM — so copy byte-wise through the
+    ; seam-aware gadv_ptr, exactly as bigmem_seccopy does for C:.
+    ; gadv_ptr leaves mPTR past the sector, so the +512 below is not
+    ; needed on this path. (B: is one 64 KB bank and offsets stay under
+    ; $8000, so the source `inc mPTR2` can never cross a bank.)
+    beq _h13_vw
+    ldx #512
+_h13_vr:
+    sep #$20
+    lda [mPTR2]              ; BW-RAM -> guest
+    sta [mPTR]
+    rep #$20
+    inc mPTR2
+    jsr gadv_ptr
+    dex
+    bne _h13_vr
+    bra _h13_vnc
+_h13_vw:
+    ldx #512
+_h13_vwl:
+    sep #$20
+    lda [mPTR]               ; guest -> BW-RAM
+    sta [mPTR2]
+    rep #$20
+    inc mPTR2
+    jsr gadv_ptr
+    dex
+    bne _h13_vwl
+.ELSE
     beq _h13_vw
     ldy #0
 _h13_vr:
@@ -1617,6 +1730,7 @@ _h13_vnext:
     sep #$20
     inc mPTR+2
     rep #$20
+.ENDIF
 _h13_vnc:
     inc cT0
     dec cT1
@@ -1889,6 +2003,33 @@ Reset:
     sei
     clc
     xce
+.IFDEF SA1
+    ; -- SA-1 Super MMC + BW-RAM unlock, FIRST: this code is still
+    ; executing in bank $00 (whose $8000 window shows ROM MB0 while CXB
+    ; bit7=0), but the jml below lands in the $80-space label world,
+    ; which at SA-1 reset shows MB2 (EXB=2). Project MB0/MB1 onto
+    ; $80-$BF:8000 - the exact LoROM fast-mirror layout this ROM is
+    ; linked for - and park MB2/MB3 linearly at $C0-$DF for the upper
+    ; half of the C: disk. Then enable S-CPU writes to BW-RAM (write-
+    ; protected at reset). The SA-1 CPU itself is NEVER released: the
+    ; cart is a RAM expander, nothing more.
+    sep #$20
+    lda.b #$02
+    sta.l $002220            ; CXB=2, bit7=0: $00-$1F:8000 stays MB0
+                             ; (vectors + this code), $C0-$CF = MB2
+    lda.b #$03
+    sta.l $002221            ; DXB=3, bit7=0: $20-$3F stays MB1,
+                             ; $D0-$DF = MB3
+    lda.b #$80
+    sta.l $002222            ; EXB=0, bit7=1: $80-$9F:8000 = MB0
+    lda.b #$81
+    sta.l $002223            ; FXB=1, bit7=1: $A0-$BF:8000 = MB1
+    lda.b #$80
+    sta.l $002226            ; SBWE: S-CPU BW-RAM write enable
+    lda.b #$00
+    sta.l $002228            ; BWPA: no write-protected area
+    rep #$20
+.ENDIF
     jml _rst_fast            ; reset vectors land in bank $00: go fast
 _rst_fast:
     rep #$38
@@ -2089,6 +2230,20 @@ _rst_z2:
     inx
     inx
     bne _rst_z2
+.IFDEF SA1
+    ; -- guest high RAM (108-300 KB) is BW-RAM banks $40-$42. Mesen
+    ; powers BW-RAM random and persists it as .srm: zero it for
+    ; deterministic boots. Bank $43 (the B: disk) is NOT touched -
+    ; battery-backed files survive there.
+    ldx #$0000
+_rst_zs:
+    sta.l $400000,x
+    sta.l $410000,x
+    sta.l $420000,x
+    inx
+    inx
+    bne _rst_zs
+.ELSE
 .IFDEF BIGMEM
     ; -- guest high RAM (108-172 KB) is the 64 KB cart SRAM, banks $70/$71
     ldx #$0000
@@ -2099,6 +2254,7 @@ _rst_zs:
     inx
     cpx #$8000
     bcc _rst_zs
+.ENDIF
 .ENDIF
 
     ; -- IVT: all 256 vectors -> 0000:04F0 (IRET stub in BDA scratch,
@@ -2214,6 +2370,29 @@ _rst_zsram:
     bcc _rst_zsram
 .ENDIF
 
+.IFDEF SA1
+    ; -- B: disk on BW-RAM bank $43 (32 KB used, battery-backed via the
+    ; .srm). Format from the ROM template ONLY if the boot signature is
+    ; missing — a formatted disk means the battery kept the user's
+    ; files: preserve them.
+    lda.l $4301FE
+    cmp #$AA55
+    bne _rst_dofmt
+    lda.l $430200
+    and #$00FF
+    cmp #$00FC               ; B: FAT media byte
+    beq _rst_fmtd
+_rst_dofmt:
+    ldx #$0000
+_rst_fmt:
+    lda.l bdisk_start,x
+    sta.l $430000,x
+    inx
+    inx
+    cpx #4608
+    bcc _rst_fmt
+_rst_fmtd:
+.ELSE
 .IFNDEF BIGMEM
     ; -- B: SRAM disk ($70:0000, 32 KB, battery-backed). Format from the
     ; ROM template ONLY if the boot signature is missing — a formatted
@@ -2236,6 +2415,7 @@ _rst_fmt:
     cpx #4608
     bcc _rst_fmt
 _rst_fmtd:
+.ENDIF
 .ENDIF
 
     ; -- on-screen keyboard: draw into its tilemaps, set up the HDMA
@@ -4853,10 +5033,14 @@ boot_banner:
 .IFDEF ELKS
     .db "booting...", $0D, $0A, 0
 .ELSE
+.IFDEF SA1
+    .db "snes86: 8086 core up, 300KB guest RAM (SA-1)", $0D, $0A
+.ELSE
 .IFDEF BIGMEM
     .db "snes86: 8086 core up, 172KB guest RAM", $0D, $0A
 .ELSE
     .db "snes86: 8086 core up, 108KB guest RAM", $0D, $0A
+.ENDIF
 .ENDIF
 .IFDEF PCDOS
     .db "booting PC DOS 2.00 from ROM disk...", $0D, $0A, $0D, $0A, 0

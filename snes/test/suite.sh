@@ -363,6 +363,17 @@ else
   # slowest boot in the fleet — and it executes code straight across the
   # WRAM->SRAM seam, which regression-guards the fetch bounce).
   [ -z "$QUICK" ] && mesen_leg "$(pwd)/build/freedos.sfc" t_fdos --timeout=1800
+
+  # SA-1 variant end-to-end (own ROM, own .srm namespace — these legs
+  # never touch msdos.srm). t_sa1boot is the plain boot; t_sa1mem proves
+  # the machine really is 300 KB by round-tripping a pattern through
+  # guest RAM at 256 KB and reading it back out of SA-1 BW-RAM. Neither
+  # leg depends on B:, so the user's msdos_sa1.srm is left alone.
+  if [ -z "$QUICK" ]; then
+    make -s msdos_sa1 >/dev/null || { echo "FAIL sa1-build"; FAIL=1; }
+    mesen_leg "$(pwd)/build/msdos_sa1.sfc" t_sa1boot
+    mesen_leg "$(pwd)/build/msdos_sa1.sfc" t_sa1mem
+  fi
 fi
 
 echo
