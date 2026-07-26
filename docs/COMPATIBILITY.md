@@ -80,7 +80,7 @@ All captured from snes86 running in Mesen.
 | | VIEW | ✅ shipped | our BMP/PCX picture viewer (Turbo Pascal, with source): 640×200 ordered-dither halftone or 320×200 four-colour, wildcard slideshows (`VIEW *.BMP`); `C:\VIEW` ships generated test cards |
 | | JAVA | ✅ shipped | our Java class-file interpreter (Turbo Pascal, with source): runs real `javac --release 8` bytecode — `C:\JAVA` ships Hello/Fib/Sieve/Concat/Guess samples |
 | | JAVAC | ✅ shipped | our Java compiler running ON the machine (C, built by Small-C 2.2 on MS-DOS 2.0 inside the emulator): `JAVAC HELLO.JAV B:HELLO.CLA` then `JAVA B:HELLO` — the SNES compiles Java and runs it; output byte-identical to the clang build of the same source |
-| | GB.COM | ✅ tested | our Game Boy emulator, now its own project: [gameboy8086](https://github.com/rgsilva/gameboy8086) — the shots above were taken here |
+| | GB.COM | ✅ shipped | our Game Boy (DMG) emulator — a 15 KB pure-8086 `.COM` in `C:\GB`, with source ([apps/gb](../apps/gb/README.md)); developed in its own repo, [gb8086](https://github.com/rgsilva/gb8086), and shipped here again with homebrew test carts (bring your own game ROMs — 32 KB no-MBC). Passes Blargg's cpu_instrs 11/11; the shots above are it |
 | Third-party | Small-C toolchain | ✅ shipped | public-domain C compiler + assembler + the MIT 1982 linker in `C:\CC`: `CC HELLO` compiles, links and runs C on the 108 KB machine (~14 min at SNES speed, measured); samples ship with source — the machine can build them; provenance and hashes in [apps/cc/README](../apps/cc/README.md) |
 | Languages | GW-BASIC 3.23 | ✅ tested | interpreter loads and runs |
 | | Turbo Pascal 3 | ✅ tested | the compiler that builds our own tools |
@@ -88,7 +88,7 @@ All captured from snes86 running in Mesen.
 | | Multiplan | ✅ tested | spreadsheet grid, `.LOD`/`.SYS` overlays |
 | Interactive fiction | Zork I–III, Planetfall, Leather Goddesses, Hitchhiker's Guide, Wishbringer | ✅ tested | Infocom's later 8086 interpreter |
 | Games | Rogue | ✅ tested* | *needs BIGMEM (see [Memory](#memory)) |
-| | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* [GB.COM](https://github.com/rgsilva/gameboy8086) — playable on the host core, title screen captured on the SNES |
+| | Tetris (Game Boy, 1989) | ✅ tested | runs *inside* [GB.COM](../apps/gb/README.md) (`C:\GB`) — playable on the host core, title screen captured on the SNES; the cartridge ROM is copyrighted, bring your own |
 | | Microsoft Flight Simulator 1 | ✅ tested | self-booting disk (`make boot DISK=disks/fs1.img`), not a DOS program |
 | Benchmarks | Norton SI, CPUBENCH | ✅ tested | CPU/system info + timing loops |
 
