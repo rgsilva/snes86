@@ -15,12 +15,24 @@
  *   -v        log the first occurrence of every INT xx/AH=yy (incl. DOS 21h)
  *   -l N      stop after N guest instructions
  *   -w        write modified disk image back to file on exit
+ *   -hdrw     allow writes to the -d fixed disk (written back on exit);
+ *             default is read-only, as the SNES C: is
  *   -kdelay N hold keyboard input until step N (ELKS: login's tty open
  *             flushes anything typed during boot)
+ *   -krate N  steps between piped keys (default 16384). Windows Setup
+ *             flushes type-ahead per screen: script it at ~20M/key
  *   -rom F@S  map file F read-only at segment S (hex): ELKS ROMCODE kernel
  *             + ROMFS windows in the 1 MB space; verified unwritten on exit
  *   -entry S:O start execution at S:O (hex) instead of the boot sector
  * Interactive keys go straight to the guest (raw mode); quit with Ctrl-].
+ * Arrow/function keys arrive as ANSI escape sequences and are translated
+ * to XT scancodes (ASCII 0), so full-screen guests are drivable.
+ *
+ * Two environment levers for machine-detection experiments (both off by
+ * default, both pure queries so nothing else changes):
+ *   MODELBYTE=xx   the byte at F000:FFFE (default FF = original IBM PC)
+ *   DOSVER=maj.min answer INT 21h AH=30h from the harness, so "needs a
+ *                  newer DOS" can be told apart from "broken on us"
  */
 #define _POSIX_C_SOURCE 200809L   /* select/termios/gettimeofday under a
                                    * strict -std=c11 libc (Linux) */
@@ -40,12 +52,20 @@ typedef struct {
     long     disksz;
     int      cyls, heads, spt;
     int      disk_dirty;
-    /* fixed disk (DL=80h), read-only */
+    /* fixed disk (DL=80h), read-only unless -hdrw */
     uint8_t *hd;
     long     hdsz;
     int      hd_cyls, hd_heads, hd_spt;
+    int      hd_rw, hd_dirty;
     /* keyboard */
     int peek;          /* buffered key byte, -1 = none */
+    int pushback;      /* byte read by the escape-sequence lookahead and
+                        * not consumed by it, -1 = none (a lone ESC must
+                        * not eat the key typed after it) */
+    int peek_scan;     /* scancode override for the buffered key: extended
+                        * keys (arrows, F-keys) arrive as ANSI escape
+                        * sequences and have no ASCII, so the usual
+                        * scancode(ascii) derivation can't reach them */
     int eof;           /* stdin exhausted (pipe mode) */
     int tty;
     /* config */
@@ -79,6 +99,12 @@ typedef struct {
      * s9next spaces INT9 deliveries so the guest ISR can't re-enter
      * itself at its post-sti tail (the SNES side's s9CD, host edition) */
     unsigned long long kdelay, next_pump, s9next, next_key;
+    unsigned long long krate;  /* steps between piped keys (-krate). Full-
+                                * screen installers (Windows Setup) drain
+                                * the type-ahead buffer as each screen is
+                                * painted, so a script must type SLOWER
+                                * than the screen redraws or its keys are
+                                * silently flushed. */
     int tickstep;            /* instructions per timer tick (-tick) */
     int pending_irq;         /* IRQ refused by the interrupt shadow (or by
                               * IF=0), retried each step; -1 = none */
@@ -90,6 +116,7 @@ typedef struct {
 
 static volatile sig_atomic_t g_stop = 0;
 static Harness *g_h;
+static X86 *g_c;          /* text-mode B800 mirror (see txt_put) */
 
 /* CGA status port: retrace bits must toggle or direct-video programs
  * (Turbo Pascal!) spin forever waiting for retrace to end */
@@ -279,13 +306,51 @@ static void logcall(Harness *h, int n, uint8_t ah)
 /* ------------------------------------------------------------------ */
 /* INT 10h — video → stdout                                            */
 
+/* Mirror BIOS text output into the B800 text buffer. The HLE BIOS talks
+ * to stdout, so a guest that paints with INT 10h teletype + cursor moves
+ * (Windows 2.x Setup) leaves stdout an unreadable run-on and the exit
+ * screen dump empty. Guests that write B800 themselves are unaffected. */
+static void txt_put(Harness *h, uint8_t ch, uint8_t attr)
+{
+    if (!g_c || gfx_mode(h->vmode) || h->row < 0 || h->row > 24
+        || h->col < 0 || h->col >= 80)
+        return;
+    uint32_t o = 0xB8000 + (uint32_t)(h->row * 80 + h->col) * 2;
+    g_c->mem[o] = ch;
+    g_c->mem[o + 1] = attr;
+}
+
+static void txt_clear(Harness *h)
+{
+    if (!g_c || gfx_mode(h->vmode)) return;
+    for (int i = 0; i < 80 * 25; i++) {
+        g_c->mem[0xB8000 + i * 2] = ' ';
+        g_c->mem[0xB8000 + i * 2 + 1] = 0x07;
+    }
+}
+
+static void txt_scroll(Harness *h)
+{
+    if (!g_c || gfx_mode(h->vmode)) return;
+    memmove(&g_c->mem[0xB8000], &g_c->mem[0xB8000 + 160], 160 * 24);
+    for (int i = 0; i < 80; i++) {
+        g_c->mem[0xB8000 + 24 * 160 + i * 2] = ' ';
+        g_c->mem[0xB8000 + 24 * 160 + i * 2 + 1] = 0x07;
+    }
+}
+
 static void tty_putc(Harness *h, uint8_t ch)
 {
+    int was = h->row;
     putchar(ch);
+    if (ch >= 32) txt_put(h, ch, 0x07);
     if (ch == '\r')      h->col = 0;
     else if (ch == '\n') h->row += (h->row < 24);
     else if (ch == 8)    h->col -= (h->col > 0);
     else if (ch >= 32 && ++h->col >= h->cols) { h->col = 0; h->row += (h->row < 24); }
+    if (h->row == 24 && was == 24 && (ch == '\n' || (ch >= 32 && !h->col)))
+        txt_scroll(h);                    /* pinned at the last row: the
+                                           * real BIOS would have scrolled */
 }
 
 static int bios_video(X86 *c, Harness *h)
@@ -303,8 +368,10 @@ static int bios_video(X86 *c, Harness *h)
             if (!(ral(c) & 0x80))                /* AL bit7 = no-clear */
                 memset(&c->mem[0xB8000], 0, 0x4000);
             h->cga_3d9 = 0x30;                   /* bright cyan/magenta/white */
-        } else if (h->tty) {
-            fputs("\033[2J\033[H", stdout);
+        } else {
+            if (h->tty) fputs("\033[2J\033[H", stdout);
+            h->row = h->col = 0;
+            txt_clear(h);
         }
         h->row = h->col = 0;
         break;
@@ -325,13 +392,21 @@ static int bios_video(X86 *c, Harness *h)
                 memset(&c->mem[0xB8000], 0, 0x4000);
             break;
         }
-        if (ral(c) == 0 && h->tty) {             /* AL=0: clear window */
-            fputs("\033[2J\033[H", stdout);
+        if (ral(c) == 0) {                       /* AL=0: clear window */
+            if (h->tty) fputs("\033[2J\033[H", stdout);
             h->row = h->col = 0;
+            txt_clear(h);
+        } else {
+            for (int i = 0; i < ral(c); i++) txt_scroll(h);
         }
         break;
     case 0x08:                                   /* read char+attr */
         c->r[X86_AX] = 0x0720;
+        if (g_c && !gfx_mode(h->vmode) && h->row >= 0 && h->row < 25
+            && h->col >= 0 && h->col < 80) {
+            uint32_t o = 0xB8000 + (uint32_t)(h->row * 80 + h->col) * 2;
+            c->r[X86_AX] = (uint16_t)((g_c->mem[o + 1] << 8) | g_c->mem[o]);
+        }
         break;
     case 0x09: case 0x0A: {                      /* write char (xN) */
         int n = c->r[X86_CX] ? c->r[X86_CX] : 1;
@@ -339,8 +414,13 @@ static int bios_video(X86 *c, Harness *h)
             for (int i = 0; i < n; i++)
                 cga_glyph(c, h, h->row, h->col + i, ral(c),
                           (uint8_t)c->r[X86_BX]);
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < n; i++) {
+            int sc = h->col;
+            h->col = sc + i;
+            txt_put(h, ral(c), ah == 0x09 ? (uint8_t)c->r[X86_BX] : 0x07);
+            h->col = sc;
             putchar(ral(c));
+        }
         break;
     }
     case 0x0B: {                                 /* CGA palette/background */
@@ -448,8 +528,10 @@ static int bios_disk(X86 *c, Harness *h)
                     ah == 2 ? "rd" : "wr", drive, cyl, head, sec, cnt,
                     c->sr[X86_ES], c->r[X86_BX]);
 
-        if (drive == 0x80 && h->hd) {            /* fixed disk, read-only */
-            if (ah == 0x03) { sah(c, 0x03); sal(c, 0); set_cf(c, 1); return 1; }
+        if (drive == 0x80 && h->hd) {            /* fixed disk (-hdrw: writable) */
+            if (ah == 0x03 && !h->hd_rw) {       /* 03h = write protected */
+                sah(c, 0x03); sal(c, 0); set_cf(c, 1); return 1;
+            }
             img = h->hd; total = h->hdsz / 512;
             spt = h->hd_spt; heads = h->hd_heads; cyls = h->hd_cyls;
         } else if (drive == 0) {
@@ -492,7 +574,11 @@ static int bios_disk(X86 *c, Harness *h)
                 img[lba * 512 + i] = c->mem[g];
         }
         if (ah == 0x02) h->rd_sectors += (unsigned)cnt;
-        else          { h->wr_sectors += (unsigned)cnt; h->disk_dirty = 1; }
+        else {
+            h->wr_sectors += (unsigned)cnt;
+            if (img == h->hd) h->hd_dirty = 1;
+            else              h->disk_dirty = 1;
+        }
         sah(c, 0);
         sal(c, (uint8_t)cnt);
         set_cf(c, 0);
@@ -553,6 +639,53 @@ static uint8_t kb_xlate(uint8_t b)
     return b;
 }
 
+/* ANSI escape sequence -> XT scancode (arrows/F-keys live on the 84-key
+ * keypad, so no E0 prefix: the code IS the key). Returns 0 if unknown. */
+static uint8_t esc_scan(const char *s, int n)
+{
+    if (n < 2) return 0;
+    char f = s[n - 1];
+    if (s[0] == 'O' || s[0] == '[') {
+        switch (f) {                       /* CSI/SS3 letter finals */
+        case 'A': return 0x48;             /* Up    */
+        case 'B': return 0x50;             /* Down  */
+        case 'C': return 0x4D;             /* Right */
+        case 'D': return 0x4B;             /* Left  */
+        case 'H': return 0x47;             /* Home  */
+        case 'F': return 0x4F;             /* End   */
+        case 'P': return 0x3B;             /* SS3 F1 */
+        case 'Q': return 0x3C;
+        case 'R': return 0x3D;
+        case 'S': return 0x3E;
+        default: break;
+        }
+    }
+    if (s[0] == '[' && f == '~') {         /* CSI <n> ~ */
+        int v = atoi(s + 1);
+        switch (v) {
+        case 1: return 0x47; case 2: return 0x52; case 3: return 0x53;
+        case 4: return 0x4F; case 5: return 0x49; case 6: return 0x51;
+        case 11: return 0x3B; case 12: return 0x3C; case 13: return 0x3D;
+        case 14: return 0x3E; case 15: return 0x3F; case 17: return 0x40;
+        case 18: return 0x41; case 19: return 0x42; case 20: return 0x43;
+        case 21: return 0x44; case 23: return 0x85; case 24: return 0x86;
+        default: break;
+        }
+    }
+    return 0;
+}
+
+/* is another byte available right now? (escape-sequence lookahead only:
+ * a lone ESC must not block waiting for a '[' that never comes) */
+static int kb_ready(void)
+{
+    fd_set fds;
+    struct timeval tv = { 0, 0 };
+    FD_ZERO(&fds);
+    FD_SET(0, &fds);
+    return select(1, &fds, NULL, NULL, &tv) > 0;
+}
+
 /* pull one byte into h->peek if available; returns 1 if a key is buffered */
 static int kb_poll(Harness *h)
 {
@@ -562,6 +695,13 @@ static int kb_poll(Harness *h)
         return 0;
     if (h->peek >= 0)
         return 1;
+    if (h->pushback >= 0) {
+        h->peek = h->pushback;
+        h->pushback = -1;
+        h->peek_scan = 0;
+        h->next_key = h->steps + h->krate;
+        return 1;
+    }
     if (h->eof)
         return 0;
     if (!h->tty && h->steps < h->next_key)
@@ -584,8 +724,34 @@ static int kb_poll(Harness *h)
         h->eof = 1;
         return 0;
     }
+    h->peek_scan = 0;
+    if (b == 0x1B && kb_ready()) {        /* ESC [ ... / ESC O ... */
+        char seq[8];
+        int n = 0;
+        while (n < (int)sizeof seq - 1 && kb_ready()) {
+            uint8_t x;
+            if (read(0, &x, 1) <= 0) break;
+            seq[n++] = (char)x;
+            if (n == 1) {
+                if (x != '[' && x != 'O') break;   /* not a CSI/SS3 intro */
+            } else if (x >= '@' && x <= '~') {
+                break;                            /* final byte */
+            }
+        }
+        seq[n] = 0;
+        uint8_t sc = esc_scan(seq, n);
+        if (getenv("TRACEKB")) fprintf(stderr, "[kb esc \"%s\" -> %02X]\n", seq, sc);
+        if (sc) {
+            h->peek = 0;                  /* extended key: ASCII 0 */
+            h->peek_scan = sc;
+            h->next_key = h->steps + h->krate;
+            return 1;
+        }
+        if (n == 1)                       /* lone ESC: give the byte back */
+            h->pushback = (unsigned char)seq[0];
+    }
     h->peek = kb_xlate(b);
-    h->next_key = h->steps + 16384;
+    h->next_key = h->steps + h->krate;
     return 1;
 }
 
@@ -612,6 +778,13 @@ static uint16_t bda_kb_pop(X86 *c, int consume)
         memcpy(&c->mem[0x41A], &hd, 2);
     }
     return v ? v : 0xFFFF;
+}
+
+/* scancode for the buffered key: an escape-sequence key carries its own */
+static uint8_t kb_scan(Harness *h)
+{
+    if (getenv("TRACEKB")) fprintf(stderr, "[kb serve ascii=%02X scan=%02X]\n", h->peek, h->peek_scan);
+    return h->peek_scan ? (uint8_t)h->peek_scan : scancode((uint8_t)h->peek);
 }
 
 static int bios_kbd(X86 *c, Harness *h)
@@ -666,13 +839,14 @@ static int bios_kbd(X86 *c, Harness *h)
             h->exit_reason = "Ctrl-]";
             return 1;
         }
-        c->r[X86_AX] = (uint16_t)((scancode((uint8_t)h->peek) << 8) | h->peek);
+        c->r[X86_AX] = (uint16_t)((kb_scan(h) << 8) | h->peek);
         h->peek = -1;
+        h->peek_scan = 0;
         return 1;
     case 0x01:                                   /* poll */
         if (kb_poll(h)) {
             set_zf(c, 0);
-            c->r[X86_AX] = (uint16_t)((scancode((uint8_t)h->peek) << 8) | h->peek);
+            c->r[X86_AX] = (uint16_t)((kb_scan(h) << 8) | h->peek);
         } else {
             set_zf(c, 1);
             /* DOS 2.0 waits for input by spinning on INT 28h + AH=01
@@ -750,6 +924,21 @@ static int bios_hook(X86 *c, int n)
     /* first DOS buffered-line read = "boot to interactive prompt" (M3.5) */
     if (n == 0x21 && rah(c) == 0x0A && !h->prompt_steps)
         h->prompt_steps = h->steps;
+    /* DOSVER=maj.min: answer INT 21h AH=30h from the harness instead of
+     * letting DOS answer. Purely an experiment lever — it tells apart
+     * "this program needs a newer DOS" from "this program is broken on
+     * our machine" without patching the guest's MSDOS.SYS. */
+    if (n == 0x21 && rah(c) == 0x30) {
+        const char *dv = getenv("DOSVER");
+        if (dv) {
+            int mj = 0, mn = 0;
+            sscanf(dv, "%d.%d", &mj, &mn);
+            c->r[X86_AX] = (uint16_t)((mn << 8) | mj);
+            c->r[X86_BX] = 0;
+            c->r[X86_CX] = 0;
+            return 1;
+        }
+    }
     switch (n) {
     case 0x10: return bios_video(c, h);
     case 0x11: c->r[X86_AX] = EQUIPMENT; return 1;
@@ -818,7 +1007,11 @@ static void guest_bios_setup(X86 *c, Harness *h)
     c->mem[0x463] = 0xD4; c->mem[0x464] = 0x03;  /* CRTC base 3D4 */
     c->mem[0x465] = 0x29;                        /* 3D8 shadow: 80x25 on */
     c->mem[0x466] = 0x30;                        /* 3D9 shadow */
-    c->mem[0xFFFFE] = 0xFF;                      /* model byte: original PC */
+    {   /* model byte at F000:FFFE — original PC (FFh) by default;
+         * MODELBYTE=xx overrides it for machine-detection experiments */
+        const char *mb = getenv("MODELBYTE");
+        c->mem[0xFFFFE] = mb ? (uint8_t)strtoul(mb, NULL, 16) : 0xFF;
+    }
 }
 
 static void print_stats(X86 *c, Harness *h)
@@ -854,12 +1047,17 @@ static void print_stats(X86 *c, Harness *h)
             fprintf(stderr, "-- B800 text screen --\n");
             for (int r = 0; r < 25; r++) {
                 char line[81];
+                int hl = 0;                      /* any inverse/coloured cell:
+                                                  * marks the highlighted row
+                                                  * of a text-mode menu */
                 for (int col = 0; col < 80; col++) {
                     uint8_t ch = c->mem[0xB8000 + (r * 80 + col) * 2];
+                    uint8_t at = c->mem[0xB8000 + (r * 80 + col) * 2 + 1];
+                    if (at & 0x70) hl = 1;
                     line[col] = (ch >= 32 && ch < 127) ? ch : ' ';
                 }
                 line[80] = 0;
-                fprintf(stderr, "|%s|\n", line);
+                fprintf(stderr, "%c%s|\n", hl ? '>' : '|', line);
             }
         }
     }
@@ -880,8 +1078,10 @@ int main(int argc, char **argv)
     Harness h;
     memset(&h, 0, sizeof h);
     h.peek = -1;
+    h.pushback = -1;
     h.pending_irq = -1;
     h.mem_kb = 256;
+    h.krate = 16384;
     h.tickstep = 15000;
     h.cols = 80;
     h.vmode = 3;
@@ -899,6 +1099,9 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-v"))                 h.verbose = 1;
         else if (!strcmp(argv[i], "-w"))                 writeback = 1;
         else if (!strcmp(argv[i], "-d") && i + 1 < argc) hdimg = argv[++i];
+        else if (!strcmp(argv[i], "-hdrw"))              h.hd_rw = 1;
+        else if (!strcmp(argv[i], "-krate") && i + 1 < argc)
+            h.krate = (unsigned long long)atoll(argv[++i]);
         else if (!strcmp(argv[i], "-cga") && i + 1 < argc) h.cga_out = argv[++i];
         else if (!strcmp(argv[i], "-tick") && i + 1 < argc) {
             h.tickstep = atoi(argv[++i]);
@@ -934,7 +1137,8 @@ int main(int argc, char **argv)
     }
     if (!img && !entry_set) {
         fprintf(stderr, "usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] "
-                        "[-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] image.img\n");
+                        "[-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] "
+                        "[-hdrw] image.img\n");
         return 2;
     }
 
@@ -993,6 +1197,7 @@ int main(int argc, char **argv)
     X86 *c = x86_new();
     if (!c) { fprintf(stderr, "out of memory\n"); return 1; }
     g_h = &h;
+    g_c = c;
     c->in8 = io_in8;
     c->out8 = io_out8;
     c->int_hook = bios_hook;
@@ -1105,12 +1310,15 @@ int main(int argc, char **argv)
                     h.exit_flag = 1;
                     h.exit_reason = "Ctrl-]";
                     h.peek = -1;
+                    h.peek_scan = 0;
                 } else {
                     uint8_t ch = (uint8_t)h.peek;
-                    uint8_t base = unshift(ch);
-                    int shift = base || (ch >= 'A' && ch <= 'Z');
-                    uint8_t sc = scancode(base ? base : ch);
+                    uint8_t base = h.peek_scan ? 0 : unshift(ch);
+                    int shift = base || (!h.peek_scan && ch >= 'A' && ch <= 'Z');
+                    uint8_t sc = h.peek_scan ? (uint8_t)h.peek_scan
+                                             : scancode(base ? base : ch);
                     h.peek = -1;
+                    h.peek_scan = 0;
                     if (sc) {
                         int n = 0;
                         if (shift) h.s9q[n++] = 0x2A;    /* LShift make */
@@ -1195,6 +1403,15 @@ int main(int argc, char **argv)
                     h.rom[i].path, h.rom[i].base);
     }
 
+    if (h.hd_dirty && hdimg) {       /* -hdrw: the install actually happened */
+        FILE *wf = fopen(hdimg, "r+b");
+        if (wf) {
+            fwrite(h.hd, 1, (size_t)h.hdsz, wf);
+            fclose(wf);
+            fprintf(stderr, "hd image written back\n");
+        } else
+            perror(hdimg);
+    }
     if (writeback && h.disk_dirty && img) {
         FILE *wf = fopen(img, "wb");
         if (wf) {
