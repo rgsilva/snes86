@@ -7,9 +7,10 @@ ANSI.SYS and never will. It is a genuine modal vi: `hjkl` and arrow
 keys, `i`/`a`/`o` insert, `dd`/`x`/`p`, `u` undo, `/pattern` search,
 `:s//`, counts, macros, `:w`, `:q`, `:n`, wildcards.
 
-    C:\> CD VI
-    C:\VI> VI B:NOTE.TXT       edit a file on the writable drive
-    C:\VI> VI *.TXT            wildcards work (:n = next file)
+    C:\> VI B:NOTE.TXT         edit a file on the writable drive
+    C:\> VI *.TXT              wildcards work (:n = next file)
+
+`C:\VI` is on the PATH, so `VI` works from anywhere.
 
 Files are written with DOS CRLF line endings. The edit buffer is 16 KB
 (bigger files open read-only with `[overflow]`); C: is read-only, so
