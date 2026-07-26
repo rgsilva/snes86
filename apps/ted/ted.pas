@@ -10,6 +10,9 @@ program Ted;
           Enter = split line   Backspace / Del = edit and join
           Esc (Y button) = menu: Save / save As / Load / seaRch /
           Goto / Undo line / Quit  (d-pad + Enter, or the hotkey letter)
+          Direct (no menu trip): F1 help, F2/^S save, F4/^A save-as,
+          F3/^L/^O load, F5/^F search, F6/^G goto, F7/^U undo line,
+          F10 menu, ^Q quit
   Limits: 2000 lines, 255 chars per line, text bounded by free RAM.
   Long lines pan under the cursor (the other rows show columns 1-64);
   TABs display at 8-column stops but stay TAB bytes in the file. }
@@ -295,8 +298,8 @@ begin
   Str(CY, T); S := S + '  Ln ' + T;
   Str(CX, T); S := S + ' Col ' + T;
   if StMsg <> '' then S := S + '  ' + StMsg;
-  while Length(S) < SW - 7 do S := S + ' ';
-  S := S + 'Y=menu';
+  while Length(S) < SW - 15 do S := S + ' ';
+  S := S + 'F1=help Y=menu';
   PutStatus(S);
 end;
 
@@ -761,26 +764,44 @@ begin
   else StMsg := 'nothing to undo';
 end;
 
+procedure DoSave;
+begin
+  if FName = '' then DoSaveAs
+  else if SaveFile(FName) then;
+end;
+
+procedure DoQuit;
+begin
+  if Modified then
+  begin
+    if Confirm('Unsaved changes - quit?') then Done := True;
+  end
+  else Done := True;
+end;
+
+procedure DoHelp;
+{ two status-row pages: the F-key bindings, then the Ctrl synonyms }
+var
+  P: TStr;
+  K: Integer;
+begin
+  P := ' F2=save F4=as F3=load F5=find F6=goto F7=undo F10=menu ^Q=quit';
+  PutStatus(P);
+  K := ReadKey;
+  P := ' ^S=save ^A=as ^L=load ^F=find ^G=goto ^U=undo ^Q=quit Esc=menu';
+  PutStatus(P);
+  K := ReadKey;
+end;
+
 procedure ExecMenu(Sel: Integer);
 begin
-  if Sel = 1 then
-  begin
-    if FName = '' then DoSaveAs
-    else if SaveFile(FName) then;
-  end
+  if Sel = 1 then DoSave
   else if Sel = 2 then DoSaveAs
   else if Sel = 3 then DoLoad
   else if Sel = 4 then DoSearch
   else if Sel = 5 then DoGoto
   else if Sel = 6 then DoUndo
-  else if Sel = 7 then
-  begin
-    if Modified then
-    begin
-      if Confirm('Unsaved changes - quit?') then Done := True;
-    end
-    else Done := True;
-  end;
+  else if Sel = 7 then DoQuit;
 end;
 
 procedure DoMenu;
@@ -871,6 +892,13 @@ begin
     if AL = 27 then DoMenu
     else if AL = 13 then DoEnter
     else if AL = 8 then DoBackspace
+    else if AL = 19 then DoSave                     { ^S }
+    else if AL = 1 then DoSaveAs                    { ^A }
+    else if (AL = 12) or (AL = 15) then DoLoad      { ^L / ^O }
+    else if AL = 6 then DoSearch                    { ^F }
+    else if AL = 7 then DoGoto                      { ^G }
+    else if AL = 21 then DoUndo                     { ^U }
+    else if AL = 17 then DoQuit                     { ^Q }
     else if (AL = 9) or (AL >= 32) then DoInsert(Chr(AL))
     else if AL = 0 then
     begin
@@ -898,7 +926,15 @@ begin
       else if AH2 = $4F then CX := Length(WStr) + 1
       else if AH2 = $49 then GoLine(CY - 23)
       else if AH2 = $51 then GoLine(CY + 23)
-      else if AH2 = $53 then DoDel;
+      else if AH2 = $53 then DoDel
+      else if AH2 = $3B then DoHelp                 { F1 }
+      else if AH2 = $3C then DoSave                 { F2 }
+      else if AH2 = $3D then DoLoad                 { F3 }
+      else if AH2 = $3E then DoSaveAs               { F4 }
+      else if AH2 = $3F then DoSearch               { F5 }
+      else if AH2 = $40 then DoGoto                 { F6 }
+      else if AH2 = $41 then DoUndo                 { F7 }
+      else if AH2 = $44 then DoMenu;                { F10 }
     end;
     DrawStatus;
     PlaceCursor;
