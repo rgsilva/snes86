@@ -1,10 +1,11 @@
 #!/bin/sh
 # `make apps` (root): the sources-don't-rot canary. No app binaries are
-# committed — every image build compiles them from source (see the
-# per-tool Makefiles) — so this script FORCE-rebuilds every on-machine
-# tool (TP3 inside runpc via ../tpcompile.sh, TURBO.COM fetched + cached
-# by fetch_tp3.py; javac.exe via the Small-C kit committed in apps/cc)
-# and verifies the results:
+# committed except vi.exe (its Watcom toolchain fetch is too heavy for
+# image builds) — every image build compiles the rest from source (see
+# the per-tool Makefiles) — so this script FORCE-rebuilds every
+# on-machine tool (TP3 inside runpc via ../tpcompile.sh, TURBO.COM
+# fetched + cached by fetch_tp3.py; javac.exe via the Small-C kit
+# committed in apps/cc; vi via fetch_watcom.py) and verifies:
 #
 #   * every TP3 tool must recompile cleanly (non-empty artifact);
 #     behavioral checks live in `make test` (ted-host, java-host, ...)
@@ -63,6 +64,17 @@ for spec in "view:view/view.com" "ted:ted/ted.com" \
   for a in $arts; do [ -s "$a" ] || ok=; done
   if [ -n "$ok" ]; then echo "PASS $t (recompiled)"; else echo "FAIL $t"; FAIL=1; fi
 done
+
+# --- VI (levee, Open Watcom cross-build — the one committed binary:
+# the toolchain fetch is ~a hundred MB, too heavy for image builds, and
+# unlike TP3 the build is byte-reproducible, so the canary is exact) ---
+cp vi/vi.exe "$W/vi.committed"
+if step vi "$W/vi.log" make -s -C vi recompile \
+   && cmp -s vi/vi.exe "$W/vi.committed"; then
+  echo "PASS vi (byte-identical)"
+else
+  echo "FAIL vi (rebuild differs from committed vi.exe)"; FAIL=1
+fi
 
 # everything is freshly staged now; pack the C: the verifies run against
 (cd "$ROOT/snes" && make -s build/hd_free.img >/dev/null) \

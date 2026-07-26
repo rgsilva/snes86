@@ -42,3 +42,6 @@ user/*
 !user/.gitkeep
 __pycache__/
 snes/test/shot.lua
+
+# apps/vi: version.c is generated from levee/VERSION at recompile time
+apps/vi/version.c

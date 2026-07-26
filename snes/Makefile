@@ -164,10 +164,11 @@ io:
 # --- the C: drive. One packer (tools/mkhd_free.py): every staged
 # apps/<tool>/build/ becomes C:\<TOOL>, msdos/bin/ becomes C:\DOS,
 # user/ becomes C:\USER. OVERLAYS (dirs or floppy images) merge on top.
-APPSTOOLS := view ted java midi sokoban bench cc
+APPSTOOLS := view ted java midi sokoban bench cc vi
 
-# staging may COMPILE the app binaries (nothing binary is committed in
-# apps/): TP3 is fetched (pinned sha256) and driven inside runpc, and
+# staging may COMPILE the app binaries (the only committed binary in
+# apps/ is vi.exe — its Watcom toolchain is canary-only, see make apps):
+# TP3 is fetched (pinned sha256) and driven inside runpc, and
 # javac.exe rebuilds via Small-C under runpc — so build runpc first.
 # The loop is serial on purpose: the TP3 compiles share apps/cache/.
 apps-stage:
