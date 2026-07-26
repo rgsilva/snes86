@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Minimal FAT12 360 KB floppy toolkit for the apps build system.
+"""Minimal FAT12 toolkit for the apps build system.
 
-Two jobs:
+Three jobs:
   * read_img(path)      -> {NAME: bytes} for a 180/360 KB floppy
+  * read_hd(path)       -> [(SUBDIR|None, NAME, bytes)] for a partitioned
+                           FAT12 fixed disk (the C: shape mkhd_free.py
+                           emits): root files plus one level of subdirs
   * Floppy(path)        -> clone a bootable image (msdos/msdos.img) and
                            append/replace root files, preserving the boot
                            sector and the IO.SYS/MSDOS.SYS cluster layout
                            the boot sector's baked-in sector runs expect.
 
-Only root-directory files, which is all a scratch compile/test floppy
-needs. Both FAT copies are kept in sync on save.
+Floppies are root-directory only, which is all a scratch compile/test
+floppy needs. Both FAT copies are kept in sync on save.
 """
 import struct
 
@@ -53,6 +56,67 @@ def read_img(path):
             b += d[lba * 512:(lba + spc) * 512]
             c = fe(c)
         out[nm.upper()] = bytes(b[:sz])
+    return out
+
+
+def read_hd(path):
+    """Read a partitioned FAT12 fixed disk -> [(sub|None, NAME, bytes)].
+
+    Geometry comes from the BPB, not from the file size, so any disk of
+    the C: shape works (mkhd_free.py's own output included). Only the
+    root and one level of subdirectories are walked — that is exactly
+    what the packer can place, and what C: itself uses.
+    """
+    d = open(path, "rb").read()
+    base = 0
+    if d[510:512] == b"\x55\xaa" and d[11:13] != b"\x00\x02":
+        for i in range(4):                      # MBR: first used entry
+            e = d[446 + 16 * i:446 + 16 * i + 16]
+            if e[4]:
+                base = struct.unpack_from("<I", e, 8)[0] * 512
+                break
+    bs = d[base:base + 512]
+    bps, spc = struct.unpack_from("<H", bs, 11)[0], bs[13]
+    res, nfat = struct.unpack_from("<H", bs, 14)[0], bs[16]
+    rn, spf = struct.unpack_from("<H", bs, 17)[0], struct.unpack_from("<H", bs, 22)[0]
+    if bps != 512 or not spc or not spf:
+        raise SystemExit(f"{path}: not a FAT12 image (bad BPB)")
+    fat = d[base + res * bps:base + (res + spf) * bps]
+    rootoff = base + (res + nfat * spf) * bps
+    data0 = rootoff + rn * 32
+
+    def fe(n):
+        o = n + n // 2
+        v = fat[o] | (fat[o + 1] << 8)
+        return (v >> 4) if n & 1 else (v & 0xFFF)
+
+    def read(c, size=None):
+        b = bytearray()
+        while 2 <= c < 0xFF0:
+            o = data0 + (c - 2) * spc * bps
+            b += d[o:o + spc * bps]
+            c = fe(c)
+        return bytes(b if size is None else b[:size])
+
+    out = []
+
+    def walk(ents, sub):
+        for i in range(0, len(ents), 32):
+            e = ents[i:i + 32]
+            if len(e) < 32 or e[0] in (0, 0xE5) or e[11] & 8:
+                continue
+            nm = (e[0:8].decode("latin1").rstrip() + "." +
+                  e[8:11].decode("latin1").rstrip()).rstrip(".").upper()
+            if nm in (".", ".."):
+                continue
+            c = struct.unpack_from("<H", e, 26)[0]
+            if e[11] & 0x10:
+                if sub is None:                 # one level only
+                    walk(read(c), nm)
+            else:
+                out.append((sub, nm, read(c, struct.unpack_from("<I", e, 28)[0])))
+
+    walk(d[rootoff:rootoff + rn * 32], None)
     return out
 
 

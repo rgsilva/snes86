@@ -13,10 +13,15 @@ The layout is convention, not configuration:
 
 OVERLAYS (env var: whitespace/comma-separated paths) merge extra trees
 into the image, last wins with a warning — plain directories (one level
-of subdirs) or FAT12 floppy images (flat, into the root). That is how
-the copyrighted app-matrix test fixture rides on top of the free image:
+of subdirs), FAT12 floppy images (flat, into the root) or partitioned
+FAT12 fixed disks of this same shape (root + one subdir level, i.e. an
+image this packer could itself have produced). That is how the
+copyrighted app-matrix test fixture rides on top of the free image:
 
     make msdos OVERLAYS=../disks/appmatrix
+
+An overlay carrying its own AUTOEXEC.BAT replaces C:'s and so breaks the
+byte-offset rule above — the warning is the signal to drop it first.
 
 Geometry: 107 cyl x 4 heads x 17 spt, FAT12 partition at LBA 17 — see
 the original derivation notes in git history (PC DOS 2.0's FDISK layout,
@@ -65,8 +70,8 @@ def place(sub, name, data, origin):
     bucket = tree.setdefault(sub, [])
     for i, (nm, _) in enumerate(bucket):
         if nm == name:
-            where = sub or "C:\\"
-            warn(f"overlay overwrites {where}\\{name} ({origin})")
+            where = "C:\\" + (sub + "\\" if sub else "")
+            warn(f"overlay overwrites {where}{name} ({origin})")
             bucket[i] = (name, data)
             return
     bucket.append((name, data))
@@ -111,7 +116,9 @@ if not userfiles:
           b"Put your own DOS .COM/.EXE files in user/ at the repo root\r\n"
           b"and run 'make msdos'.  They will appear here.\r\n", "user/")
 
-# overlays: directories (one subdir level) or FAT12 floppies (flat root)
+# overlays: directories (one subdir level), FAT12 floppies (flat root)
+# or partitioned FAT12 fixed disks (root + one subdir level)
+FLOPPY = (163840, 184320, 327680, 368640)
 for ov in os.environ.get("OVERLAYS", "").replace(",", " ").split():
     ov = os.path.abspath(ov)
     if os.path.isdir(ov):
@@ -126,9 +133,12 @@ for ov in os.environ.get("OVERLAYS", "").replace(",", " ").split():
                     fp = os.path.join(p, f)
                     if os.path.isfile(fp) and not f.startswith("."):
                         place(entry.upper(), f, open(fp, "rb").read(), ov)
-    elif os.path.isfile(ov):
+    elif os.path.isfile(ov) and os.path.getsize(ov) in FLOPPY:
         for nm, data in sorted(fatimg.read_img(ov).items()):
             place(None, nm, data, ov)
+    elif os.path.isfile(ov):
+        for sub, nm, data in fatimg.read_hd(ov):
+            place(sub, nm, data, ov)
     else:
         raise SystemExit(f"overlay not found: {ov}")
 
