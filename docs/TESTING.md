@@ -92,6 +92,13 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
   sources-don't-rot canary — the regular image builds compile the same
   binaries on demand (none are committed), but only `make apps` forces
   them all and runs the verifies.
+- `snes/test/winsnes.sh HDIMG [OUT.png]` — **Microsoft Windows 1.01** on
+  the 300 KB SA-1 machine, end to end: it overlays your installed C:
+  onto an SA-1 build, checks the result on `runpc` first (seconds — the
+  oracle), then drives Mesen headless to the MS-DOS Executive and shoots
+  it (~32 000 frames). Not a suite leg: the media is copyrighted and
+  bring-your-own, so nothing here can run in CI. See
+  [COMPATIBILITY](COMPATIBILITY.md).
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)
   vectors, including undocumented opcodes and microcode-exact flags:
