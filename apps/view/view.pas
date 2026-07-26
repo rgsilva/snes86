@@ -10,8 +10,8 @@ program View;
   streamed strictly forward in whatever order the file stores them
   (Turbo Pascal 3 has no 32-bit integers, so there are no big seeks),
   read in buffer-sized batches, scaled with integer steppers, and
-  dithered/packed/blitted by hand-written 8086 machine code - see
-  tools/mkviewasm.py for the inline() blocks. }
+  dithered/packed/blitted by hand-written 8086 machine code in both
+  modes - see tools/mkviewasm.py for the inline() blocks. }
 
 const
   { 4x4 ordered-dither thresholds: canonical Bayer * 16 + 7 }
@@ -51,6 +51,11 @@ var
     so locals (SS:[BP+x]) are invisible to DS-relative machine code }
   VSrc, VDst, VCnt, VSw, VTw, VErr, VLut, VThrRow, VBlt: Integer;
   PSrc, PSrcEnd, PDst, PDstEnd, PRun, PVal: Integer;
+  VStep, VSrc0: Integer;
+  PalR, PalG, PalB: array[0..255] of Byte; { the palette, split per channel }
+  CMap: array[0..7] of Byte;          { ColorMap in DS: typed consts are
+                                        CS-relative, XLAT reads DS }
+  CTgt: array[0..1535] of Byte;       { scaled R/G/B planes, 512 apart }
   Buf: array[0..BufMax] of Byte;
   Row: array[0..79] of Byte;          { one packed CGA scanline }
   Mode6: Boolean;
@@ -143,6 +148,7 @@ begin
     Pal[I, 1] := Buf[2 + I * 3];
     Pal[I, 0] := Buf[3 + I * 3];
     Lum[I] := (Pal[I, 2] * 2 + Pal[I, 1] * 5 + Pal[I, 0]) shr 3;
+    PalR[I] := Pal[I, 2]; PalG[I] := Pal[I, 1]; PalB[I] := Pal[I, 0];
   end;
   R.AX := $4200; R.BX := Handle;      { back to the pixel data }
   R.CX := 0; R.DX := 128;
@@ -206,6 +212,7 @@ begin
     begin
       for J := 0 to 2 do Pal[I, J] := Buf[I * 4 + J];
       Lum[I] := (Pal[I, 2] * 2 + Pal[I, 1] * 5 + Pal[I, 0]) shr 3;
+      PalR[I] := Pal[I, 2]; PalG[I] := Pal[I, 1]; PalB[I] := Pal[I, 0];
     end;
     HdrRead := HdrRead + 1024;
   end;
@@ -278,42 +285,14 @@ begin
   until PDst >= PDstEnd;
 end;
 
-procedure PixelRGB(SX: Integer; var PR, PG, PB: Byte);
-var
-  O: Integer;
-begin
-  if IsPCX then
-  begin
-    O := LumRow[SX];
-    PB := Pal[O, 0]; PG := Pal[O, 1]; PR := Pal[O, 2];
-    Exit;
-  end;
-  case Bits of
-    8: begin
-         O := Buf[BOfs + SX];
-         PB := Pal[O, 0]; PG := Pal[O, 1]; PR := Pal[O, 2];
-       end;
-    24: begin
-          O := BOfs + SX + SX + SX;  { TP3 compiles *3 to a real MUL }
-          PB := Buf[O]; PG := Buf[O + 1]; PR := Buf[O + 2];
-        end;
-    32: begin
-          O := BOfs + (SX shl 2);
-          PB := Buf[O]; PG := Buf[O + 1]; PR := Buf[O + 2];
-        end;
-  end;
-end;
-
 procedure RenderRow(TY: Integer);
 { the current source row (Buf[BOfs..] or LumRow for PCX) -> packed
   target row TY -> B800 }
 var
-  TX, SX, SErr, B, Thr, BI: Integer;
-  PR, PG, PB, C: Byte;
+  TX, SX: Integer;
 begin
   FillChar(Row, SizeOf(Row), 0);
-  SX := 0; SErr := 0;
-  B := 0; BI := 0;                    { pairs (mode 4) }
+  SX := 0;
   if Mode6 then
   begin
     { the whole fetch/DDA/dither/pack loop is hand-written 8086 machine
@@ -361,28 +340,79 @@ begin
   end
   else
   begin
-    for TX := 0 to TgtW - 1 do
+    { mode 4 is the same machinery per channel: pass A scales R, G and
+      B into the three CTgt planes (8bpp/PCX XLAT through the split
+      palette; 24/32bpp fetch the raw bytes with a 3- or 4-byte
+      stride), then one packed pass thresholds all three channels,
+      maps through CMap and packs four pixels a byte. }
+    VCnt := TgtW; VSw := SrcW; VTw := TgtW;
+    if IsPCX or (Bits = 8) then
     begin
-      PixelRGB(SX, PR, PG, PB);
-      SErr := SErr + SrcW;
-      while SErr >= TgtW do
-      begin
-        SErr := SErr - TgtW; SX := SX + 1;
-      end;
-      Thr := Bayer[TX and 3, TY and 3];
-      C := 0;
-      if PR > Thr then C := 4;
-      if PG > Thr then C := C or 2;
-      if PB > Thr then C := C or 1;
-      B := (B shl 2) or ColorMap[C];
-      BI := BI + 1;
-      if BI = 4 then
-      begin
-        Row[XOfs + (TX shr 2)] := B; B := 0; BI := 0;
-      end;
+      if IsPCX then VSrc0 := Ofs(LumRow) else VSrc0 := Ofs(Buf) + BOfs;
+      VSrc := VSrc0; VDst := Ofs(CTgt); VLut := Ofs(PalR); VErr := 0;
+      inline(
+      $06/$1E/$07/$8B/$36/VSrc/$8B/$3E/VDst/
+      $8B/$1E/VLut/$8B/$0E/VCnt/$FC/$8A/$04/
+      $D7/$AA/$8B/$06/VSw/$01/$06/VErr/$8B/
+      $06/VErr/$3B/$06/VTw/$72/$0B/$8B/$06/
+      VTw/$29/$06/VErr/$46/$EB/$EB/$E2/$DD/
+      $07);
+      VSrc := VSrc0; VDst := Ofs(CTgt) + 512; VLut := Ofs(PalG); VErr := 0;
+      inline(
+      $06/$1E/$07/$8B/$36/VSrc/$8B/$3E/VDst/
+      $8B/$1E/VLut/$8B/$0E/VCnt/$FC/$8A/$04/
+      $D7/$AA/$8B/$06/VSw/$01/$06/VErr/$8B/
+      $06/VErr/$3B/$06/VTw/$72/$0B/$8B/$06/
+      VTw/$29/$06/VErr/$46/$EB/$EB/$E2/$DD/
+      $07);
+      VSrc := VSrc0; VDst := Ofs(CTgt) + 1024; VLut := Ofs(PalB); VErr := 0;
+      inline(
+      $06/$1E/$07/$8B/$36/VSrc/$8B/$3E/VDst/
+      $8B/$1E/VLut/$8B/$0E/VCnt/$FC/$8A/$04/
+      $D7/$AA/$8B/$06/VSw/$01/$06/VErr/$8B/
+      $06/VErr/$3B/$06/VTw/$72/$0B/$8B/$06/
+      VTw/$29/$06/VErr/$46/$EB/$EB/$E2/$DD/
+      $07);
+    end
+    else
+    begin
+      if Bits = 24 then VStep := 3 else VStep := 4;
+      VSrc := Ofs(Buf) + BOfs + 2; VDst := Ofs(CTgt); VErr := 0;
+      inline(
+      $06/$1E/$07/$8B/$36/VSrc/$8B/$3E/VDst/
+      $8B/$0E/VCnt/$FC/$8A/$04/$AA/$8B/$06/
+      VSw/$01/$06/VErr/$8B/$06/VErr/$3B/$06/
+      VTw/$72/$0E/$8B/$06/VTw/$29/$06/VErr/
+      $03/$36/VStep/$EB/$E8/$E2/$DB/$07);
+      VSrc := Ofs(Buf) + BOfs + 1; VDst := Ofs(CTgt) + 512; VErr := 0;
+      inline(
+      $06/$1E/$07/$8B/$36/VSrc/$8B/$3E/VDst/
+      $8B/$0E/VCnt/$FC/$8A/$04/$AA/$8B/$06/
+      VSw/$01/$06/VErr/$8B/$06/VErr/$3B/$06/
+      VTw/$72/$0E/$8B/$06/VTw/$29/$06/VErr/
+      $03/$36/VStep/$EB/$E8/$E2/$DB/$07);
+      VSrc := Ofs(Buf) + BOfs; VDst := Ofs(CTgt) + 1024; VErr := 0;
+      inline(
+      $06/$1E/$07/$8B/$36/VSrc/$8B/$3E/VDst/
+      $8B/$0E/VCnt/$FC/$8A/$04/$AA/$8B/$06/
+      VSw/$01/$06/VErr/$8B/$06/VErr/$3B/$06/
+      VTw/$72/$0E/$8B/$06/VTw/$29/$06/VErr/
+      $03/$36/VStep/$EB/$E8/$E2/$DB/$07);
     end;
-    if BI > 0 then                    { flush a ragged right edge }
-      Row[XOfs + ((TgtW - 1) shr 2)] := B shl (2 * (4 - BI));
+    VThrRow := Ofs(ThrTab) + (TY and 3) * 512;
+    VDst := Ofs(Row) + XOfs;
+    { pass B4: three planes vs the Bayer row -> CMap -> 2-bit pack }
+    inline(
+    $06/$1E/$07/$BE/CTgt/$8B/$1E/VThrRow/$8B/
+    $3E/VDst/$8B/$0E/VCnt/$FC/$31/$D2/$30/
+    $C0/$8A/$27/$3A/$24/$D0/$D0/$3A/$A4/
+    $00/$02/$D0/$D0/$3A/$A4/$00/$04/$D0/
+    $D0/$53/$BB/CMap/$D7/$5B/$D0/$E2/$D0/
+    $E2/$0A/$D0/$46/$43/$FE/$C6/$80/$FE/
+    $04/$75/$05/$8A/$C2/$AA/$31/$D2/$E2/
+    $D0/$80/$FE/$00/$74/$0E/$D0/$E2/$D0/
+    $E2/$FE/$C6/$80/$FE/$04/$75/$F5/$8A/
+    $C2/$AA/$07);
   end;
   VBlt := ((YOfs + TY) shr 1) * 80;
   if ((YOfs + TY) and 1) = 1 then VBlt := VBlt + $2000;
@@ -496,6 +526,7 @@ var
 
 begin
   for I := 0 to 255 do IdTab[I] := I;
+  for I := 0 to 7 do CMap[I] := ColorMap[I];
   Mode6 := True; ScrW := 512;
   if ParamCount < 1 then
   begin

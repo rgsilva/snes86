@@ -104,6 +104,123 @@ def passB(e, var, label, rel8, lab, pos):
     label("bf")
     e(0x07)                      # pop es
 
+def passAC(e, var, label, rel8, lab, pos):
+    # pass A, channel flavour: like passA but the destination comes from
+    # [VDst] instead of the fixed LumTgt, so three runs can fill the R/G/B
+    # planes of CTgt through the split-palette LUTs (PalR/PalG/PalB).
+    e(0x06)                      # push es
+    e(0x1E, 0x07)                # push ds / pop es
+    e(0x8B, 0x36); var("VSrc")   # mov si,[VSrc]
+    e(0x8B, 0x3E); var("VDst")   # mov di,[VDst]
+    e(0x8B, 0x1E); var("VLut")   # mov bx,[VLut]
+    e(0x8B, 0x0E); var("VCnt")   # mov cx,[VCnt]
+    e(0xFC)                      # cld
+    label("a")
+    e(0x8A, 0x04)                # mov al,[si]
+    e(0xD7)                      # xlat
+    e(0xAA)                      # stosb
+    e(0x8B, 0x06); var("VSw")    # mov ax,[VSw]
+    e(0x01, 0x06); var("VErr")   # add [VErr],ax
+    label("adda")
+    e(0x8B, 0x06); var("VErr")   # mov ax,[VErr]
+    e(0x3B, 0x06); var("VTw")    # cmp ax,[VTw]
+    e(0x72); rel8("anext")       # jb anext
+    e(0x8B, 0x06); var("VTw")    # mov ax,[VTw]
+    e(0x29, 0x06); var("VErr")   # sub [VErr],ax
+    e(0x46)                      # inc si
+    e(0xEB); rel8("adda")        # jmp adda
+    label("anext")
+    e(0xE2)                      # loop a  (rel8)
+    d = lab["a"] - (pos() + 1)
+    e(d & 0xFF)
+    e(0x07)                      # pop es
+
+def passA24(e, var, label, rel8, lab, pos):
+    # pass A, raw flavour for 24/32bpp: no LUT (the byte IS the channel),
+    # destination from [VDst], and the DDA advances SI by [VStep] (3 or 4
+    # bytes per source pixel). Three runs with VSrc at BOfs+2/+1/+0 pick
+    # the R, G and B bytes out of the interleaved row.
+    e(0x06)                      # push es
+    e(0x1E, 0x07)                # push ds / pop es
+    e(0x8B, 0x36); var("VSrc")   # mov si,[VSrc]
+    e(0x8B, 0x3E); var("VDst")   # mov di,[VDst]
+    e(0x8B, 0x0E); var("VCnt")   # mov cx,[VCnt]
+    e(0xFC)                      # cld
+    label("a")
+    e(0x8A, 0x04)                # mov al,[si]
+    e(0xAA)                      # stosb
+    e(0x8B, 0x06); var("VSw")    # mov ax,[VSw]
+    e(0x01, 0x06); var("VErr")   # add [VErr],ax
+    label("adda")
+    e(0x8B, 0x06); var("VErr")   # mov ax,[VErr]
+    e(0x3B, 0x06); var("VTw")    # cmp ax,[VTw]
+    e(0x72); rel8("anext")       # jb anext
+    e(0x8B, 0x06); var("VTw")    # mov ax,[VTw]
+    e(0x29, 0x06); var("VErr")   # sub [VErr],ax
+    e(0x03, 0x36); var("VStep")  # add si,[VStep]
+    e(0xEB); rel8("adda")        # jmp adda
+    label("anext")
+    e(0xE2)                      # loop a  (rel8)
+    d = lab["a"] - (pos() + 1)
+    e(d & 0xFF)
+    e(0x07)                      # pop es
+
+def passB4(e, var, label, rel8, lab, pos):
+    # mode-4 dither/pack: SI walks the R plane of CTgt ([si+512] = G,
+    # [si+1024] = B), BX the Bayer row. Per pixel: threshold the three
+    # channels (strict >, matching the Pascal), RCL the bits into C,
+    # XLAT through CMap (ColorMap copied to DS - TP3 typed consts are
+    # CS-relative), pack 2 bits x 4 px/byte, STOSB. Ragged right edge
+    # shifts the tail into the high bits like the Pascal did.
+    e(0x06)                      # push es
+    e(0x1E, 0x07)                # push ds / pop es
+    e(0xBE); var("CTgt")         # mov si,Ofs(CTgt)     R plane
+    e(0x8B, 0x1E); var("VThrRow")# mov bx,[VThrRow]
+    e(0x8B, 0x3E); var("VDst")   # mov di,[VDst]
+    e(0x8B, 0x0E); var("VCnt")   # mov cx,[VCnt]
+    e(0xFC)                      # cld
+    e(0x31, 0xD2)                # xor dx,dx    DL=acc, DH=px-in-byte
+    label("b")
+    e(0x30, 0xC0)                # xor al,al
+    e(0x8A, 0x27)                # mov ah,[bx]  threshold
+    e(0x3A, 0x24)                # cmp ah,[si]        CF = thr < R
+    e(0xD0, 0xD0)                # rcl al,1
+    e(0x3A, 0xA4, 0x00, 0x02)    # cmp ah,[si+512]    CF = thr < G
+    e(0xD0, 0xD0)                # rcl al,1
+    e(0x3A, 0xA4, 0x00, 0x04)    # cmp ah,[si+1024]   CF = thr < B
+    e(0xD0, 0xD0)                # rcl al,1     AL = C (r*4+g*2+b)
+    e(0x53)                      # push bx
+    e(0xBB); var("CMap")         # mov bx,Ofs(CMap)
+    e(0xD7)                      # xlat         AL = ColorMap[C]
+    e(0x5B)                      # pop bx
+    e(0xD0, 0xE2)                # shl dl,1
+    e(0xD0, 0xE2)                # shl dl,1
+    e(0x0A, 0xD0)                # or dl,al
+    e(0x46)                      # inc si
+    e(0x43)                      # inc bx
+    e(0xFE, 0xC6)                # inc dh
+    e(0x80, 0xFE, 0x04)          # cmp dh,4
+    e(0x75); rel8("nb")          # jne nb
+    e(0x8A, 0xC2)                # mov al,dl
+    e(0xAA)                      # stosb
+    e(0x31, 0xD2)                # xor dx,dx
+    label("nb")
+    e(0xE2)                      # loop b
+    d = lab["b"] - (pos() + 1)
+    e(d & 0xFF)
+    e(0x80, 0xFE, 0x00)          # cmp dh,0     ragged tail
+    e(0x74); rel8("bf")          # je bf
+    label("bs")
+    e(0xD0, 0xE2)                # shl dl,1
+    e(0xD0, 0xE2)                # shl dl,1
+    e(0xFE, 0xC6)                # inc dh
+    e(0x80, 0xFE, 0x04)          # cmp dh,4
+    e(0x75); rel8("bs")          # jne bs
+    e(0x8A, 0xC2)                # mov al,dl
+    e(0xAA)                      # stosb
+    label("bf")
+    e(0x07)                      # pop es
+
 def passBlit(e, var, label, rel8, lab, pos):
     e(0x06)                      # push es
     e(0xB8, 0x00, 0xB8)          # mov ax,$B800
@@ -167,6 +284,12 @@ print("{ pass A: luma + DDA }")
 print(mk(passA))
 print("{ pass B: dither + pack }")
 print(mk(passB))
+print("{ pass AC: one colour channel, LUT + DDA }")
+print(mk(passAC))
+print("{ pass A24: one raw channel, stride + DDA }")
+print(mk(passA24))
+print("{ pass B4: colour dither + 2-bit pack }")
+print(mk(passB4))
 print("{ blit: Row -> B800 }")
 print(mk(passBlit))
 print("{ rle: PCX decode step }")
