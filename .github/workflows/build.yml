@@ -29,20 +29,36 @@ jobs:
           cmake --build wla-dx/build -j"$(nproc)"
           echo "PVBIN=$(dirname "$(find "$PWD/wla-dx/build" -name wla-65816 -type f | head -1)")" >> "$GITHUB_ENV"
 
-      # runpc — the C reference 8086 core, used as the boot-smoke oracle below.
-      # (IO.SYS is prebuilt: msdos/msdos.img is a committed free floppy, so the
-      # public build no longer links it here — see `make io` for the dev path.)
+      # runpc — the C reference 8086 core: the boot-smoke oracle below, and
+      # the machine the DOS builds compile their own apps on (TP3 / Small-C
+      # run inside it). (IO.SYS is prebuilt: msdos/msdos.img is a committed
+      # free floppy, so the public build no longer links it here — see
+      # `make io` for the dev path.)
       - name: Build core-c (runpc)
         run: make -C core-c runpc
 
-      # The public ROM: MS-DOS 2.0 + a free-only C:. Builds from committed
-      # files only (no copyrighted software).
+      # Turbo Pascal 3.01A — the compiler the DOS builds drive inside runpc
+      # to build the app .COMs (no app binaries are committed). Fetched by
+      # apps/fetch_tp3.py with a pinned sha256 (Borland retains all rights,
+      # so it is fetched, never committed — same stance as ELKS/FreeDOS);
+      # cache it so CI does not hit archive.org every run.
+      - name: Cache the fetched TP3 compiler
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/cache/TURBO.COM
+            apps/cache/TURBO.MSG
+          key: tp3-${{ hashFiles('apps/fetch_tp3.py') }}
+
+      # The public ROM: MS-DOS 2.0 + a free-only C:. Compiles every app
+      # binary from source first (TP3 + Small-C inside runpc), then packs
+      # the free C: — nothing copyrighted ships.
       - name: Build the public ROM (msdos.sfc)
         run: make -C snes PVBIN="$PVBIN" msdos
 
       # The BIGMEM experiment: same MS-DOS + free C:, guest RAM grown to
-      # 172 KB by spending the cartridge SRAM (so no B: drive). Builds
-      # from committed files only, like the public ROM.
+      # 172 KB by spending the cartridge SRAM (so no B: drive). Reuses the
+      # app binaries the msdos build just compiled.
       - name: Build the BIGMEM ROM (msdos_big.sfc)
         run: make -C snes PVBIN="$PVBIN" msdos_big
 
