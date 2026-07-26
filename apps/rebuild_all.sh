@@ -1,22 +1,37 @@
 #!/bin/sh
-# `make apps` (root): rebuild every on-machine tool FROM SOURCE and
-# verify — the CI canary for the whole software stack. The TP3 tools
-# recompile via ../tpcompile.sh (TURBO.COM fetched + cached by
-# fetch_tp3.py); javac.exe rebuilds with the Small-C kit committed in
-# apps/cc and must come out byte-identical. One PASS/FAIL line per
-# artifact.
+# `make apps` (root): the sources-don't-rot canary. No app binaries are
+# committed — every image build compiles them from source (see the
+# per-tool Makefiles) — so this script FORCE-rebuilds every on-machine
+# tool (TP3 inside runpc via ../tpcompile.sh, TURBO.COM fetched + cached
+# by fetch_tp3.py; javac.exe via the Small-C kit committed in apps/cc)
+# and verifies the results:
 #
-# NOTE: recompiles overwrite the committed binaries in place (TP3 stamps
-# its load segment, so a rebuilt .com can differ by a few inert bytes) —
-# `git diff` after a run shows what moved; behavior is what the verifies
-# and `make test` check.
+#   * every TP3 tool must recompile cleanly (non-empty artifact);
+#     behavioral checks live in `make test` (ted-host, java-host, ...)
+#   * VIEW: the rebuilt viewer must render the generated test card
+#     bit-identically to the pinned golden below (sha256 of the CGA
+#     framebuffer dump — byte-compares of TP3 .COMs are meaningless,
+#     the compiler stamps its load segment; renders are the truth)
+#   * JAVAC: the rebuilt DOS javac.exe must compile Hello.java into
+#     bytecode byte-identical to the clang build of the same source
+#     (javac-dev) — one compiler, two toolchains, same bytes
+#
+# One PASS/FAIL line per artifact.
 set -u
 cd "$(dirname "$0")"
 ROOT=$(cd .. && pwd)
 RUNPC="$ROOT/core-c/build/runpc"
+[ -x "$RUNPC" ] || make -s -C "$ROOT/core-c" runpc
 [ -x "$RUNPC" ] || { echo "build core-c first (runpc missing)"; exit 1; }
 FAIL=
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+
+# sha256 of the CGA dump of VIEW painting C:\VIEW\CARD.BMP (see render
+# below). Refresh after an INTENTIONAL change to view.pas / mkcard.py:
+# run this script, take the "got" hash from the FAIL line.
+VIEW_GOLDEN=b5e992b86ebea7e8e230e83510a3aabc7cc0309c602ce8fde7366c96bdf89592
+
+sha() { python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$1"; }
 
 step() {  # step <name> <log> <cmd...>
   name=$1; log=$2; shift 2
@@ -28,11 +43,35 @@ step() {  # step <name> <log> <cmd...>
   fi
 }
 
-# render <view.com> <out.ppm>: boot a DOS work floppy carrying the given
+# --- JAVAC first: force-rebuild with Small-C inside runpc (java's
+# recompile below stages the tool, which wants javac.exe — building it
+# here keeps that a plain copy) ---
+if step javac "$W/javac.log" make -s -C java javac-dos && [ -s java/javac.exe ]; then
+  echo "PASS javac (rebuilt)"
+else
+  echo "FAIL javac"; FAIL=1
+fi
+
+# --- force-recompile every TP3 tool from source (recompile also stages) ---
+for spec in "view:view/view.com" "ted:ted/ted.com" \
+            "midi:midi/midplay.com midi/midconv.com" \
+            "sokoban:sokoban/sokoban.com" "bench:bench/sieve.com bench/hello.com" \
+            "java:java/java.com"; do
+  t=${spec%%:*}; arts=${spec#*:}
+  ok=1
+  step "$t" "$W/$t.log" make -s -C "$t" recompile || ok=
+  for a in $arts; do [ -s "$a" ] || ok=; done
+  if [ -n "$ok" ]; then echo "PASS $t (recompiled)"; else echo "FAIL $t"; FAIL=1; fi
+done
+
+# everything is freshly staged now; pack the C: the verifies run against
+(cd "$ROOT/snes" && make -s build/hd_free.img >/dev/null) \
+  || { echo "FAIL hd_free.img"; exit 1; }
+
+# --- VIEW render golden: boot a DOS work floppy carrying the rebuilt
 # VIEW.COM (A:), paint C:\VIEW\CARD.BMP (the 300 KB card outgrows a
-# floppy), dump the CGA framebuffer.
-render() {
-  python3 - "$ROOT" "$1" "$W/card.img" <<'PY'
+# floppy), dump the CGA framebuffer, compare against the pinned sha ---
+python3 - "$ROOT" view/view.com "$W/card.img" <<'PY'
 import sys
 ROOT, view, out = sys.argv[1:4]
 sys.path.insert(0, ROOT+"/apps"); import fatimg
@@ -41,44 +80,45 @@ f.replace("AUTOEXEC.BAT", b"PROMPT $p$g\r\n")
 f.add("VIEW.COM", open(view, "rb").read())
 f.save(out)
 PY
-  printf 'view c:\\view\\card.bmp\rx\r' \
-    | "$RUNPC" -m 108 -l 3000000000 -d "$ROOT/snes/build/hd_free.img" \
-        -cga "$2" "$W/card.img" >/dev/null 2>&1
-}
-
-# --- VIEW: recompile, then the rebuilt binary must render the test
-# card bit-identically to the committed one ---
-(cd "$ROOT/snes" && make -s build/hd_free.img >/dev/null)
-render view/view.com "$W/view_ref.ppm"
-if [ -s "$W/view_ref.ppm" ] \
-   && step view "$W/view.log" make -s -C view recompile \
-   && render view/view.com "$W/view_new.ppm" \
-   && cmp -s "$W/view_ref.ppm" "$W/view_new.ppm"; then
-  echo "PASS view (render bit-identical)"
+printf 'view c:\\view\\card.bmp\rx\r' \
+  | "$RUNPC" -m 108 -l 3000000000 -d "$ROOT/snes/build/hd_free.img" \
+      -cga "$W/view.ppm" "$W/card.img" >/dev/null 2>&1
+if [ -s "$W/view.ppm" ] && GOT=$(sha "$W/view.ppm") && [ "$GOT" = "$VIEW_GOLDEN" ]; then
+  echo "PASS view-render (golden bit-identical)"
 else
-  echo "FAIL view"; FAIL=1
+  echo "FAIL view-render (got ${GOT:-no render}, want $VIEW_GOLDEN)"; FAIL=1
 fi
 
-# --- the other TP3 tools: rebuilt from .pas; behavioral checks live in
-# `make test` (ted-host/t_ted, java-host, t_midi ...) ---
-for spec in "ted:ted/ted.com" "midi:midi/midplay.com midi/midconv.com" \
-            "sokoban:sokoban/sokoban.com" "bench:bench/sieve.com bench/hello.com" \
-            "java:java/java.com"; do
-  t=${spec%%:*}; arts=${spec#*:}
-  ok=1
-  step "$t" "$W/$t.log" make -s -C "$t" recompile || ok=
-  for a in $arts; do [ -s "$a" ] || ok=; done
-  if [ -n "$ok" ]; then echo "PASS $t"; else echo "FAIL $t"; FAIL=1; fi
-done
-
-# --- JAVAC: Small-C toolchain inside runpc; deterministic, so the
-# rebuild must be byte-identical to the committed javac.exe ---
-cp java/javac.exe "$W/javac.committed"
-if step javac "$W/javac.log" make -s -C java javac-dos \
-   && cmp -s java/javac.exe "$W/javac.committed"; then
-  echo "PASS javac (byte-identical)"
+# --- JAVAC parity: the DOS build and the clang build of the same
+# compiler source must emit byte-identical bytecode ---
+if step javac-dev "$W/jdev.log" make -s -C java javac-dev \
+   && java/hostbuild/javac-dev java/samples/Hello.java "$W/Hello.host.class" >/dev/null 2>&1; then
+  python3 - "$ROOT" "$W/jc.img" <<'PY'
+import sys
+ROOT, out = sys.argv[1], sys.argv[2]
+sys.path.insert(0, ROOT+"/apps"); import fatimg
+f = fatimg.Floppy(ROOT+"/msdos/msdos.img")
+f.replace("AUTOEXEC.BAT", b"PROMPT $p$g\r\n")
+f.save(out)
+PY
+  printf 'path c:\\java\rjavac c:\\java\\hello.jav hi.cla\r' \
+    | "$RUNPC" -m 108 -l 9000000000 -d "$ROOT/snes/build/hd_free.img" \
+        -w "$W/jc.img" >/dev/null 2>&1
+  python3 - "$ROOT" "$W/jc.img" "$W/Hello.dos.class" <<'PY' 2>/dev/null
+import sys
+ROOT, img, out = sys.argv[1:4]
+sys.path.insert(0, ROOT+"/apps"); import fatimg
+data = fatimg.read_img(img).get("HI.CLA")
+if data is None: raise SystemExit("HI.CLA not on the work floppy")
+open(out, "wb").write(data)
+PY
+  if [ -s "$W/Hello.dos.class" ] && cmp -s "$W/Hello.dos.class" "$W/Hello.host.class"; then
+    echo "PASS javac-parity (DOS vs clang byte-identical)"
+  else
+    echo "FAIL javac-parity"; FAIL=1
+  fi
 else
-  echo "FAIL javac"; FAIL=1
+  echo "FAIL javac-parity (javac-dev build)"; FAIL=1
 fi
 
 echo
