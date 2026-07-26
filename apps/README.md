@@ -28,7 +28,7 @@ C:\VIEW> VIEW CARD.BMP 4      (320x200 four-colour mode)
 C:\VIEW> VIEW *.BMP           (slideshow: any key = next, ESC = quit)
 ```
 
-![VIEW halftoning the MS-DOS logo](../docs/assets/view.png)
+![VIEW rendering the test card in four-colour CGA mode 4](../docs/assets/view.png)
 
 Your own images: any uncompressed BMP up to 2048 pixels wide (convert with `sips -s format bmp in.jpg --out out.bmp` on macOS), dropped into `user/` → `C:\USER`.
 
@@ -55,10 +55,11 @@ Yes, this is a Java runtime (-ish) running inside a 8086 emulator running MS-DOS
 - **Scope**: static methods of one class, 32-bit `int` arithmetic (hi/lo 16-bit pairs, with the hot ops hand-written in 8086), `int[]`/`boolean[]` arrays, `String` literals, `StringBuilder` concatenation (`"n=" + i`), `System.out.println/print`, `System.in.read()`. No `long`/`float`, no user-defined objects, no exceptions, no garbage collector (nothing lives long enough to need one). Unsupported bytecode stops with a message naming the opcode.
 - Built with `javac --release 8` — newer targets emit `invokedynamic` string concatenation, which is deliberately out of scope. The compiled class files are committed, so the ROM builds without a JDK.
 
-`JAVAC` is our own Java compiler for the same subset, running on the machine itself. It is written in C (`apps/java/javac.c`), compiled to a DOS binary by the 1988 Small-C toolchain running on MS-DOS 2.0 *inside our own emulator* (the clang build of the same source emits byte-identical class files, which also pass a modern desktop JVM's verifier). The war story is [docs/notes/javac-porting.md](notes/javac-porting.md).
+Just for fun, we also created a small Java compiler (`JAVAC`) for the same subset, running on the machine itself. It is written in C (`apps/java/javac.c`), compiled to a DOS binary by the 1988 Small-C toolchain running on MS-DOS 2.0 *inside our own emulator* (the clang build of the same source emits byte-identical class files, which also pass a modern desktop JVM's verifier). The war story is [here](../docs/notes/JAVAC-PORTING.md).
 
+> No, you don't need to use our Java compiler. You can just build code with your own host machine `javac` and push it inside the emulator, and it should work just fine... for very basic things!
 
-Ironically, compiling takes a couple of seconds; *running* is the slow part (the sieve interprets ~330K bytecodes in about 3.5 minutes and prints its own tick count). You can test it as such:
+Ironically, compiling takes only a few seconds; *running* is the slow part. Go figure. You can test it as such:
 
 ```
 C:\> CD JAVA
@@ -71,8 +72,6 @@ C:\JAVA> JAVA B:HELLO
 > Note: `C:` is read-only, so JAVAC's output must go to the writable `B:`.
 
 ![Java running on the SNES](../docs/assets/java.png)
-
-Details and the supported subset: [java/README.md](java/README.md). How a 1988 C compiler ended up building JAVAC inside our own emulator: [docs/notes/javac-porting.md](../docs/notes/javac-porting.md).
 
 ## SOKOBAN
 
@@ -117,7 +116,7 @@ Some extra technical details are provided [here](cc/README.md).
 
 # Building them
 
-`make apps` from the repo root runs the whole loop: rebuild every tool from source and verify (see [TESTING.md](../docs/TESTING.md)).
+`make apps` from the repo root runs the whole loop: rebuild every tool from source and verify (see [TESTING](../docs/TESTING.md)).
 
 Each tool folder holds its own source, the committed `.COM` binary, any generators it owns, and a Makefile with two targets:
 
