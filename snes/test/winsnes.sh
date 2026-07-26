@@ -18,23 +18,30 @@
 # Windows 1.01 needs 237 KB free (measured: 236 KB fails with "Program
 # too big to fit in memory"), so this is an SA-1-machine-only build.
 set -e
-cd "$(dirname "$0")/.."
 HD=$1
 OUT=${2:-win_snes.png}
 MESEN="${MESEN:-/Applications/Mesen.app/Contents/MacOS/Mesen}"
 [ -n "$HD" ] && [ -f "$HD" ] || { echo "usage: winsnes.sh path/to/windows-hd.img [out.png]"; exit 1; }
+# both paths are the caller's, but the build has to run in snes/
 HD=$(cd "$(dirname "$HD")" && pwd)/$(basename "$HD")
+case $OUT in /*) ;; *) OUT=$PWD/$OUT ;; esac
+cd "$(dirname "$0")/.."
 
 echo "== build: SA-1 ROM + $HD as an overlay"
 make -s msdos_sa1 OVERLAYS="$HD"
 
 echo "== stage 1: runpc (300 KB), the reference"
 make -s -C ../core-c runpc
+rm -f build/win_runpc.ppm
 printf 'CD \\WINDOWS\nWIN\n' | ../core-c/build/runpc -m 300 \
     -d build/hd_overlay.img -cga build/win_runpc.ppm -l 40000000 \
-    build/msdos_a.img 2>&1 | sed -n '/^Microsoft Windows/,$p' | head -2
+    build/msdos_a.img > build/win_runpc.log 2>&1 || true
+grep -a "^Microsoft Windows" build/win_runpc.log | cut -c1-60
+if grep -qa "too big to fit" build/win_runpc.log; then
+    echo "FAIL: WIN ran out of memory (the floor is 237 KB)"; exit 1
+fi
 [ -s build/win_runpc.ppm ] || { echo "FAIL: runpc never reached CGA mode 6"; exit 1; }
-echo "  wrote build/win_runpc.ppm"
+echo "  wrote build/win_runpc.ppm (compare it against $OUT)"
 
 [ -x "$MESEN" ] || { echo "== stage 2 skipped (no Mesen)"; exit 0; }
 echo "== stage 2: Mesen, headless, on build/msdos_sa1_overlay.sfc"
@@ -69,9 +76,9 @@ end
 emu.addEventCallback(function()
   frame = frame + 1
   if stage == 0 and frame > 1100 and frame % 10 == 0 and bufhas("C:\\>") then
-    inject("cd \\windows\r"); stage = 1; injf = frame
+    inject("CD \\WINDOWS\r"); stage = 1; injf = frame
   elseif stage == 1 and frame == injf + 240 then
-    inject("win\r"); stage = 2
+    inject("WIN\r"); stage = 2
   elseif stage == 2 and frame % 300 == 0 then
     local f = fbsum()
     if f == last then stable = stable + 1 else stable = 0 end
@@ -80,6 +87,16 @@ emu.addEventCallback(function()
     if frame > 26000 and stable >= 10 then
       local png = emu.takeScreenshot()
       print("SHOT " .. png:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+      -- and the raw CGA bytes, so the render can be diffed against runpc's:
+      -- mode 6 is 80 bytes/row, even rows at $7E1000, odd rows at $7E3000
+      local fb = {}
+      for a = 0x7E1000, 0x7E1000 + 7999 do
+        fb[#fb+1] = string.format("%02x", emu.read(a, emu.memType.snesMemory))
+      end
+      for a = 0x7E3000, 0x7E3000 + 7999 do
+        fb[#fb+1] = string.format("%02x", emu.read(a, emu.memType.snesMemory))
+      end
+      print("FB " .. table.concat(fb))
       print("SETTLED frame=" .. frame)
       emu.stop(0)
     end
@@ -96,3 +113,26 @@ if len(d) > 100:
     open('$OUT', 'wb').write(bytes.fromhex(d)); print('  wrote $OUT')
 else:
     print('  !! no screenshot'); sys.exit(1)"
+
+# the real check: the SNES CGA bytes must equal what runpc rendered. The
+# PPM is 1bpp mode 6 blown up to RGB, so fold it back down and compare.
+grep -a '^FB ' build/winsnes.log | tail -1 | cut -d' ' -f2 | python3 -c "
+import sys
+snes = bytes.fromhex(sys.stdin.read().strip())
+assert len(snes) == 16000, len(snes)
+d = open('build/win_runpc.ppm', 'rb').read()
+hdr = d.split(b'\n', 3)
+w, h = map(int, hdr[1].split())
+px = hdr[3]
+ref = bytearray(16000)
+for y in range(h):
+    row = (0 if y % 2 == 0 else 8000) + (y // 2) * 80
+    for xb in range(w // 8):
+        b = 0
+        for i in range(8):
+            if px[(y * w + xb * 8 + i) * 3] > 127:
+                b |= 0x80 >> i
+        ref[row + xb] = b
+bad = [i for i in range(16000) if ref[i] != snes[i]]
+print('  framebuffer vs runpc: %d of 16000 bytes differ' % len(bad))
+sys.exit(1 if bad else 0)"

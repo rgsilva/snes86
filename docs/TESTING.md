@@ -95,9 +95,10 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
 - `snes/test/winsnes.sh HDIMG [OUT.png]` — **Microsoft Windows 1.01** on
   the 300 KB SA-1 machine, end to end: it overlays your installed C:
   onto an SA-1 build, checks the result on `runpc` first (seconds — the
-  oracle), then drives Mesen headless to the MS-DOS Executive and shoots
-  it (~32 000 frames). Not a suite leg: the media is copyrighted and
-  bring-your-own, so nothing here can run in CI. See
+  oracle), then drives Mesen headless to the MS-DOS Executive (~32 000
+  frames), shoots it, and diffs the SNES's raw CGA bytes against the
+  C core's render — 0 of 16 000 may differ. Not a suite leg: the media
+  is copyrighted and bring-your-own, so nothing here can run in CI. See
   [COMPATIBILITY](COMPATIBILITY.md).
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)

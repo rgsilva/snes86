@@ -154,7 +154,8 @@ toggle. The original plan:
    char-index ceiling is beaten by HDMA-rebanding the BG2 character base
    per row group, and the on-screen keyboard survives untouched. Every
    bring-your-own mode-6 program is un-squashed, and the Windows 1.01
-   renderer prerequisite (below) is retired as a side effect. Covered by
+   renderer prerequisite (below) was retired as a side effect — Windows'
+   GUI came up through it unmodified. Covered by
    `test/t_cga6.lua` (Mesen) + a runpc PPM check in the suite and CI;
    `CGA6TST.COM` ships in `C:\BENCH`. (See INTERNALS.md for the how —
    including the native-stack lesson it re-taught.)
@@ -278,7 +279,7 @@ fetched-not-committed for the `recompile` pipeline, the MIT MS-DOS
 utilities ship as `C:\DOS`, and the copyrighted dev C: became the
 suite's OVERLAYS test fixture.
 
-## Windows 1.01 — DONE, on the SNES
+## Windows 1.01 — it boots on the SNES; input is the milestone left
 
 Windows 3.0 is out of reach and stays out: its real mode — already the
 low-memory fallback — wants 640 KB installed / 384 KB free and DOS 3.1+, more
@@ -287,16 +288,20 @@ every theoretical LoROM SRAM bank stays emulator-only fantasy). Windows 2.03
 (512 KB, DOS 3.0) sits on the same wrong side of the wall.
 
 **Windows 1.01 is a different story: 8088, 256 KB, CGA, DOS 2.0 — the exact DOS
-we already boot. It runs.** Microsoft Windows 1.01 boots to its **MS-DOS
+we already boot. It boots.** Microsoft Windows 1.01 comes up to its **MS-DOS
 Executive** — the real GUI, in CGA mode 6 (640×200) — on the SA-1 ROM in Mesen:
 title bar, `File`/`View`/`Special` menus, the A:/B:/C: drive buttons, the file
-listing, the selection highlight, the dithered desktop. Windows **1.04** does
-the same on the host core. Reproduce it with
+listing, the selection highlight, the dithered desktop. It does not yet *take*
+input, which is the rest of this section. Windows **1.04** does the same on the
+same ROM (settles at frame 30 600, `PRACTICE.WRI` and all). Reproduce either
+with
 
     ./snes/test/winsnes.sh ../disks/windows.img win_snes.png
 
 which builds `build/msdos_sa1_overlay.sfc` with your Windows C: merged in,
-checks it on `runpc` first, then drives Mesen headless. Nothing about it ships:
+checks it on `runpc` first, then drives Mesen headless — and finally diffs the
+SNES's CGA bytes against the C core's render: **0 of 16 000 bytes differ**, so
+this is not "looks the same", it is the same picture. Nothing about it ships:
 Windows media is copyrighted, so like the dev C: this stays a bring-your-own
 build, never a default target.
 
@@ -343,9 +348,13 @@ The Executive comes up and then ignores the keyboard:
   input when it ignores the keyboard is unknown until the item above is
   understood.
 
-Speed: reset → Executive is ~5 M guest instructions ≈ **32 000 SNES frames**,
-about nine emulated minutes (roughly two host minutes in headless Mesen) —
-ELKS-boot territory, well inside the "it booted" bar below.
+Speed: reset → Executive is under **3 M guest instructions** (bisected on
+`runpc`: 2 M is still the splash, 3 M is the Executive) and lands at **frame
+32 100** on the SNES, to the frame, every run — about nine emulated minutes, and
+roughly two host minutes in headless Mesen. That works out near 5 k guest
+instructions/second, well under the usual 0.05–0.1× XT: a mode-6 GUI repaints
+constantly and most of Windows lives above 108 KB, in the BW-RAM half of the
+machine. Still ELKS-boot territory, well inside the "it booted" bar below.
 
 ## Nested emulation (an emulator on the emulator)
 
