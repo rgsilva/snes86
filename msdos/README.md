@@ -63,7 +63,7 @@ build target).
 - ✅ Reproducible ROM: `make msdos` (public, free C:); OVERLAYS= for extras.
 - ✅ App matrix re-run under MS-DOS on the SNES: GW-BASIC 3.23, WordStar 3.31,
   Multiplan, Zork/Infocom, Sokoban (CGA), CPUBENCH all load & run. Rogue needs
-  ~120 KB (BIGMEM) — a memory-size edge, not an MS-DOS regression (MS-DOS
+  ~120 KB (the big SA-1 machine) — a memory-size edge, not an MS-DOS regression (MS-DOS
   leaves *more* free than PC-DOS: our IO.SYS is smaller than IBMBIO).
 
 ## The C:\DOS utilities (msdos/bin)

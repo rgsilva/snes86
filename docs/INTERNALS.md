@@ -60,15 +60,17 @@ video memory (segments `B000`–`BFFF`) is mapped to a 16 KB CGA/MDA buffer at
 `$7E:1000`, so writes to `B800:xxxx` land straight in the adapter RAM the renderer
 scans out.
 
-The BIGMEM variant extends the guest to 172 KB by adding 64 KB of cartridge SRAM
-above WRAM; 16-bit accesses that straddle a region seam (the `$7F` WRAM top or an
-SRAM page top) go through seam-safe helpers (`rd16m`/`wr16m`) that split the word
-across regions — every 16-bit path, including the stack, `MOV`, and the flattened
-ALU bodies, routes through them under BIGMEM. It's an experiment for DOS (see
-[FUTURE](FUTURE.md)), off by default — but it is the foundation of the ELKS
-machine below.
+Anything past 108 KB has to come off the cartridge, and the code that makes that
+possible is the `BIGMEM` build flag: 16-bit accesses that straddle a region seam
+go through seam-safe helpers (`rd16m`/`wr16m`) that split the word across regions,
+and every 16-bit path — the stack, `MOV`, the flattened ALU bodies — routes through
+them. `BIGMEM` is the machinery, not a machine: what it is *pointed at* is chosen
+by a second flag. Its original region layer added 64 KB of plain cartridge SRAM
+(banks `$70`/`$71`) above WRAM for a 172 KB guest, and that layer is what the ELKS
+ROM still runs on (see below). No DOS variant uses it any more.
 
-The SA-1 variant (`make msdos_sa1`) reuses that machinery with a different
+The SA-1 variant (`make msdos_sa1`, and `make freedos`) is `BIGMEM` plus `SA1` —
+the same machinery aimed at a different
 region layer: guest RAM above 108 KB is the SA-1 board's 256 KB of BW-RAM,
 banks `$40`–`$42` (the fourth, `$43`, stays the B: disk), for a 300 KB guest.
 The board is a RAM expander and nothing else — the SA-1 CPU is never released
@@ -111,9 +113,9 @@ dispatches BIOS calls natively.
 | INT | service |
 |---|---|
 | 10h video | set mode (40/80-col text, CGA graphics 4/5/6), cursor, scroll, read/write char+attr, teletype, set pixel / read pixel, palette/border. Includes an ANSI/CSI escape parser (cursor moves, clears, SGR colors) for `ANSI.SYS`-style output. |
-| 11h equipment | returns "two floppies, 80×25 color" (one floppy under BIGMEM — the SRAM banks are guest RAM there, so B: is gone; the SA-1 build keeps both, since B: has a BW-RAM bank to itself). |
-| 12h memory size | returns the guest RAM size (108 KB, 172 under BIGMEM, 300 on the SA-1 board). |
-| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable 32 KB battery-backed SRAM disk (absent under BIGMEM; BW-RAM bank $43 on the SA-1 board); C: is a hard-disk image, whose upper 2 MB needs a bank fixup on the SA-1 map ($C0-$DF linear, not the LoROM mirrors). Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
+| 11h equipment | returns "two floppies, 80×25 color" — on every shipping DOS machine, since B: always has somewhere to live (32 KB of cart SRAM on the public build, BW-RAM bank `$43` on the SA-1 one). The 172 KB SRAM-as-guest-RAM layer answers "one floppy" instead, because B: has been spent as memory there. |
+| 12h memory size | returns the guest RAM size (108 KB, 300 on the SA-1 board, 172 on the SRAM layer). |
+| 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable battery-backed disk — 32 KB of cart SRAM normally, BW-RAM bank $43 on the SA-1 board (absent only on the SRAM-as-guest-RAM layer); C: is a hard-disk image, whose upper 2 MB needs a bank fixup on the SA-1 map ($C0-$DF linear, not the LoROM mirrors). Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
 | 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags — the extended API (AH=10h/11h/12h) aliases onto these, since the single unfiltered ring makes the extended read the same read (that's how F11/F12 from the on-screen keyboard reach a guest). Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
 | 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |

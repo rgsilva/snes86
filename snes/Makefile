@@ -6,7 +6,7 @@ LD     := $(PVBIN)/wlalink
 all: build/console.sfc
 
 # --- OVERLAYS: a uniform optional flag on every DOS-booting target
-# (msdos, msdos_big, freedos, boot). OVERLAYS="dir-or-img ..." merges
+# (msdos, msdos_sa1, freedos, boot). OVERLAYS="dir-or-img ..." merges
 # extra content onto the free C: (tools/mkhd_free.py) and switches the
 # output to build/<target>_overlay.sfc — an overlay build never
 # clobbers the clean artifact. Nothing copyrighted is ever baked into
@@ -75,7 +75,7 @@ console-test: build/console.sfc
 clean:
 	rm -rf build
 
-.PHONY: all run test test-extra console-test clean msdos msdos_big msdos_sa1 boot freedos elks io apps-stage parity cputest sramtest
+.PHONY: all run test test-extra console-test clean msdos msdos_sa1 boot freedos elks io apps-stage parity cputest sramtest
 
 # --- DOS boot ROM.  `make msdos` = the PUBLIC build: MS-DOS 2.0 (MIT) +
 # a free C: (tools/mkhd_free.py; no copyrighted software).  See
@@ -108,14 +108,6 @@ build/spc_beep64.bin: spc_beep.asm linkfile_spc
 build/msdos$(OVSUF).sfc: build/msdos$(OVSUF).o build/msdos$(OVSUF).link
 	$(LD) -d -s -v -c build/msdos$(OVSUF).link $@
 
-msdos_big: build/msdos_big$(OVSUF).sfc
-
-build/msdos_big$(OVSUF).o: msdos_big.asm $(DOSDEPS) build/msdos_a.img $(HDC)
-	$(AS) $(OVDEF) -o $@ msdos_big.asm
-
-build/msdos_big$(OVSUF).sfc: build/msdos_big$(OVSUF).o build/msdos_big$(OVSUF).link
-	$(LD) -d -s -v -c build/msdos_big$(OVSUF).link $@
-
 # --- SA-1 variant: the SA-1 board as a pure RAM expander (the SA-1 CPU
 # is never started). 256 KB of BW-RAM = 192 KB more guest RAM (300 KB
 # machine) + 64 KB for B:. tools/mksa1hdr.py fixes the header bytes wla
@@ -132,8 +124,9 @@ build/msdos_sa1$(OVSUF).sfc: build/msdos_sa1$(OVSUF).o build/msdos_sa1$(OVSUF).l
 # --- FreeDOS 1.3: GPL, fetched at build time like ELKS (freedos/mkfreedos.py
 # downloads the official FD 1.3 floppy release, extracts KERNEL.SYS + FreeCOM
 # and assembles a 360 KB boot floppy — nothing copyrighted-in-the-bad-way is
-# committed).  Runs on the BIGMEM machine: FreeDOS needs the full 172 KB
-# (108 KB dies in kernel init).  Same free C: as the public build.
+# committed).  Runs on the SA-1 machine: FreeDOS needs a big guest (108 KB
+# dies in kernel init), so it rides the same 300 KB board as msdos_sa1 and
+# gets B: for free.  Same free C: as the public build.
 freedos: build/freedos$(OVSUF).sfc
 
 build/freedos_a.img: ../freedos/mkfreedos.py
@@ -142,8 +135,9 @@ build/freedos_a.img: ../freedos/mkfreedos.py
 build/freedos$(OVSUF).o: freedos.asm $(DOSDEPS) build/freedos_a.img $(HDC)
 	$(AS) $(OVDEF) -o $@ freedos.asm
 
-build/freedos$(OVSUF).sfc: build/freedos$(OVSUF).o build/freedos$(OVSUF).link
+build/freedos$(OVSUF).sfc: build/freedos$(OVSUF).o build/freedos$(OVSUF).link tools/mksa1hdr.py
 	$(LD) -d -s -v -c build/freedos$(OVSUF).link $@
+	python3 tools/mksa1hdr.py $@
 
 # sneslinux: ELKS ROM-XIP variant (not a DOS boot, hence no dosboot_ prefix).
 # build/elks_rom.bin + build/elks_romfs.bin are the kernel + ROMFS images:

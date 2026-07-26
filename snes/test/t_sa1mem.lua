@@ -6,7 +6,7 @@
 --      returns and what DOS builds its arena top from.
 --   2. ROUND TRIP ABOVE THE OLD 172 KB LINE: write a pattern at
 --      4000:0000 = linear 0x40000 = 256 KB — 84 KB past the top of the
---      msdos_big machine — and read it back. The naive SNES pointer for
+--      172 KB cartridge-SRAM machine — and read it back. The naive SNES pointer for
 --      that address is $82:5000, which is a system-area mirror; only the
 --      BW-RAM fold turns it into real memory, so the leg ALSO reads the
 --      bytes straight out of SA-1 BW-RAM at the folded address $42:5000

@@ -34,7 +34,7 @@ speed):
 |---|---|
 | `host-smoke` | MS-DOS 2.0 boots and reads the C: drive |
 | `elks-host` | ELKS 0.9.1 (Linux) boots to `login:` |
-| `freedos-host` | FreeDOS 1.3 boots to FreeCOM |
+| `freedos-host` | FreeDOS 1.3 boots to FreeCOM (at `-m 300`, the SA-1 machine's size — `runpc` has no SA-1, so the board is just a memory size to it) |
 | `cga6-host` | CGA mode 6 renders true 640×200 (1-px stripes survive) |
 | `view-host` | VIEW paints both test cards; the BMP and PCX renders are bit-identical |
 | `ted-host` | TED types, menu-saves, and the file round-trips byte-exact |
@@ -46,8 +46,16 @@ speed):
 **Mesen legs** (the real 65816 core executing the real ROM): boot,
 console/`DIR`, keyboard scancodes, the CGA mode-4 and mode-6 cards, the
 MIDI driver, TED end-to-end on the SNES (types with the controller,
-saves to battery SRAM, `TYPE`s it back), and the two big ones — ELKS
-boot-to-login and FreeDOS boot, each on its own ROM and timeout.
+saves to battery SRAM, `TYPE`s it back), and the ones that need their own
+ROM and their own timeout — ELKS boot-to-login, FreeDOS boot, and the two
+SA-1 legs (`t_sa1boot` boots the 300 KB machine; `t_sa1mem` proves it
+really is 300 KB by round-tripping a pattern through guest RAM at 256 KB
+and reading it back out of BW-RAM).
+
+The suite deletes `msdos.srm` before the legs that write to B:, so a stale
+save can't leak into an assertion — **a `make test` run destroys the B:
+drive of any ROM named `msdos`**. The FreeDOS, ELKS and SA-1 legs have
+their own `.srm` namespaces and don't touch B: at all.
 
 ## Full regression — `make test && make test-extra` (local only)
 
