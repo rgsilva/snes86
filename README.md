@@ -34,9 +34,9 @@ Since this project generates a ROM file (.sfc) for you to use, there are a few b
 | `make elks` | `build/elks.sfc` | Linux, on that same 300 KB SA-1 machine. The extra RAM is what finally lets it fork its own boot scripts. |
 | `make boot DISK=floppy.img` | `build/boot.sfc` | Needs to have a boot disk parameter, so pass it as the `DISK` parameter. This is useful when booting, for example, Flight Simulator 1.0. |
 
-> Note: every DOS image has a writeable `B:` drive, and it should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though. On `msdos` that's 32 KB of plain cartridge SRAM; on `msdos_sa1` and `freedos` it's a 64 KB slice of the coprocessor's own RAM.
+> Please note that every DOS image has a writeable `B:` drive, and it should be kept between power cycles as it has a battery backup in most SNES cartridges. Your milage may vary though. On `msdos` that's 32 KB of plain cartridge SRAM; on `msdos_sa1` and `freedos` it's a 64 KB slice of the coprocessor's own RAM.
 
-> Note: `msdos_sa1`, `freedos` and `elks` ask for an SA-1 cartridge board, and we do the rudest possible thing with it: we never start its 10 MHz CPU at all, and use the chip purely as a RAM stick. That means those three ROMs only run where SA-1 is actually implemented. Mesen is fine, and so is the FXPak Pro (it's the same support that runs Super Mario RPG). Simpler flash carts may not be, and if yours isn't, `msdos.sfc` is the one to flash.
+> Beware that the images `msdos_sa1`, `freedos` and `elks` require an SA-1 cartridge board. We use the chip purely as a RAM stick (RAM is expensive!). That means those three ROMs only run where SA-1 is actually implemented. Mesen (as well as possibly many other emulators) is fine, and so is the FXPak Pro and similar cartridges. However, some simpler flash carts may not work, and in those you can only get the `msdos.sfc` to work. Sorry about that.
 
 Prerequisites, the other build targets, and the self-hosted MS-DOS toolchain are in [BUILDING](docs/BUILDING.md).
 
