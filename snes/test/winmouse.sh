@@ -164,17 +164,31 @@ local function drained()                       -- intent spent AND queue empty
   return s16(A_zDX) == 0 and s16(A_zDY) == 0
          and emu.read16(A_zQH, M) == emu.read16(A_zQT, M)
 end
--- wait for the picture to stop moving, then run f()
-local function settle(f, period, need)
+-- wait for the picture to stop moving, then run f(). The deadline is the
+-- safety: a picture that never goes perfectly still must not hang the run.
+local function settle(f, period, need, deadline)
+  if frame > deadline then stable = 0; last = -1; f(); return end
   if frame % period ~= 0 then return end
   local v = fbsum()
   if v == last then stable = stable + 1 else stable = 0 end
   last = v
   if stable >= need then stable = 0; last = -1; f() end
 end
+local function trace()                         -- where the pointer intent is
+  if frame % 600 == 0 then
+    print(string.format("MOUSE stage=%d frame=%d dx=%d dy=%d q=%d/%d btn=%d",
+          stage, frame, s16(A_zDX), s16(A_zDY),
+          emu.read16(A_zQH, M), emu.read16(A_zQT, M), emu.read16(A_zBTN, M)))
+  end
+end
+-- setInput only lands from an inputPolled callback (an endFrame one is
+-- silently ignored) — the d-pad has to be re-asserted on every poll
+emu.addEventCallback(function()
+  if next(hold) then emu.setInput(hold, 0) end
+end, emu.eventType.inputPolled)
 emu.addEventCallback(function()
   frame = frame + 1
-  if next(hold) then emu.setInput(hold, 0) end
+  if stage >= 2 then trace() end
   if stage == 0 then
     if frame > 1100 and frame % 10 == 0 and bufhas("C:\\>") then
       inject("CD \\WINDOWS\r"); stage = 1; mark = frame
@@ -195,23 +209,23 @@ emu.addEventCallback(function()
   elseif stage == 3 then                       -- park in the top-left corner
     if frame > mark + 90 then hold = {}; stage = 4; mark = frame end
   elseif stage == 4 then
-    if frame > mark + 60 and drained() then settle(function()
+    if (frame > mark + 60 and drained()) or frame > mark + 6000 then settle(function()
       dumpfb("corner"); hold = { down = true, right = true }
       stage = 5; mark = frame
-    end, 180, 8) end
+    end, 180, 4, mark + 9000) end
   elseif stage == 5 then                       -- 12 frames -> (24,24): A:
     if frame > mark + 12 then hold = {}; stage = 6; mark = frame end
   elseif stage == 6 then
-    if frame > mark + 60 and drained() then settle(function()
+    if (frame > mark + 60 and drained()) or frame > mark + 6000 then settle(function()
       dumpfb("onbutton"); hold = { a = true }
       stage = 7; mark = frame
-    end, 180, 8) end
+    end, 180, 4, mark + 9000) end
   elseif stage == 7 then                       -- A = left button
     if frame > mark + 20 then hold = {}; stage = 8; mark = frame end
   elseif stage == 8 then
     if frame > mark + 60 then settle(function()
       dumpfb("clicked"); print("DONE frame=" .. frame); emu.stop(0)
-    end, 180, 8) end
+    end, 180, 4, mark + 9000) end
   end
   if frame >= 130000 then print("TIMEOUT stage=" .. stage); emu.stop(0) end
 end, emu.eventType.endFrame)
@@ -250,12 +264,16 @@ mv = box(fb['idle'], fb['corner'])
 if not mv or mv[1] > 40 or mv[3] < 300:
     print('  FAIL: the d-pad did not walk the pointer to the corner:', mv); ok = False
 else:
-    print('  d-pad moved the pointer: %d pixels differ, x %d-%d y %d-%d' % mv)
+    print('  d-pad moved the pointer: %d pixels differ, x %d-%d y %d-%d'
+          % (mv[0], mv[1], mv[3], mv[2], mv[4]))
+# clicking a drive button selects it AND lists that drive, so the change
+# has to start on the button row and then run down the file list
 ck = box(fb['onbutton'], fb['clicked'])
-if not ck or ck[0] < 200 or ck[3] > 260 or ck[4] > 40:
+if not ck or ck[0] < 1000 or ck[1] > 40 or ck[2] > 33 or ck[4] < 60:
     print('  FAIL: the A button did not click the A: drive button:', ck); ok = False
 else:
-    print('  A clicked the A: drive button: %d pixels differ, x %d-%d y %d-%d' % ck)
+    print('  A clicked the A: drive button (Windows listed A:): %d pixels '
+          'differ, x %d-%d y %d-%d' % (ck[0], ck[1], ck[3], ck[2], ck[4]))
 sys.exit(0 if ok else 1)
 PY
 echo "== winmouse PASS"
