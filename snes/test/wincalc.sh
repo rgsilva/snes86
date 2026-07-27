@@ -118,11 +118,9 @@ echo "  stage 1 PASS"
 echo "== stage 2: Mesen, headless, d-pad on build/msdos_sa1_overlay.sfc"
 # Two things the Lua needs from outside: the emulator's own variable
 # addresses (read out of the assembler source, so they can never drift)
-# and the checksum of the settled Executive (taken from runpc's render,
-# so "Windows has finished painting" is an exact match against the
-# oracle instead of a guess — the desktop alone is stable for thousands
-# of frames while Windows finishes starting, and a plain stability test
-# latches onto that).
+# and a checksum for each of the three waypoints runpc rendered, so
+# "Windows has finished this step" is an exact match against the oracle
+# rather than a guess.
 python3 - > build/wc_addr.lua <<'PY'
 import re
 s = open('dosboot.asm').read()
@@ -209,8 +207,11 @@ local function tap(btn, n)
   add{ hold = { [btn] = true }, frames = n or 6 }
   add{ hold = {}, frames = 6 }
 end
-local function quiet(deadline, need, period)
-  add{ settle = deadline or 1200, need = need or 4, period = period or 30 }
+-- a plain "stopped moving" wait, which is all the small repaints need:
+-- the two places where stillness lies about progress (loading CALC.EXE,
+-- and putting the on-screen keyboard away) use waitsum instead
+local function quiet()
+  add{ settle = 1200, need = 4, period = 30 }
 end
 add{ dump = "idle" }
 tap("down");  quiet(); add{ dump = "oncalc" }      -- ABC.TXT -> CALC.EXE
@@ -224,7 +225,7 @@ tap("select"); add{ vis = 1 }                      -- raise the keyboard
 -- row 0 of the layout is "1234567890-=", so these are 8, 0, 8, 6
 for _, k in ipairs{ 7, 9, 7, 5 } do
   add{ navto = k }; add{ hold = {}, frames = 6 }
-  tap("a"); add{ kbdrain = 600 }; quiet(1200, 4, 30)
+  tap("a"); add{ kbdrain = 600 }; quiet()
 end
 add{ dump = "typed" }
 tap("select"); add{ vis = 0 }                      -- and put it away again
@@ -247,16 +248,13 @@ local function runPlan()
     st = st + 1
     if st >= s.frames then hold = {}; nextStep() end
   elseif s.settle then
-    if st == nil then st = { n = 0, base = fbsum(), last = -1, stab = 0, chg = false } end
+    if st == nil then st = { n = 0, last = -1, stab = 0 } end
     st.n = st.n + 1
     if st.n % s.period == 0 then
       local v = fbsum()
-      if v ~= st.base then st.chg = true end
       if v == st.last then st.stab = st.stab + 1 else st.stab = 0 end
       st.last = v
-      if ((st.chg or not s.mustchange) and st.stab >= s.need) or st.n > s.settle then
-        nextStep()
-      end
+      if st.stab >= s.need or st.n > s.settle then nextStep() end
     end
   elseif s.waitsum then
     if st == nil then st = 0 end
