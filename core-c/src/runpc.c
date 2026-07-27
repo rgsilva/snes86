@@ -24,6 +24,8 @@
  *   -rom F@S  map file F read-only at segment S (hex): ELKS ROMCODE kernel
  *             + ROMFS windows in the 1 MB space; verified unwritten on exit
  *   -entry S:O start execution at S:O (hex) instead of the boot sector
+ *   -dump S:O,L hexdump L bytes of guest memory from S:O (all hex) to stderr
+ *             at exit — pipe it to `ndisasm -b 16` to read guest code
  * Interactive keys go straight to the guest (raw mode); quit with Ctrl-].
  * Arrow/function keys arrive as ANSI escape sequences and are translated
  * to XT scancodes (ASCII 0), so full-screen guests are drivable.
@@ -1164,7 +1166,7 @@ int main(int argc, char **argv)
     if (!img && !entry_set) {
         fprintf(stderr, "usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] "
                         "[-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] "
-                        "[-hdrw] image.img\n");
+                        "[-dump SEG:OFF,LEN] [-hdrw] image.img\n");
         return 2;
     }
 
