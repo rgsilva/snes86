@@ -311,8 +311,8 @@ and are out on the CPU, not the RAM.
 we already boot. It boots.** Microsoft Windows 1.01 comes up to its **MS-DOS
 Executive** — the real GUI, in CGA mode 6 (640×200) — on the SA-1 ROM in Mesen:
 title bar, `File`/`View`/`Special` menus, the A:/B:/C: drive buttons, the file
-listing, the selection highlight, the dithered desktop. It does not yet *take*
-input, which is the rest of this section. Windows **1.04** does the same on the
+listing, the selection highlight, the dithered desktop — and it takes input
+from the controller. Windows **1.04** does the same on the
 same ROM (settles at frame 30 600, `PRACTICE.WRI` and all). Reproduce either
 with
 
@@ -347,26 +347,52 @@ What it took, and what it did not:
    the read-only C: is a non-issue for the boot, and the 65816 core needed no
    change at all — the SNES reaches the identical screen the C core does.
 
-**What is still missing is input, and it is the whole remaining milestone.**
-The Executive comes up and then ignores the keyboard:
+4. **Input took two unrelated fixes.** The Executive ignored the keyboard for
+   a while; disassembling Windows' own INT 9 handler (IVT[9] goes from our
+   `0000:04F0` stub to `0EAB:0199`) settled both halves at once:
 
-- Windows hooks INT 9 (IVT[9] goes from our `0000:04F0` stub to `0EAB:0199`)
-  and from then on never calls INT 16h again — verified on the reference core,
-  where 200 synthetic Enter keys were delivered as 400 make/break INT 9s and
-  the selection did not move. Stuffing the BIOS keyboard ring at 40:1A/1C/1E
-  as a real INT 9 would have done does not help either. So this is a
-  machine-level gap in the HLE keyboard, identical on both cores, **not** a
-  65816 bug: whatever protocol Windows' own driver expects, we do not speak it.
-  Disassembling `0EAB:0199` is the obvious next step.
-- On the SNES there is a second, separate defect stacked on top: with a guest
-  INT 9 hook installed, the raw-scancode queue stops draining (`s9H` advances,
-  `s9T` never moves, while the guest IF is set on ~75% of sampled frames and
-  the hold-off counter is 0). That path is what FS1 and Snipes use, so it is
-  worth chasing on its own — it just isn't what is blocking Windows.
-- **SNES Mouse → INT 33h** is the other half. The Mouse exists and its
-  auto-read port is already polled; whether the Executive would take mouse
-  input when it ignores the keyboard is unknown until the item above is
-  understood.
+   ```
+   0EAB:0199  in   al,60h              ; it reads the port itself
+              cmp  al,0F0h / jnc chain
+              test al,80h  / jnz handle
+              test byte [0418h],8 / jnz chain
+              cmp  byte [0449h],4 / jc chain    <-- the gate
+              ...
+       chain: jmp far [cs:0185h]       ; = whatever INT 9 was before Windows
+   ```
+
+   **BDA 40:49.** Windows only claims the keyboard while the *BDA* says a
+   graphics mode is up. Both cores tracked the video mode in their own state
+   and wrote 40:49 exactly once, at reset, as 03 — so a Windows sitting in
+   mode 6 read 03, took the `jc`, and handed every scancode back to the vector
+   it had replaced: our IRET stub. INT 9 fired, the scancode was sitting in
+   port 60h, and Windows threw it away. Both cores now keep 40:49/40:4A live
+   on every mode change (INT 10h AH=00 and the direct port-3D8 path). Note
+   what was *not* wrong: the port-60h latch, the 61h acknowledge and the EOI
+   were all already fine, and Windows keeps its own 40:17 shift state from raw
+   scancodes (its tracker is at `0EAB:02D3`), so the BIOS flags byte never
+   mattered.
+
+   **The interrupt shadow starved interrupts outright.** This was the SNES's
+   separate "the raw-scancode queue stops draining" defect — same symptom, a
+   different root cause. The threaded DOS build only reaches a delivery point
+   every 64 instructions, and a pending sreg-load/STI shadow made `run_slow`
+   skip that pass entirely and refuel another 64. A guest whose *every* 64-op
+   window contains an STI or a segment load therefore never receives another
+   interrupt — not IRQ1, not even the 18.2 Hz tick. Windows' idle loop is
+   exactly that: instrumented, it took the shadow branch on 100% of passes.
+   The shadow is now consumed after one instruction, which is what the C
+   core's per-step retry already did. (Guest IF went from 75% to 96% of
+   sampled frames.)
+
+   With both fixed, the d-pad drives the Executive on the 300 KB SA-1 machine:
+   eight Downs walk the selection down the file list and START opens the
+   selected file (Windows answers with its own modal dialog, drawn by the
+   GUI). The on-screen keyboard's sticky Shift/Ctrl now also arrive as real
+   `2A/AA` and `1D/9D` make/break codes, since a hooked INT 9 derives the
+   modifiers from the raw stream and never reads ours. The SNES Mouse →
+   INT 33h half stays worth doing, but the Executive is keyboard-drivable
+   without it.
 
 Speed: reset → Executive is under **3 M guest instructions** (bisected on
 `runpc`: 2 M is still the splash, 3 M is the Executive) and lands at **frame
