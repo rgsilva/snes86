@@ -1737,23 +1737,49 @@ _kp_q:
     and #$00FF
     beq _kp_n9               ; no scancode: INT16-only synthetic key
     sta s60                  ; latch for raw port-60h pollers
-    ldx s9H
-    sta.w $0600,x            ; make code
+    sta kT3                  ; the make code
+    lda kMOD                 ; a guest INT9 hook derives Shift/Ctrl from the
+    and #$0003               ; RAW stream — Windows 1.01 maintains its own
+    sta kT2                  ; 40:17 that way and never reads the BIOS's — so
+    beq _kp_key              ; the on-screen keyboard's sticky modifier has to
+    lsr a                    ; arrive as a real make ... break pair wrapped
+    bcc _kp_m2               ; around the key itself
+    lda #$002A               ; LShift make
+    jsr _kp_put
+_kp_m2:
+    lda kT2
+    and #$0002
+    beq _kp_key
+    lda #$001D               ; Ctrl make
+    jsr _kp_put
+_kp_key:
+    lda kT3
+    jsr _kp_put              ; make code
+    lda kT3
     ora #$0080
-    pha
-    txa
-    clc
-    adc #2
-    and #$001E
-    tax
-    pla
-    sta.w $0600,x            ; break code
+    jsr _kp_put              ; break code
+    lda kT2
+    and #$0002
+    beq _kp_m3
+    lda #$009D               ; Ctrl break
+    jsr _kp_put
+_kp_m3:
+    lda kT2
+    and #$0001
+    beq _kp_n9
+    lda #$00AA               ; LShift break
+    jsr _kp_put
+_kp_n9:
+    rts
+
+_kp_put:                     ; A = one scancode -> the INT9 queue at s9H
+    ldx s9H
+    sta.w $0600,x
     txa
     clc
     adc #2
     and #$001E
     sta s9H
-_kp_n9:
     rts
 
 ;----------------------------------------------------------------------
