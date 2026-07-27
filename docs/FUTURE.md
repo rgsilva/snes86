@@ -392,20 +392,43 @@ What it took, and what it did not:
    `2A/AA` and `1D/9D` make/break codes, since a hooked INT 9 derives the
    modifiers from the raw stream and never reads ours.
 
-5. **The mouse and the keyboard currently exclude each other on the SNES.**
-   The device, the driver relink and the protocol below are all real, and
-   the pointer *did* work on the 65816 — until the INT 9 keyboard fix
-   landed. **Bisected to a single hunk**, by reverting it and nothing else:
-   with `run_slow`'s one-instruction shadow consume removed,
-   `snes/test/winmouse.sh` **passes** (pointer walks 96 px, A clicks the
-   A: drive button, exit 0); with it restored, the pointer never moves
-   (`dx=0 dy=0`, queue draining, head==tail). So the keyboard fix — which
-   is the *correct* 8086 semantics, and which Windows' keyboard needs —
-   changed interrupt cadence enough to break the serial mouse, whose byte
-   pacing was tuned against the old, slower delivery. Neither side is
-   wrong on its own; the mouse needs re-tuning against proper interrupt
-   timing. Until then the keyboard wins, because it is the correctness
-   fix. Everything from here down describes the design. Windows 1.x is a
+5. **The mouse and the keyboard used to exclude each other on the SNES —
+   the missing piece was baud rate.** The pointer worked on the 65816 until
+   the INT 9 keyboard fix above landed, and it bisected to a single hunk:
+   `run_slow`'s one-instruction shadow consume. That hunk is the *correct*
+   8086 semantics and it stayed; the mouse was the wrong half.
+
+   What the mouse had been leaning on was the old, coarse delivery. Our
+   8250 pushed all three bytes of a packet into its queue at once and then
+   said "byte waiting" for all three back to back. Windows 1.01's mouse ISR
+   re-enables interrupts before it is done, so with the queue still holding
+   two bytes it was re-entered on the very next instruction — the moment
+   the shadow started expiring after one instruction instead of buying
+   another 64 of gas. Instrumented (`winmouse.sh` now prints the guest's
+   own `CS:IP` / `SS:SP` / `FLAGS` straight out of the core's direct page),
+   Windows survived about 90 frames of pad and then ran off a cliff:
+   `CS=F7FF` in a 300 KB machine, interrupts off, the queue frozen at three
+   undrained bytes.
+
+   A real Microsoft serial mouse cannot do that to a driver. **At 1200 baud
+   a byte takes 8.3 ms**, so a 3-byte packet is spread over 25 ms and the
+   ISR is always long finished before the next byte lands. The device now
+   models the wire and not just the protocol: `zBDL` is a per-frame
+   countdown, and after the guest reads RBR the next byte stays invisible —
+   LSR bit 0 clear, IIR "none", no IRQ3 — until the next NMI. One byte per
+   frame is 16.7 ms, twice a 1200-baud byte time and comfortably longer
+   than any ISR; the queue is still filled a whole packet at a time, so
+   nothing above the wire changed. The C core never needed this: it paces
+   packets by *guest instructions*, one per 18.2 Hz tick's worth, which
+   buys the same spacing for free.
+
+   `snes/test/winmouse.sh` now exits 0 on unmodified main — the d-pad walks
+   the pointer 96 px into the top-left corner and A clicks the A: drive
+   button, Windows listing A: in answer — and `winsnes.sh` / `wincalc.sh`
+   still pass, so the keyboard did not pay for it. One controller drives
+   Windows both ways.
+
+Everything from here down describes the design. Windows 1.x is a
 mouse-first GUI, and it turns out the mouse was the *easy* half. There is no
 INT 33h anywhere in it: SETUP **links** the chosen mouse driver into
 `WIN100.BIN`, so the choice is frozen into that one file, and every driver on
