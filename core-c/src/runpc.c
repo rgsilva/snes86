@@ -24,6 +24,8 @@
  *   -rom F@S  map file F read-only at segment S (hex): ELKS ROMCODE kernel
  *             + ROMFS windows in the 1 MB space; verified unwritten on exit
  *   -entry S:O start execution at S:O (hex) instead of the boot sector
+ *   -dump S:O,L hexdump L bytes of guest memory from S:O (all hex) to stderr
+ *             at exit — pipe it to `ndisasm -b 16` to read guest code
  * Interactive keys go straight to the guest (raw mode); quit with Ctrl-].
  * Arrow/function keys arrive as ANSI escape sequences and are translated
  * to XT scancodes (ASCII 0), so full-screen guests are drivable.
@@ -223,6 +225,18 @@ static int traceio(void)
     return on;
 }
 
+/* the BDA video-mode byte (40:49) and column count (40:4A) are not just
+ * bookkeeping: real-mode software reads them directly instead of calling
+ * INT 10h AH=0F. Windows 1.01's INT 9 filter gates on exactly this byte —
+ * `cmp byte [0449],4 / jc chain` — so a stale 03 makes it hand every
+ * keystroke back to the BIOS handler and the GUI never sees a key. */
+static void bda_vmode(X86 *c, Harness *h)
+{
+    c->mem[0x449] = (uint8_t)h->vmode;
+    c->mem[0x44A] = (uint8_t)h->cols;
+    c->mem[0x44B] = 0;
+}
+
 static void io_out8(X86 *c, uint16_t port, uint8_t v)
 {
     if (!g_h) return;
@@ -238,6 +252,7 @@ static void io_out8(X86 *c, uint16_t port, uint8_t v)
         if (newm != g_h->vmode) {
             g_h->vmode = newm;
             g_h->cols = (newm == 6 || newm == 3) ? 80 : 40;
+            bda_vmode(c, g_h);
         }
     }
 }
@@ -364,6 +379,7 @@ static int bios_video(X86 *c, Harness *h)
         cga_dump(c, h);                          /* leaving gfx? keep the frame */
         h->vmode = newm;
         h->cols = (newm == 0 || newm == 1 || newm == 4 || newm == 5) ? 40 : 80;
+        bda_vmode(c, h);
         if (gfx_mode(newm)) {
             if (!(ral(c) & 0x80))                /* AL bit7 = no-clear */
                 memset(&c->mem[0xB8000], 0, 0x4000);
@@ -1090,6 +1106,8 @@ int main(int argc, char **argv)
     int writeback = 0;
     int entry_set = 0;
     unsigned entry_cs = 0, entry_ip = 0;
+    uint32_t dump[8][2];                 /* -dump: {linear base, length} */
+    int ndump = 0;
 
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-m") && i + 1 < argc)      h.mem_kb = atoi(argv[++i]);
@@ -1132,13 +1150,23 @@ int main(int argc, char **argv)
             }
             entry_cs = s; entry_ip = o; entry_set = 1;
         }
+        else if (!strcmp(argv[i], "-dump") && i + 1 < argc) {
+            unsigned s, o, n;
+            if (sscanf(argv[++i], "%x:%x,%x", &s, &o, &n) != 3 || ndump >= 8) {
+                fprintf(stderr, "-dump wants HEXSEG:HEXOFF,HEXLEN (max 8)\n");
+                return 2;
+            }
+            dump[ndump][0] = (s << 4) + o;
+            dump[ndump][1] = n;
+            ndump++;
+        }
         else if (argv[i][0] != '-')                      img = argv[i];
         else { fprintf(stderr, "unknown option %s\n", argv[i]); return 2; }
     }
     if (!img && !entry_set) {
         fprintf(stderr, "usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] "
                         "[-kdelay N] [-rom FILE@SEG] [-entry SEG:OFF] "
-                        "[-hdrw] image.img\n");
+                        "[-dump SEG:OFF,LEN] [-hdrw] image.img\n");
         return 2;
     }
 
@@ -1390,6 +1418,12 @@ int main(int argc, char **argv)
 
     tty_restore();
     cga_dump(c, &h);                 /* -cga: keep the final graphics frame */
+    for (int i = 0; i < ndump; i++) { /* -dump: raw guest memory, for ndisasm */
+        fprintf(stderr, "DUMP %05X %X\n", dump[i][0], dump[i][1]);
+        for (uint32_t j = 0; j < dump[i][1]; j++)
+            fprintf(stderr, "%02X", c->mem[(dump[i][0] + j) & 0xFFFFF]);
+        fprintf(stderr, "\n");
+    }
     print_stats(c, &h);
 
     /* the -rom read-only contract: a well-behaved ROMCODE guest never

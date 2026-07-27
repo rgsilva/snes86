@@ -123,7 +123,7 @@ dispatches BIOS calls natively.
 | 13h disk | A: is a read-only 360 KB floppy image in ROM banks 2–13 (40 cyl × 2 heads × 9 spt); B: is a writable battery-backed disk — 32 KB of cart SRAM normally, BW-RAM bank $43 on the SA-1 board; C: is a hard-disk image, whose upper 2 MB needs a bank fixup on the SA-1 map ($C0-$DF linear, not the LoROM mirrors). Reads are native DMA block copies. Services: reset, status, read, write, verify, get-params, seek, recalibrate. |
 | 16h keyboard | read key (blocks by *rewinding IP* so the INT re-executes until a key arrives), peek/status, shift flags — the extended API (AH=10h/11h/12h) aliases onto these, since the single unfiltered ring makes the extended read the same read (that's how F11/F12 from the on-screen keyboard reach a guest). Keys come from the guest BIOS keyboard ring or the emulator's own ring. |
 | 1Ah timer | tick count (an ~18.2 Hz NMI-derived 16.16 accumulator, mirrored into the guest BDA), set tick count. |
-| 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. |
+| 9 (HW) | the keyboard hardware interrupt: port-60h scancode latch + queue. A guest that installs its own INT 9 handler owns the keyboard: the queue is delivered as IRQ1 and the BIOS ring stops being filled. Such a handler reads the scancode from port 60h and derives Shift/Ctrl/Alt from the raw stream itself, so make/break codes for the modifiers are queued around the key (`2A/AA`, `1D/9D`) — and it may gate on the BDA video-mode byte at 40:49, which the video code therefore keeps live on every mode change (Windows 1.01 does exactly this). |
 
 ### The display: CGA on a SNES PPU
 
@@ -338,6 +338,10 @@ usage: runpc [-m kb] [-c] [-v] [-l steps] [-w] [-d disk.img] [-T steps]
   -entry S:O start at SEG:OFF instead of the boot sector (diskless ROM boot)
   -tick N   timer cadence in instructions (default 15000; ~800 mimics the SNES)
   -cga f    dump the CGA B800 bitmap to f as a PPM on exit / mode-away
+  -krate N  instructions between piped keys (default 16384) — full-screen
+            guests that flush type-ahead per screen need a slower script
+  -dump S:O,L  hexdump L bytes of guest memory from SEG:OFF (all hex) to
+            stderr at exit; pipe it to `ndisasm -b 16` to read guest code
 ```
 
 A guest that executes HLT with IF=1 idles (skip to the next tick and wake) instead

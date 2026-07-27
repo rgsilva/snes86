@@ -822,6 +822,26 @@ _h10_gwc:                    ; gfx: draw AL, BL = literal color (no 0->3)
     lda gAX
     jmp gfx_glyph
 
+; guest BDA 40:49 (current video mode) + 40:4A (text columns). Not
+; bookkeeping: real-mode software reads these instead of calling INT 10h
+; AH=0F, and Windows 1.01's INT 9 filter gates on 40:49 —
+;   cmp byte [0449],4 / jc chain-to-the-old-handler
+; — so a stale 03 makes it hand every keystroke straight back to the BIOS
+; vector (our IRET stub) and the GUI never sees a key. Call after every
+; cMODE/cWID change. Preserves A's width via php/plp.
+bda_vmode:
+    php
+    rep #$20
+    lda cWID
+    and #$00FF
+    sta.l $7E544A            ; 40:4A word = text columns
+    sep #$20
+    lda cMODE
+    sta.l $7E5449            ; 40:49 byte = current video mode
+    rep #$20                 ; (leave the assembler's ACCU tracking at 16)
+    plp
+    rts
+
 _h10_mode:                   ; AH=0 set mode: 0/1=40col 2/3=80col 4/5/6=CGA gfx
     lda gAX
     and #$007F               ; bit7 = keep the framebuffer
@@ -844,6 +864,7 @@ _h10_m45:
     sta s3D8
 _h10_mgo:
     stz kPAN
+    jsr bda_vmode
     jsr gfx_enter
     lda gAX
     and #$0080
@@ -866,6 +887,7 @@ _h10_m80:
 _h10_mw:
     sta cWID
     stz kPAN
+    jsr bda_vmode
     jsr attr_reset
 _h10_clear:
     jmp con_clear
@@ -1715,23 +1737,49 @@ _kp_q:
     and #$00FF
     beq _kp_n9               ; no scancode: INT16-only synthetic key
     sta s60                  ; latch for raw port-60h pollers
-    ldx s9H
-    sta.w $0600,x            ; make code
+    sta kT3                  ; the make code
+    lda kMOD                 ; a guest INT9 hook derives Shift/Ctrl from the
+    and #$0003               ; RAW stream — Windows 1.01 maintains its own
+    sta kT2                  ; 40:17 that way and never reads the BIOS's — so
+    beq _kp_key              ; the on-screen keyboard's sticky modifier has to
+    lsr a                    ; arrive as a real make ... break pair wrapped
+    bcc _kp_m2               ; around the key itself
+    lda #$002A               ; LShift make
+    jsr _kp_put
+_kp_m2:
+    lda kT2
+    and #$0002
+    beq _kp_key
+    lda #$001D               ; Ctrl make
+    jsr _kp_put
+_kp_key:
+    lda kT3
+    jsr _kp_put              ; make code
+    lda kT3
     ora #$0080
-    pha
-    txa
-    clc
-    adc #2
-    and #$001E
-    tax
-    pla
-    sta.w $0600,x            ; break code
+    jsr _kp_put              ; break code
+    lda kT2
+    and #$0002
+    beq _kp_m3
+    lda #$009D               ; Ctrl break
+    jsr _kp_put
+_kp_m3:
+    lda kT2
+    and #$0001
+    beq _kp_n9
+    lda #$00AA               ; LShift break
+    jsr _kp_put
+_kp_n9:
+    rts
+
+_kp_put:                     ; A = one scancode -> the INT9 queue at s9H
+    ldx s9H
+    sta.w $0600,x
     txa
     clc
     adc #2
     and #$001E
     sta s9H
-_kp_n9:
     rts
 
 ;----------------------------------------------------------------------
@@ -2453,6 +2501,7 @@ _rst_mv:
     sta cWID
     lda #3
     sta cMODE
+    jsr bda_vmode            ; the BDA agrees from power-on
     stz aST
     stz sFLIP
     stz sDIV
@@ -2614,8 +2663,17 @@ run_slow:                    ; gas exhausted (or HLT): service and refuel
     lda gINHIB               ; sreg-load/STI shadow: the instruction that
     beq _rs_shok             ; just retired blocks delivery until one more
     stz gINHIB               ; runs (MOV SS,x / MOV SP,y must be atomic).
-    bra _rs_n9               ; Skip both delivery checks this pass — but
-_rs_shok:                    ; still honor a parked HLT below (STI;HLT).
+    lda #1                   ; Consumed — but come back after ONE instruction
+    sta tSKIP                ; instead of another 64 of gas, or a guest whose
+    bra _rs_n9               ; every gas window contains an STI/sreg load is
+                             ; starved of interrupts FOREVER. Windows 1.01's
+                             ; idle loop is exactly that: it took 100% of the
+                             ; shadow branch, so no tick and no IRQ1 ever
+                             ; landed again and the GUI ignored the keyboard.
+                             ; (The C core retries every step; this is the
+                             ; threaded build's equivalent.) The parked-HLT
+                             ; check below still runs either way.
+_rs_shok:
     lda cTickP
     beq _rs_nirq
     lda fSTATIC              ; IF lives in the static flag bits
@@ -3792,6 +3850,7 @@ _sk_gw4:
 _sk_gww:
     sta cWID
     stz kPAN
+    jsr bda_vmode
     jmp gfx_enter            ; no clear: programs clear B800 themselves
 _sk_txt:
     lda cGFX
@@ -3802,6 +3861,7 @@ _sk_txt:
     lda #80
     sta cWID
     stz kPAN
+    jsr bda_vmode
     jsr attr_reset
     jmp con_clear
 _sk_dn:
