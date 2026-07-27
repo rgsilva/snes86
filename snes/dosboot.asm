@@ -134,6 +134,7 @@ zDY      dw                  ; guest has not been told about yet (signed)
 zBTN     dw                  ; bit0 left (A), bit1 right (B)
 zBSN     dw                  ; button state the last packet carried
 zRMP     dw                  ; frames a direction has been held: the ramp
+zBDL     dw                  ; frames until the next byte is off the wire
 .ENDE
 
 ; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
@@ -542,9 +543,14 @@ _cc_f:
 ;   * LSR bit0 = a byte is waiting, read from RBR at base+0;
 ;   * IER bit0 = raise IRQ3 while a byte is waiting;
 ;   * 3-byte packets: $40|L<<5|R<<4|(dy>>6)<<2|(dx>>6), dx&$3F, dy&$3F.
-; Baud and word length are written and ignored: bytes arrive when the
-; d-pad says they do. Kept identical to core-c/src/runpc.c's io_in8 /
-; io_out8 / mouse_packet, which is the oracle.
+; Word length is written and ignored, and so is the divisor — but the
+; *rate* is not: bytes leave the queue one per frame (see mou_rdy). A
+; 1200-baud byte takes 8.3 ms, so a real mouse never hands a driver a
+; second byte inside its own ISR; ours used to, and Windows 1.01's
+; re-entered ISR eventually walked the guest off a cliff. The C core
+; (core-c/src/runpc.c io_in8 / io_out8 / mouse_packet, the oracle for
+; everything else here) gets the same spacing for free — it paces
+; packets by guest instructions, one per 18.2 Hz tick's worth.
 ;----------------------------------------------------------------------
 mou_qn:                      ; -> Z set when the queue is empty
     lda zQT
@@ -552,6 +558,16 @@ mou_qn:                      ; -> Z set when the queue is empty
     sbc zQH
     and #$0006
     rts
+
+mou_rdy:                     ; -> Z set when the guest may not see a byte yet.
+    lda zBDL                 ; A queued byte is still ON THE WIRE for a frame
+    bne _mrd_no              ; after the previous one: at 1200 baud a byte
+    bra mou_qn               ; takes 8.3 ms, so back-to-back bytes are NOT
+_mrd_no:                     ; what a real serial mouse does — and a driver
+    lda #0                   ; that re-enables interrupts inside its own ISR
+    rts                      ; (Windows 1.01's does) re-enters it on the next
+                             ; instruction otherwise, once the shadow expires
+                             ; after one instruction as 8086 semantics demand.
 
 mou_push:                    ; A = byte
     ldx zQT
@@ -575,7 +591,7 @@ _mo_rbr:                     ; RBR (or the baud divisor low half)
     lda zLCR
     and #$0080
     bne _mo_dl
-    jsr mou_qn
+    jsr mou_rdy
     beq _mo_z
     ldx zQH
     lda.w zQ0,x
@@ -585,6 +601,8 @@ _mo_rbr:                     ; RBR (or the baud divisor low half)
     adc #2
     and #$0006
     sta zQH
+    lda #1                   ; the next byte is still arriving
+    sta zBDL
     pla
     and #$00FF
     rts
@@ -602,7 +620,7 @@ _mo_ier:
     and #$00FF
     rts
 _mo_iir:                     ; $04 = received data available, $01 = none
-    jsr mou_qn
+    jsr mou_rdy
     beq _mo_i1
     lda #$0004
     rts
@@ -618,7 +636,7 @@ _mo_mcr:
     and #$00FF
     rts
 _mo_lsr:                     ; THR empty always; bit0 = a byte is waiting
-    jsr mou_qn
+    jsr mou_rdy
     beq _mo_l0
     lda #$0061
     rts
@@ -665,6 +683,7 @@ mou_mcr:                     ; RTS 0 -> 1 powers the mouse: it identifies
     bne _mo_mst
     stz zQH                  ; a reset flushes whatever was in flight
     stz zQT
+    stz zBDL
     lda #'M'
     jsr mou_push
 _mo_mst:
@@ -674,9 +693,15 @@ _mo_mst:
 
 ; Pack the motion the d-pad has asked for into one packet. Called from
 ; the NMI with the queue empty, so the guest sees at most one report per
-; frame — and, because a full queue holds this off, a guest too slow to
-; drain it simply gets fewer, larger reports.
+; frame — and, because a queue still draining holds this off, a guest too
+; slow to keep up simply gets fewer, larger reports. Also clocks the wire:
+; one queued byte becomes visible per frame.
 mou_report:
+    lda zBDL                 ; the wire clears one byte per frame
+    beq _mr_on
+    dec a
+    sta zBDL
+_mr_on:
     lda zON
     beq _mr_ret
     jsr mou_qn
@@ -2742,6 +2767,7 @@ _rst_fmtd:
     stz zBTN
     stz zBSN
     stz zRMP
+    stz zBDL
     stz bPIT                 ; beep + MIDI card state
     stz bGON
     stz bDIRTY
@@ -2977,8 +3003,7 @@ _rs_nirq:
     lda zIER
     lsr a
     bcc _rs_nmou
-    lda zQH
-    cmp zQT
+    jsr mou_rdy              ; a byte, and off the wire (see mou_rdy)
     beq _rs_nmou
     lda fSTATIC
     and #$0200
