@@ -115,6 +115,25 @@ mAOF     dw                  ; all-notes-off request
 mEVN     dw                  ; events-per-frame guard
 mVNX     dw                  ; voice-steal round robin
 mVCE     dw                  ; voice chosen for the current note-on
+; Microsoft serial mouse on COM2 ($2F8, IRQ3 -> INT 0Bh). Same device as
+; the C core's, byte for byte — see mou_in/mou_out below.
+zON      dw                  ; a guest driver armed RX interrupts: the
+                             ; d-pad becomes the mouse while the on-screen
+                             ; keyboard is closed
+zIER     dw                  ; the three UART registers a driver writes
+zMCR     dw
+zLCR     dw
+zQH      dw                  ; device->host byte queue (4 deep: 'M', or
+zQT      dw                  ; one 3-byte packet)
+zQ0      dw
+zQ1      dw
+zQ2      dw
+zQ3      dw
+zDX      dw                  ; motion the d-pad has asked for and the
+zDY      dw                  ; guest has not been told about yet (signed)
+zBTN     dw                  ; bit0 left (A), bit1 right (B)
+zBSN     dw                  ; button state the last packet carried
+zRMP     dw                  ; frames a direction has been held: the ramp
 .ENDE
 
 ; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
@@ -509,12 +528,251 @@ _cc_f:
     rts
 
 ;----------------------------------------------------------------------
+; Microsoft serial mouse — an 8250 on COM2 ($2F8), IRQ3 -> INT 0Bh.
+;
+; Windows 1.x has no INT 33h: SETUP links a mouse driver into WIN100.BIN
+; and that driver owns the hardware. MOUSE.DRV ("Microsoft Mouse
+; (Bus/Serial)") probes the bus card at $23C — nothing answers, so it
+; falls through — and then a serial mouse on COM2 first, COM1 second.
+; COM2 is therefore where ours lives: found on the first try, so the
+; probe's 65536-iteration receive-drain loop is paid once.
+;
+; What the driver needs, and all of what is below:
+;   * RTS rising (MCR bit1) resets the mouse, which answers 'M';
+;   * LSR bit0 = a byte is waiting, read from RBR at base+0;
+;   * IER bit0 = raise IRQ3 while a byte is waiting;
+;   * 3-byte packets: $40|L<<5|R<<4|(dy>>6)<<2|(dx>>6), dx&$3F, dy&$3F.
+; Baud and word length are written and ignored: bytes arrive when the
+; d-pad says they do. Kept identical to core-c/src/runpc.c's io_in8 /
+; io_out8 / mouse_packet, which is the oracle.
+;----------------------------------------------------------------------
+mou_qn:                      ; -> Z set when the queue is empty
+    lda zQT
+    sec
+    sbc zQH
+    and #$0006
+    rts
+
+mou_push:                    ; A = byte
+    ldx zQT
+    sta.w zQ0,x
+    txa
+    clc
+    adc #2
+    and #$0006
+    sta zQT
+    rts
+
+mou_in:                      ; A = port ($2F8-$2FF) -> A = byte
+    and #$0007
+    asl a
+    tax
+    jmp (_mou_rd,x)
+_mou_rd:
+    .dw _mo_rbr, _mo_ier, _mo_iir, _mo_lcr
+    .dw _mo_mcr, _mo_lsr, _mo_msr, _mo_scr
+_mo_rbr:                     ; RBR (or the baud divisor low half)
+    lda zLCR
+    and #$0080
+    bne _mo_dl
+    jsr mou_qn
+    beq _mo_z
+    ldx zQH
+    lda.w zQ0,x
+    pha
+    txa
+    clc
+    adc #2
+    and #$0006
+    sta zQH
+    pla
+    and #$00FF
+    rts
+_mo_dl:
+    lda #$0060
+    rts
+_mo_z:
+    lda #$0000
+    rts
+_mo_ier:
+    lda zLCR
+    and #$0080
+    bne _mo_z
+    lda zIER
+    and #$00FF
+    rts
+_mo_iir:                     ; $04 = received data available, $01 = none
+    jsr mou_qn
+    beq _mo_i1
+    lda #$0004
+    rts
+_mo_i1:
+    lda #$0001
+    rts
+_mo_lcr:
+    lda zLCR
+    and #$00FF
+    rts
+_mo_mcr:
+    lda zMCR
+    and #$00FF
+    rts
+_mo_lsr:                     ; THR empty always; bit0 = a byte is waiting
+    jsr mou_qn
+    beq _mo_l0
+    lda #$0061
+    rts
+_mo_l0:
+    lda #$0060
+    rts
+_mo_msr:
+    lda #$0030               ; CTS + DSR asserted
+    rts
+_mo_scr:
+    lda #$0000
+    rts
+
+mou_ier:                     ; OUT $2F9: interrupt enable (or divisor high)
+    pha
+    lda zLCR
+    and #$0080               ; DLAB: this is the baud divisor, ignored
+    beq _mo_ie
+    pla
+    rts
+_mo_ie:
+    pla
+    and #$00FF
+    sta zIER
+    lsr a
+    bcc _mo_ret
+    lda #1                   ; RX interrupts armed = a real driver has the
+    sta zON                  ; port: hand it the d-pad
+_mo_ret:
+    rts
+
+mou_lcr:
+    and #$00FF
+    sta zLCR
+    rts
+
+mou_mcr:                     ; RTS 0 -> 1 powers the mouse: it identifies
+    and #$00FF
+    pha
+    and #$0002
+    beq _mo_mst
+    lda zMCR
+    and #$0002
+    bne _mo_mst
+    stz zQH                  ; a reset flushes whatever was in flight
+    stz zQT
+    lda #'M'
+    jsr mou_push
+_mo_mst:
+    pla
+    sta zMCR
+    rts
+
+; Pack the motion the d-pad has asked for into one packet. Called from
+; the NMI with the queue empty, so the guest sees at most one report per
+; frame — and, because a full queue holds this off, a guest too slow to
+; drain it simply gets fewer, larger reports.
+mou_report:
+    lda zON
+    beq _mr_ret
+    jsr mou_qn
+    bne _mr_ret
+    lda zDX
+    ora zDY
+    bne _mr_go
+    lda zBTN
+    cmp zBSN
+    bne _mr_go
+_mr_ret:
+    rts
+_mr_go:
+    lda zBTN
+    sta zBSN
+    lda zDX                  ; clamp dx to -128..127 and keep the rest
+    jsr _mr_clamp
+    sta kT2                  ; kT2 = dx (NMI-only temp)
+    lda zDX
+    sec
+    sbc kT2
+    sta zDX
+    lda zDY
+    jsr _mr_clamp
+    sta kT3                  ; kT3 = dy
+    lda zDY
+    sec
+    sbc kT3
+    sta zDY
+    lda zBTN                 ; byte 1: $40 | L<<5 | R<<4 | dy76 | dx76
+    and #$0001
+    asl a
+    asl a
+    asl a
+    asl a
+    asl a
+    sta kT1
+    lda zBTN
+    and #$0002
+    asl a
+    asl a
+    asl a
+    ora kT1
+    ora #$0040
+    sta kT1
+    lda kT3                  ; dy bits 7-6 -> byte1 bits 3-2
+    and #$00C0
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    ora kT1
+    sta kT1
+    lda kT2                  ; dx bits 7-6 -> byte1 bits 1-0
+    and #$00C0
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    ora kT1
+    jsr mou_push
+    lda kT2
+    and #$003F
+    jsr mou_push
+    lda kT3
+    and #$003F
+    jmp mou_push
+_mr_clamp:                   ; A = signed -> A = A clamped to -128..127
+    bmi _mrc_neg
+    cmp #128
+    bcc _mrc_ok
+    lda #127
+    rts
+_mrc_neg:
+    cmp #$FF80
+    bcs _mrc_ok
+    lda #$FF80
+_mrc_ok:
+    rts
+
+;----------------------------------------------------------------------
 ; PC speaker -> S-SMP. Guest OUTs to the PIT ($42/$43) and the gate
 ; ($61) land here; tone = 1193182/divisor Hz, forwarded to the SPC700
 ; beep driver as DSP pitch = 2443637/divisor (see spc_beep.asm).
 ; Preserves Y (guest IP). X and cT0 are scratch.
 ;----------------------------------------------------------------------
+
 spk_out:                     ; X = port, A = value (low byte)
+    cpx #$02F9
+    beq _sk_mie
+    cpx #$02FB
+    beq _sk_mlc
+    cpx #$02FC
+    beq _sk_mmc
     cpx #$0042
     beq _sk_div
     cpx #$0043
@@ -529,6 +787,18 @@ spk_out:                     ; X = port, A = value (low byte)
     beq _sk_mdj
     cpx #$0331
     beq _sk_mcj
+    rts
+_sk_mie:                     ; X is the port and io_out16 needs it back
+    phx
+    jsr mou_ier
+    plx
+    rts
+_sk_mlc:
+    jmp mou_lcr
+_sk_mmc:
+    phx
+    jsr mou_mcr
+    plx
     rts
 _sk_38j:
     jmp _sk_3d8
@@ -1906,6 +2176,7 @@ _vb_jw:
     lda $4218
     sta cJoyN
     jsr kbd_frame
+    jsr mou_report           ; one mouse report per frame, at most
     jsr kbd_shift            ; before scan_rows: label writes don't self-heal
     lda cGFX
     beq _vb_txts
@@ -2412,6 +2683,17 @@ _rst_fmtd:
     stz s9H
     stz s9T
     stz s9CD
+    stz zON                  ; serial mouse: idle, no driver, empty queue
+    stz zIER
+    stz zMCR
+    stz zLCR
+    stz zQH
+    stz zQT
+    stz zDX
+    stz zDY
+    stz zBTN
+    stz zBSN
+    stz zRMP
     stz bPIT                 ; beep + MIDI card state
     stz bGON
     stz bDIRTY
@@ -2614,7 +2896,7 @@ run_slow:                    ; gas exhausted (or HLT): service and refuel
     lda gINHIB               ; sreg-load/STI shadow: the instruction that
     beq _rs_shok             ; just retired blocks delivery until one more
     stz gINHIB               ; runs (MOV SS,x / MOV SP,y must be atomic).
-    bra _rs_n9               ; Skip both delivery checks this pass — but
+    brl _rs_n9               ; Skip every delivery check this pass — but
 _rs_shok:                    ; still honor a parked HLT below (STI;HLT).
     lda cTickP
     beq _rs_nirq
@@ -2630,6 +2912,22 @@ _rs_shok:                    ; still honor a parked HLT below (STI;HLT).
                              ; the handler but re-parks on gHALT=1 with the
                              ; handler's IF=0 — machine freezes mid-boot.
 _rs_nirq:
+    lda zON                  ; serial mouse: a queued byte raises IRQ3 for
+    beq _rs_nmou             ; as long as the driver has RX enabled
+    lda zIER
+    lsr a
+    bcc _rs_nmou
+    lda zQH
+    cmp zQT
+    beq _rs_nmou
+    lda fSTATIC
+    and #$0200
+    beq _rs_nmou
+    lda #$0B
+    jsr do_int
+    sty gIP
+    stz gHALT
+_rs_nmou:
     lda s9CD                 ; hold-off pending (the NMI counts it down)
     bne _rs_n9
     lda s9T                  ; pending scancode -> IRQ1 when the guest
@@ -3021,6 +3319,10 @@ _kf_hid:
     beq _kf_h1
     jmp kbd_toggle
 _kf_h1:
+    lda zON                  ; a guest driver has claimed COM2 (only the
+    beq _kf_h1k              ; Windows mouse ever does): with the on-screen
+    jmp _kf_mouse            ; keyboard closed the d-pad IS the mouse
+_kf_h1k:
     lda kT0
     and #$1000               ; START: Enter
     beq _kf_h2
@@ -3087,7 +3389,105 @@ _kf_arst:
     stz kRPT
 _kf_ad:
     rts
+
+; d-pad as a mouse (keyboard closed, guest driver live). The d-pad feeds
+; an *intent* accumulator, not a per-report delta: hold right for a
+; second and the pointer travels the same distance whether the guest
+; managed fifteen reports or one. A ramp makes the first nudge fine and
+; a long push fast — 2 px/frame growing to 6 (120-360 px/s across a
+; 640-wide screen). Y is stepped every other frame because Windows
+; doubles it on a 200-line CGA (measured: 50 mickeys -> 100 pixels), so
+; a diagonal comes out diagonal. A = left button, B = right.
+_kf_mouse:
+    stz kT1
+    lda cJoyN
+    and #$0080               ; A: left button
+    beq _km_b
+    lda #$0001
+    sta kT1
+_km_b:
+    lda cJoyN
+    and #$8000               ; B: right button
+    beq _km_bd
+    lda kT1
+    ora #$0002
+    sta kT1
+_km_bd:
+    lda kT1
+    sta zBTN
+    lda cJoyN
+    and #$0F00               ; any direction held?
+    bne _km_held
+    stz zRMP
+    rts
+_km_held:
+    lda zRMP
+    cmp #64
+    bcs _km_step
+    inc a
+    sta zRMP
+_km_step:
+    lda zRMP                 ; step = 2 + ramp/16
+    lsr a
+    lsr a
+    lsr a
+    lsr a
+    clc
+    adc #2
+    sta kT1
+    lda cJoyN
+    bit #$0200               ; left
+    beq _km_rt
+    lda zDX
+    sec
+    sbc kT1
+    bra _km_xw
+_km_rt:
+    bit #$0100               ; right
+    beq _km_vert
+    lda zDX
+    clc
+    adc kT1
+_km_xw:
+    jsr _km_clip
+    sta zDX
+_km_vert:
+    lda cNMI                 ; every other frame: Windows doubles Y
+    lsr a
+    bcc _km_done
+    lda cJoyN
+    bit #$0800               ; up
+    beq _km_dn
+    lda zDY
+    sec
+    sbc kT1
+    bra _km_yw
+_km_dn:
+    bit #$0400               ; down
+    beq _km_done
+    lda zDY
+    clc
+    adc kT1
+_km_yw:
+    jsr _km_clip
+    sta zDY
+_km_done:
+    rts
+_km_clip:                    ; hold the intent to +/-512: a stalled guest
+    bmi _kmc_neg             ; must not bank a screenful of travel
+    cmp #512
+    bcc _kmc_ok
+    lda #512
+    rts
+_kmc_neg:
+    cmp #$FE00
+    bcs _kmc_ok
+    lda #$FE00
+_kmc_ok:
+    rts
 _kf_vis:
+    stz zBTN                 ; keyboard open: the mouse buttons let go, so
+                             ; SELECT with A held cannot leave one stuck
     lda kT0
     and #$2000               ; SELECT: hide
     beq _kf_v1

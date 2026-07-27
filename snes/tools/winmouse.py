@@ -222,9 +222,18 @@ def nefield(buf, ne, name):
 
 
 def modules(bin_):
-    """Walk WIN100.BIN's module chain -> [(offset, name)]."""
-    out, o = [], struct.unpack_from("<H", bin_, 0x3C)[0]
-    o = 0x400 if bin_[0x400:0x402] == b"NE" else o
+    """Walk WIN100.BIN's module chain -> [(offset, name)].
+
+    KERNEL is the first NE header in the file (0x400 in both the 1.01 and
+    1.04 builds, but found rather than assumed — the MZ header in front of
+    it is not a real DOS stub and its e_lfanew points nowhere).
+    """
+    out = []
+    o = next((i for i in range(0x40, min(len(bin_), 0x4000), 16)
+              if bin_[i:i + 2] == b"NE" and 0 < nefield(bin_, i, "cseg") < 64
+              and nefield(bin_, i, "restab") < 0x400), None)
+    if o is None:
+        raise SystemExit("winmouse: no NE module chain in WIN100.BIN")
     while True:
         if bin_[o:o + 2] != b"NE":
             raise SystemExit(f"winmouse: no NE module at {o:#x}")

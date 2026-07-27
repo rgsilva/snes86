@@ -279,7 +279,7 @@ fetched-not-committed for the `recompile` pipeline, the MIT MS-DOS
 utilities ship as `C:\DOS`, and the copyrighted dev C: became the
 suite's OVERLAYS test fixture.
 
-## Windows 1.01 — it boots on the SNES; input is the milestone left
+## Windows 1.01 — it boots on the SNES, and the d-pad is its mouse
 
 Windows 3.0 is out of reach and stays out — but the box quotes were worth
 checking, and one of them was wrong. Both were installed from real media and
@@ -347,8 +347,46 @@ What it took, and what it did not:
    the read-only C: is a non-issue for the boot, and the 65816 core needed no
    change at all — the SNES reaches the identical screen the C core does.
 
-**What is still missing is input, and it is the whole remaining milestone.**
-The Executive comes up and then ignores the keyboard:
+**The mouse works — the d-pad drives the pointer.** Windows 1.x is a
+mouse-first GUI, and it turns out the mouse was the *easy* half. There is no
+INT 33h anywhere in it: SETUP **links** the chosen mouse driver into
+`WIN100.BIN`, so the choice is frozen into that one file, and every driver on
+the floppy talks to hardware directly (bus card at `0x23C`, three serial
+protocols, and a Kraft joystick). Both installs in `disks/` were set up with
+`NOMOUSE.DRV` — a 0x38-byte stub whose `Inquire` reports `msExist = 0` — which
+is the real reason the earlier trace saw no INT 33h and no port I/O at all:
+there was nothing in there that could look for a mouse.
+
+`snes/tools/winmouse.py` relinks `WIN100.BIN` with the real
+"Microsoft Mouse (Bus/Serial)" driver (see `snes/test/winmouse.sh`, which does
+that and then proves the result on both cores). Both cores then emulate what
+that driver asks for: an 8250 on **COM2** (`0x2F8`, IRQ3 → INT 0Bh) speaking
+the classic 3-byte Microsoft protocol — RTS rising answers `'M'`, LSR bit 0
+says a byte is waiting, IER bit 0 arms the interrupt. COM2 because that is the
+port the driver tries first. The Kraft joystick driver was the tempting
+alternative — a d-pad *is* a joystick — and was rejected on arithmetic: it
+re-reads the game port with a 255-iteration timing loop on every 18.2 Hz tick,
+~2 550 guest instructions, roughly ten times what one SNES tick can afford.
+
+The last mile was not the mouse at all. `SYSTEM.DRV`'s INT 8 handler issues
+OCW3 (`0x0B`) to the 8259 and reads port `0x20` back, and **skips its entire
+timer-callback list unless that register reads zero** — and the callbacks are
+where USER repaints the pointer through the display driver's `CheckCursor`.
+Both cores answered `0xFF`, so Windows tracked the mouse perfectly (menus
+opened, drive buttons selected) with no arrow ever drawn. Port `0x20` now
+reads 0 on both: we vector IRQs straight at the IVT, nothing is ever in
+service, and that is the honest answer.
+
+On the console: with the on-screen keyboard closed **and** a guest driver
+holding COM2 — only Windows ever does that, so nothing else changes — the
+d-pad is the pointer, A is the left button and B the right. The d-pad feeds an
+*intent* accumulator rather than a per-report delta, so a second of holding
+right travels the same distance whether the guest managed fifteen reports or
+one; a ramp takes it from 2 px/frame to 6. Y is stepped every other frame
+because Windows doubles it on a 200-line CGA.
+
+**What is still missing is the keyboard.** The Executive comes up and ignores
+it:
 
 - Windows hooks INT 9 (IVT[9] goes from our `0000:04F0` stub to `0EAB:0199`)
   and from then on never calls INT 16h again — verified on the reference core,
@@ -363,10 +401,9 @@ The Executive comes up and then ignores the keyboard:
   `s9T` never moves, while the guest IF is set on ~75% of sampled frames and
   the hold-off counter is 0). That path is what FS1 and Snipes use, so it is
   worth chasing on its own — it just isn't what is blocking Windows.
-- **SNES Mouse → INT 33h** is the other half. The Mouse exists and its
-  auto-read port is already polled; whether the Executive would take mouse
-  input when it ignores the keyboard is unknown until the item above is
-  understood.
+- The mouse answers the old open question here: the Executive *does* take
+  input, and takes it happily. So whatever the keyboard gap is, it is
+  specific to the keyboard path, not to Windows refusing to listen.
 
 Speed: reset → Executive is under **3 M guest instructions** (bisected on
 `runpc`: 2 M is still the splash, 3 M is the Executive) and lands at **frame
