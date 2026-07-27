@@ -328,12 +328,15 @@ rm -rf build/winvid; mkdir -p build/winvid
 grep -a "SEG\|READY\|PROGRESS\|NAV\|PAN\|WAITSUM\|DONE\|TIMEOUT" build/winvideo.log || true
 
 echo "== cutting the log back into PNGs"
-python3 - <<'PY'
-import os
-seg = {}
-n = 0
+python3 - <<'PY' || exit 1
+import os, sys
+seg, fb, n = {}, {}, 0
 with open('build/winvideo.log', 'rb') as fh:
     for line in fh:
+        if line.startswith(b'FB '):
+            p = line.split(b' ', 2)
+            fb[p[1].decode()] = bytes.fromhex(p[2].strip().decode())
+            continue
         if not line.startswith(b'SHOT '):
             continue
         p = line.split(b' ', 4)
@@ -344,6 +347,30 @@ with open('build/winvideo.log', 'rb') as fh:
             bytes.fromhex(p[4].strip().decode()))
         n += 1
 print('  %d frames: %s' % (n, ', '.join('%s=%d' % kv for kv in seg.items())))
+if not n or 'pan' not in seg:
+    print('  FAIL: the run never got through the choreography'); sys.exit(1)
+
+# The filmed run has to be the same run wincalc.sh signs off on, so the
+# frame the camera stopped on is diffed against the C core's render of
+# that moment — a pretty video of the wrong thing is worse than no video.
+if 'd8086' not in fb:
+    print('  FAIL: no framebuffer dump — the Calculator never settled'); sys.exit(1)
+d = open('build/wc_done.ppm', 'rb').read().split(b'\n', 3)
+w, h = map(int, d[1].split())
+rp = d[3]
+ref = bytearray(16000)
+for y in range(h):
+    row = (0 if y % 2 == 0 else 8000) + (y // 2) * 80
+    for xb in range(w // 8):
+        b = 0
+        for i in range(8):
+            if rp[(y * w + xb * 8 + i) * 3] > 127:
+                b |= 0x80 >> i
+        ref[row + xb] = b
+bad = sum(1 for i in range(16000) if ref[i] != fb['d8086'][i])
+print('  framebuffer vs runpc: %d of 16000 bytes differ' % bad)
+if bad:
+    print('  FAIL: the SNES did not render what runpc rendered'); sys.exit(1)
 PY
 
 fi   # CAPTURE

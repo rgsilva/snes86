@@ -142,8 +142,11 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
   spends most of this demo not changing the screen at all, and capping
   the still runs drops the dead air without ever speeding up something
   that moves. It ends with an L/R pan across the 128 pixels of the
-  640×200 picture the SNES window cannot show. Bring-your-own media,
-  and it needs ffmpeg, so not a suite leg.
+  640×200 picture the SNES window cannot show. Like `wincalc.sh` it
+  diffs the frame it stopped on against `runpc`'s render and fails on
+  any difference, so the footage is provably the run that passes — a
+  pretty video of the wrong thing would be worse than no video.
+  Bring-your-own media, and it needs ffmpeg, so not a suite leg.
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)
   vectors, including undocumented opcodes and microcode-exact flags:
