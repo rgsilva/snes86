@@ -12,9 +12,11 @@
 #   1. runpc (the C core) boots the exact A:/C: pair at 300 KB and dumps
 #      the CGA mode-6 screen to a PPM — seconds, and it is the reference.
 #   2. Mesen runs the SA-1 ROM headless, types CD \WINDOWS + WIN, and
-#      shoots the screen once the picture stops changing (~32k frames,
-#      about nine emulated minutes, a couple of host minutes). It then
-#      proves INPUT: eight d-pad Downs walk the Executive's selection and
+#      shoots the screen the moment it is pixel-identical to stage 1's
+#      (~32k frames, about nine emulated minutes, a couple of host
+#      minutes; the bare desktop lands thousands of frames earlier and
+#      sits perfectly still, so "it stopped changing" is not the test).
+#      It then proves INPUT: eight d-pad Downs walk the selection and
 #      START opens it, into <out>_input.png.
 #
 # Windows 1.01 needs 237 KB free (measured: 236 KB fails with "Program
@@ -47,8 +49,31 @@ echo "  wrote build/win_runpc.ppm (compare it against $OUT)"
 
 [ -x "$MESEN" ] || { echo "== stage 2 skipped (no Mesen)"; exit 0; }
 echo "== stage 2: Mesen, headless, on build/msdos_sa1_overlay.sfc"
-cat > build/winsnes.lua <<'LUA'
-local frame, t, stage, injf, last, stable = 0, 0, 0, 0, -1, 0
+# "Windows has finished painting" is an exact match against the oracle,
+# not a stability test: the bare desktop is pixel-stable for *thousands*
+# of frames before the Executive window lands (frame ~32 100), so a
+# plain "the sum stopped changing" latches onto the dithered wallpaper
+# and shoots the wrong screen. Fold runpc's PPM down to the same
+# sampled checksum the Lua computes and wait for that number.
+python3 - > build/ws_target.lua <<'PY'
+d = open('build/win_runpc.ppm', 'rb').read()
+h = d.split(b'\n', 3)
+w, ht = map(int, h[1].split())
+px = h[3]
+fb = bytearray(16000)
+for y in range(ht):
+    row = (0 if y % 2 == 0 else 8000) + (y // 2) * 80
+    for xb in range(w // 8):
+        b = 0
+        for i in range(8):
+            if px[(y * w + xb * 8 + i) * 3] > 127:
+                b |= 0x80 >> i
+        fb[row + xb] = b
+print('local FBTARGET = %d' % (sum(fb[i] for i in range(0, 8000, 11))
+                               + sum(fb[8000 + i] for i in range(0, 8000, 11))))
+PY
+cat > build/ws_body.lua <<'LUA'
+local frame, t, stage, injf = 0, 0, 0, 0
 local downs, wantdown, wantstart = 0, false, false
 local function inject(keys)
   t = emu.read16(0x7E00D8, emu.memType.snesMemory)
@@ -82,12 +107,12 @@ emu.addEventCallback(function()
     inject("CD \\WINDOWS\r"); stage = 1; injf = frame
   elseif stage == 1 and frame == injf + 240 then
     inject("WIN\r"); stage = 2
-  elseif stage == 2 and frame % 300 == 0 then
+  elseif stage == 2 and frame % 60 == 0 then
     local f = fbsum()
-    if f == last then stable = stable + 1 else stable = 0 end
-    last = f
-    print("PROGRESS frame=" .. frame .. " sum=" .. f)
-    if frame > 26000 and stable >= 10 then
+    if frame % 300 == 0 then
+      print("PROGRESS frame=" .. frame .. " sum=" .. f .. " want=" .. FBTARGET)
+    end
+    if f == FBTARGET then
       local png = emu.takeScreenshot()
       print("SHOT " .. png:gsub(".", function(c) return string.format("%02x", c:byte()) end))
       -- and the raw CGA bytes, so the render can be diffed against runpc's:
@@ -130,6 +155,7 @@ emu.addEventCallback(function()
   if wantstart then emu.setInput({ start = true }, 0) end
 end, emu.eventType.inputPolled)
 LUA
+cat build/ws_target.lua build/ws_body.lua > build/winsnes.lua
 "$MESEN" --testrunner "$(pwd)/build/msdos_sa1_overlay.sfc" "$(pwd)/build/winsnes.lua" \
          --timeout=3600 2>/dev/null | tee build/winsnes.log | grep -a "SETTLED\|INPUT\|TIMEOUT"
 grep -a '^SHOT ' build/winsnes.log | tail -1 | cut -d' ' -f2 | python3 -c "
