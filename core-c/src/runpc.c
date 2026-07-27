@@ -24,6 +24,11 @@
  *   -rom F@S  map file F read-only at segment S (hex): ELKS ROMCODE kernel
  *             + ROMFS windows in the 1 MB space; verified unwritten on exit
  *   -entry S:O start execution at S:O (hex) instead of the boot sector
+ *   -mouse S  drive the emulated Microsoft serial mouse (COM2, IRQ3) from a
+ *             script: comma-separated STEP:DX:DY:BUTTONS events, e.g.
+ *             -mouse 3000000:120:0:0,3400000:0:0:1,3500000:0:0:0
+ *             (BUTTONS: bit0 = left, bit1 = right). The SNES build feeds the
+ *             same device from the d-pad; this is how the C core proves it.
  * Interactive keys go straight to the guest (raw mode); quit with Ctrl-].
  * Arrow/function keys arrive as ANSI escape sequences and are translated
  * to XT scancodes (ASCII 0), so full-screen guests are drivable.
@@ -105,6 +110,16 @@ typedef struct {
                                 * painted, so a script must type SLOWER
                                 * than the screen redraws or its keys are
                                 * silently flushed. */
+    /* Microsoft serial mouse (see mouse_* below). The SNES build carries the
+     * identical device; keep the two in step. */
+    uint8_t mtx[8];          /* device -> host byte queue (packet in flight) */
+    int mth, mtt;
+    uint8_t mier, mmcr, mlcr;/* the three UART registers the driver writes */
+    int mdx, mdy;            /* motion not yet packed into a packet */
+    uint8_t mbtn, mbtn_sent; /* bit0 left, bit1 right */
+    unsigned long long mnext;/* next step a packet may be emitted */
+    unsigned long long mwhen;/* step the next -mouse event is due */
+    const char *mscript;     /* -mouse: STEP:DX:DY:B[,...] */
     int tickstep;            /* instructions per timer tick (-tick) */
     int pending_irq;         /* IRQ refused by the interrupt shadow (or by
                               * IF=0), retried each step; -1 = none */
@@ -118,6 +133,64 @@ static volatile sig_atomic_t g_stop = 0;
 static Harness *g_h;
 static X86 *g_c;          /* text-mode B800 mirror (see txt_put) */
 
+/* ------------------------------------------------------------------ */
+/* Microsoft serial mouse — an 8250 on COM2 (0x2F8), IRQ3 -> INT 0Bh    */
+/*                                                                      */
+/* Windows 1.01 has no INT 33h anywhere: SETUP links one of its own     */
+/* mouse drivers into WIN100.BIN and that driver owns the hardware.      */
+/* MOUSE.DRV ("Microsoft Mouse (Bus/Serial)") probes the bus card at    */
+/* 0x23C — which we do not answer, so the probe falls through — and     */
+/* then a 1200-baud serial mouse on COM2 first, COM1 second. Hence      */
+/* COM2: the port it tries first, so the probe's 65536-iteration        */
+/* receive-drain loop is paid once instead of twice.                    */
+/*                                                                      */
+/* What the driver actually needs, and all this implements:             */
+/*   * RTS rising (MCR bit1, written as part of 0x0B) resets the mouse, */
+/*     which answers with the identity byte 'M' — that is the probe;    */
+/*   * LSR bit0 = a byte is waiting, read from RBR at base+0;           */
+/*   * IER bit0 = raise IRQ3 while a byte is waiting;                   */
+/*   * three-byte packets: 0x40|L<<5|R<<4|(dy>>6)<<2|(dx>>6), dx&0x3F,  */
+/*     dy&0x3F, deltas signed 8-bit, Y down-positive.                   */
+/* Baud, parity and word length are written and ignored: bytes arrive   */
+/* when we say they do.                                                 */
+
+#define MOU_BASE 0x2F8
+#define MOU_VEC  0x0B
+
+static int mouse_pending(Harness *h) { return h->mth != h->mtt; }
+
+static void mouse_push(Harness *h, uint8_t b)
+{
+    int n = (h->mtt + 1) & 7;
+    if (n == h->mth) return;                     /* full: drop, like a UART */
+    h->mtx[h->mtt] = b;
+    h->mtt = n;
+}
+
+static uint8_t mouse_pop(Harness *h)
+{
+    uint8_t b;
+    if (h->mth == h->mtt) return 0;
+    b = h->mtx[h->mth];
+    h->mth = (h->mth + 1) & 7;
+    return b;
+}
+
+/* pack whatever motion/buttons have accumulated into one packet */
+static void mouse_packet(Harness *h)
+{
+    int dx = h->mdx, dy = h->mdy;
+    if (dx >  127) dx =  127;  if (dx < -128) dx = -128;
+    if (dy >  127) dy =  127;  if (dy < -128) dy = -128;
+    h->mdx -= dx;
+    h->mdy -= dy;
+    h->mbtn_sent = h->mbtn;
+    mouse_push(h, (uint8_t)(0x40 | ((h->mbtn & 1) << 5) | ((h->mbtn & 2) << 3)
+                            | (((dy >> 6) & 3) << 2) | ((dx >> 6) & 3)));
+    mouse_push(h, (uint8_t)(dx & 0x3F));
+    mouse_push(h, (uint8_t)(dy & 0x3F));
+}
+
 /* CGA status port: retrace bits must toggle or direct-video programs
  * (Turbo Pascal!) spin forever waiting for retrace to end */
 static uint8_t io_in8(X86 *c, uint16_t port)
@@ -127,6 +200,27 @@ static uint8_t io_in8(X86 *c, uint16_t port)
         unsigned long long s = g_h ? g_h->steps : 0;
         return (uint8_t)(((s >> 5) & 1) | (((s >> 11) & 1) << 3));
     }
+    if ((port & 0xFFF8) == MOU_BASE && g_h) {
+        Harness *h = g_h;
+        switch (port & 7) {
+        case 0: return (h->mlcr & 0x80) ? 0x60 : mouse_pop(h);   /* DLL/RBR */
+        case 1: return (h->mlcr & 0x80) ? 0x00 : h->mier;        /* DLM/IER */
+        case 2: return mouse_pending(h) ? 0x04 : 0x01;           /* IIR */
+        case 3: return h->mlcr;
+        case 4: return h->mmcr;
+        case 5: return (uint8_t)(0x60 | (mouse_pending(h) ? 1 : 0)); /* LSR */
+        case 6: return 0x30;                                     /* MSR: CTS+DSR */
+        default: return 0;                                       /* scratch */
+        }
+    }
+    if (port == 0x20) return 0;   /* 8259 IRR/ISR. We vector IRQs straight at
+                                   * the IVT, so nothing is ever "in service";
+                                   * 0xFF read as "some IRQ in service" and cost
+                                   * Windows 1.01 its mouse cursor — SYSTEM.DRV's
+                                   * INT 8 handler issues OCW3 (0x0B) + IN 20h
+                                   * and skips its whole timer-callback list
+                                   * unless the register reads back zero, and
+                                   * that list is what repaints the pointer. */
     if (port == 0x60 && g_h) return g_h->s60;    /* keyboard scancode latch */
     if (port == 0x61) return 0;                  /* 8255 port B */
     if (port == 0x64) return 0;                  /* KBC status: idle. 0xFF reads
@@ -228,6 +322,22 @@ static void io_out8(X86 *c, uint16_t port, uint8_t v)
     if (!g_h) return;
     if (traceio())
         fprintf(stderr, "OUT %04X <- %02X\n", port, v);
+    if ((port & 0xFFF8) == MOU_BASE) {
+        switch (port & 7) {
+        case 1: if (!(g_h->mlcr & 0x80)) g_h->mier = v; break;
+        case 3: g_h->mlcr = v; break;
+        case 4:
+            /* RTS 0 -> 1 powers the mouse: it resets and identifies itself */
+            if ((v & 2) && !(g_h->mmcr & 2)) {
+                g_h->mth = g_h->mtt = 0;
+                mouse_push(g_h, 'M');
+            }
+            g_h->mmcr = v;
+            break;
+        default: break;
+        }
+        return;
+    }
     if (port == 0x3D9) {
         g_h->cga_3d9 = v;
     } else if (port == 0x3D8) {
@@ -1113,6 +1223,10 @@ int main(int argc, char **argv)
         }
         else if (!strcmp(argv[i], "-kdelay") && i + 1 < argc)
             h.kdelay = (unsigned long long)atoll(argv[++i]);
+        else if (!strcmp(argv[i], "-mouse") && i + 1 < argc) {
+            h.mscript = argv[++i];
+            h.mwhen = strtoull(h.mscript, NULL, 10);
+        }
         else if (!strcmp(argv[i], "-rom") && i + 1 < argc) {
             char *at = strchr(argv[++i], '@');
             if (!at || h.nrom >= 4) {
@@ -1341,6 +1455,31 @@ int main(int argc, char **argv)
                 }
             }
         }
+        /* -mouse: replay the script, then let the device speak. Packets are
+         * paced one per timer tick, which is what a 40-report/second mouse
+         * looks like on a machine this slow — and is exactly the cadence the
+         * SNES build uses (one packet per NMI batch). */
+        while (h.mscript && *h.mscript && h.steps >= h.mwhen) {
+            const char *p = strchr(h.mscript, ':');
+            int dx = 0, dy = 0, b = 0;
+            if (p && sscanf(p + 1, "%d:%d:%d", &dx, &dy, &b) == 3) {
+                h.mdx += dx;
+                h.mdy += dy;
+                h.mbtn = (uint8_t)b;
+            }
+            p = strchr(h.mscript, ',');
+            h.mscript = p ? p + 1 : "";
+            h.mwhen = *h.mscript ? strtoull(h.mscript, NULL, 10) : ~0ull;
+        }
+        if (!mouse_pending(&h) && h.steps >= h.mnext
+            && (h.mdx || h.mdy || h.mbtn != h.mbtn_sent)) {
+            mouse_packet(&h);
+            h.mnext = h.steps + (unsigned)h.tickstep;
+        }
+        if (mouse_pending(&h) && (h.mier & 1)) {
+            x86_irq(c, MOU_VEC);       /* refused under the shadow: retried */
+        }
+
         /* delivery half, every iteration: hand over a queued code at the
          * first IF=1 instruction. Delivering only at pump time starves an
          * HLT-idling guest — the fast-forward jump pins pump fires to the
