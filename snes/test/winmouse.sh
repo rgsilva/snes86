@@ -103,7 +103,7 @@ s = open('dosboot.asm').read()
 for m in re.finditer(r'\.ENUM \$([0-9A-F]+)(.*?)\.ENDE', s, re.S):
     base = int(m.group(1), 16)
     for i, n in enumerate(re.findall(r'^(\w+)\s+dw', m.group(2), re.M)):
-        if n[0] == 'z':
+        if n[0] == 'z' or n in ('cJoyN', 'cNMI', 'kVIS'):
             print('local A_%s = 0x7E%04X' % (n, base + 2 * i))
 d = open('build/wm_idle.ppm', 'rb').read()
 h = d.split(b'\n', 3)
@@ -174,11 +174,37 @@ local function settle(f, period, need, deadline)
   last = v
   if stable >= need then stable = 0; last = -1; f() end
 end
+local lastqt, npkt = -1, 0
+-- Per-frame while the pad is driving: the device state, plus the guest's
+-- own CS:IP/SS:SP/FLAGS straight out of the core's direct page ($7E0000).
+-- Those four caught this bug: a re-entered mouse ISR left Windows running
+-- at CS=F7FF, far outside a 300 KB machine.
 local function trace()                         -- where the pointer intent is
-  if frame % 600 == 0 then
-    print(string.format("MOUSE stage=%d frame=%d dx=%d dy=%d q=%d/%d btn=%d",
+  local period = (stage >= 3) and 15 or 600
+  if frame % period == 0 then
+    print(string.format("MOUSE stage=%d frame=%d dx=%d dy=%d q=%d/%d btn=%d "
+          .. "on=%d ier=%02x mcr=%02x lcr=%02x bsn=%d rmp=%d joy=%04x pkt=%d "
+          .. "bdl=%d cs=%04x ip=%04x ss=%04x sp=%04x fl=%04x halt=%d",
           stage, frame, s16(A_zDX), s16(A_zDY),
-          emu.read16(A_zQH, M), emu.read16(A_zQT, M), emu.read16(A_zBTN, M)))
+          emu.read16(A_zQH, M), emu.read16(A_zQT, M), emu.read16(A_zBTN, M),
+          emu.read16(A_zON, M), emu.read16(A_zIER, M), emu.read16(A_zMCR, M),
+          emu.read16(A_zLCR, M), emu.read16(A_zBSN, M), emu.read16(A_zRMP, M),
+          emu.read16(A_cJoyN, M), npkt,
+          emu.read16(A_zBDL, M),
+          emu.read16(0x7E0012, M), emu.read16(0x7E0024, M),
+          emu.read16(0x7E0014, M), emu.read16(0x7E0008, M),
+          emu.read16(0x7E0028, M), emu.read16(0x7E0026, M)))
+  end
+  local qt = emu.read16(A_zQT, M)
+  if qt ~= lastqt then
+    npkt = npkt + 1
+    if npkt < 400 then
+      print(string.format("PKT frame=%d qh=%d qt=%d b=%02x %02x %02x %02x",
+            frame, emu.read16(A_zQH, M), qt,
+            emu.read16(A_zQ0, M) % 256, emu.read16(A_zQ1, M) % 256,
+            emu.read16(A_zQ2, M) % 256, emu.read16(A_zQ3, M) % 256))
+    end
+    lastqt = qt
   end
 end
 -- setInput only lands from an inputPolled callback (an endFrame one is
