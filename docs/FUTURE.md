@@ -392,15 +392,20 @@ What it took, and what it did not:
    `2A/AA` and `1D/9D` make/break codes, since a hooked INT 9 derives the
    modifiers from the raw stream and never reads ours.
 
-5. **The mouse works on the C core; the SNES half is still broken.** The
-   device, the driver relink and the protocol below are all real and proven
-   under `runpc -mouse`, but `snes/test/winmouse.sh` **fails at stage 2**:
-   on the 65816 the pointer does not move. Verified on the merged tree —
-   the queue drains (head==tail) yet no motion reaches Windows. Note the
-   d-pad path was validated on a branch that predated the INT 9 keyboard
-   fix, which changed interrupt-delivery timing on every machine, so that
-   merge is the first suspect. Everything from here down describes the
-   design, not a working SNES pointer. Windows 1.x is a
+5. **The mouse and the keyboard currently exclude each other on the SNES.**
+   The device, the driver relink and the protocol below are all real, and
+   the pointer *did* work on the 65816 — until the INT 9 keyboard fix
+   landed. **Bisected to a single hunk**, by reverting it and nothing else:
+   with `run_slow`'s one-instruction shadow consume removed,
+   `snes/test/winmouse.sh` **passes** (pointer walks 96 px, A clicks the
+   A: drive button, exit 0); with it restored, the pointer never moves
+   (`dx=0 dy=0`, queue draining, head==tail). So the keyboard fix — which
+   is the *correct* 8086 semantics, and which Windows' keyboard needs —
+   changed interrupt cadence enough to break the serial mouse, whose byte
+   pacing was tuned against the old, slower delivery. Neither side is
+   wrong on its own; the mouse needs re-tuning against proper interrupt
+   timing. Until then the keyboard wins, because it is the correctness
+   fix. Everything from here down describes the design. Windows 1.x is a
 mouse-first GUI, and it turns out the mouse was the *easy* half. There is no
 INT 33h anywhere in it: SETUP **links** the chosen mouse driver into
 `WIN100.BIN`, so the choice is frozen into that one file, and every driver on
