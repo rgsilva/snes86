@@ -111,6 +111,23 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
   `emu.setInput` and asserts the pointer travelled and that A clicked
   the `A:` drive button. Bring-your-own media, both files, so this is
   not a suite leg either.
+- `snes/test/wincalc.sh HDIMG [OUT.png]` — the same Windows, **running
+  an application**. One d-pad Down walks the MS-DOS Executive's
+  selection onto `CALC.EXE`, START (Enter) runs it, then SELECT raises
+  the on-screen keyboard and A types 8086 into the Calculator. Two
+  details make it repeatable: while Windows loads `CALC.EXE` off the
+  fixed disk the screen sits perfectly still for thousands of frames
+  behind an hourglass, so the rig waits for the framebuffer checksum to
+  *equal* `runpc`'s render of that moment rather than merely to stop
+  changing; and the typing is closed-loop on `kSEL`, the on-screen
+  keyboard's selected-key index, so it taps Right and re-reads until it
+  is on the key it wants instead of counting frames at a layout. Ends
+  with the same 0-of-16 000-bytes diff against the C core. `runpc`
+  paces piped keys off the step counter rather than off the guest, so
+  the oracle gets its own copy of the boot floppy with `WIN` appended
+  to `AUTOEXEC.BAT` (`build/wc_a.img`) and `-kdelay` holds the digits
+  back until the Executive is up; the ROM's floppy is untouched.
+  Bring-your-own media, so not a suite leg.
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)
   vectors, including undocumented opcodes and microcode-exact flags:
