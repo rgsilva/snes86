@@ -2774,6 +2774,13 @@ io_in8:                      ; A = port(16b) -> A = byte (0-extended)
     beq _io_p61
     cmp #$0331
     beq _io_mst
+    cmp #$0020
+    beq _io_pic
+    pha                      ; COM2 ($2F8-$2FF): the serial mouse
+    and #$FFF8
+    cmp #$02F8
+    beq _io_com2
+    pla
 .IFDEF ELKS
     cmp #$0064
     beq _io_p64
@@ -2781,6 +2788,16 @@ io_in8:                      ; A = port(16b) -> A = byte (0-extended)
 .ENDIF
     lda #$00FF
     rts
+.IFDEF DOSBIOS
+_io_pic:                     ; 8259 IRR/ISR. IRQs are vectored straight at
+    lda #$0000               ; the IVT, so nothing is ever in service —
+    rts                      ; and $FF ("something is") makes Windows'
+                             ; SYSTEM.DRV skip its whole timer-callback
+                             ; list, which is what repaints the pointer.
+_io_com2:
+    pla
+    jmp mou_in
+.ENDIF
 .IFDEF ELKS
 _io_p64:                     ; KBC status: idle. $FF reads as "always
     lda #$0000               ; busy" and ELKS's A20/8042 probe spins.

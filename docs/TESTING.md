@@ -100,6 +100,17 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
   C core's render — 0 of 16 000 may differ. Not a suite leg: the media
   is copyrighted and bring-your-own, so nothing here can run in CI. See
   [COMPATIBILITY](COMPATIBILITY.md).
+- `snes/test/winmouse.sh HDIMG DISK1-SETUP.IMG [OUT.png]` — the same
+  Windows, **with a mouse on the d-pad**. Stage 0 runs
+  `snes/tools/winmouse.py` to relink your install's `WIN100.BIN` with a
+  real `MOUSE.DRV` in place of the `NOMOUSE.DRV` stub SETUP left in it
+  (your image is never modified — the patched copy is
+  `build/win_mouse.img`); stage 1 proves the pointer on `runpc` with
+  `-mouse` (park it in the corner, walk it onto `File`, press: the menu
+  must drop); stage 2 drives the **real d-pad** in Mesen via
+  `emu.setInput` and asserts the pointer travelled and that A clicked
+  the `A:` drive button. Bring-your-own media, both files, so this is
+  not a suite leg either.
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)
   vectors, including undocumented opcodes and microcode-exact flags:
