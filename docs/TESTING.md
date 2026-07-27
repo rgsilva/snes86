@@ -128,6 +128,22 @@ Z-machine memory patterns, or GW-BASIC's interrupt habits — the messy
   to `AUTOEXEC.BAT` (`build/wc_a.img`) and `-kdelay` holds the digits
   back until the Executive is up; the ROM's floppy is untouched.
   Bring-your-own media, so not a suite leg.
+- `snes/test/winvideo.sh HDIMG [OUT.mp4]` — `wincalc.sh` with a camera
+  on it: the same ROM, the same waypoint waits, the same closed-loop
+  d-pad, plus a Mesen screenshot every few frames, assembled host-side
+  into [the demo video](COMPATIBILITY.md#gallery) with ffmpeg. Mesen's
+  Lua sandbox has no `io`, so each PNG comes back as a hex line on
+  stdout and Python cuts the log up afterwards; the frames stay in
+  `snes/build/winvid`, so `CAPTURE=0 ./test/winvideo.sh …` re-cuts the
+  video in a second instead of refilming for four minutes. The strides
+  are per-segment (1:12 through the DOS boot, 1:120 for the crawl to
+  the Executive and for the hourglass, 1:3 for the pad work), and the
+  edit additionally caps runs of *byte-identical* frames — the SNES
+  spends most of this demo not changing the screen at all, and capping
+  the still runs drops the dead air without ever speeding up something
+  that moves. It ends with an L/R pan across the 128 pixels of the
+  640×200 picture the SNES window cannot show. Bring-your-own media,
+  and it needs ffmpeg, so not a suite leg.
 - **The 8088 vector suite** — the C core against all 3,007,000
   [SingleStepTests 8088 v2](https://github.com/SingleStepTests/8088)
   vectors, including undocumented opcodes and microcode-exact flags:
