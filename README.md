@@ -58,8 +58,7 @@ For all of the apps, you can check details and examples in our [apps/README](app
 
 There's also a bunch of other tests I've done, mostly with shareware/licensed/weird software, and you can find them documented in [COMPATIBILITY](docs/COMPATIBILITY.md).
 
-Oh, and if you are curious of what can we do with it, here's a whole dev-workstation demo, 8086 on a SNES style: [video](docs/assets/devstation.mp4) ([mirror](https://youtu.be/L4caINpE8gE)).
-
+If you are curious of what can we do with it, here's a whole dev-workstation demo, 8086 on a SNES style: [video](docs/assets/devstation.mp4) ([mirror](https://youtu.be/L4caINpE8gE)). Finally, as a crazy-ass proof of concept, we also ran Windows on it: [video](docs/assets/windows_demo.mp4) ([mirror](https://youtu.be/rDoouxlaXjc)).
 
 ## Legal & credits
 

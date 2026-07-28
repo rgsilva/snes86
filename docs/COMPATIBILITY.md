@@ -13,67 +13,59 @@ All captured from snes86 running in Mesen.
 
 <table>
 <tr>
-<td align="center"><img src="assets/boot.png" width="400"><br><sub>MS-DOS 2.0 booting to <code>C:\></code></sub></td>
-<td align="center"><img src="assets/pcdos.png" width="400"><br><sub>PC DOS 2.00 — the original bring-up target</sub></td>
+<td align="center"><img src="assets/boot.png" width="400"><br><sub>MS-DOS 2.0</sub></td>
+<td align="center"><img src="assets/pcdos.png" width="400"><br><sub>PC DOS 2.00</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/gwbasic.png" width="400"><br><sub>GW-BASIC 3.23</sub></td>
-<td align="center"><img src="assets/tp3.png" width="400"><br><sub>Turbo Pascal 3.01 — the compiler that builds our tools</sub></td>
+<td align="center"><img src="assets/tp3.png" width="400"><br><sub>Turbo Pascal 3.01</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/wordstar.png" width="400"><br><sub>WordStar 3.31</sub></td>
 <td align="center"><img src="assets/multiplan.png" width="400"><br><sub>Multiplan</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/zork.png" width="400"><br><sub>Zork I — Infocom interactive fiction</sub></td>
-<td align="center"><img src="assets/zork2.png" width="400"><br><sub>Zork II: The Wizard of Frobozz</sub></td>
+<td align="center"><img src="assets/zork.png" width="400"><br><sub>Zork I</sub></td>
+<td align="center"><img src="assets/zork2.png" width="400"><br><sub>Zork II</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/zork3.png" width="400"><br><sub>Zork III: The Dungeon Master</sub></td>
+<td align="center"><img src="assets/zork3.png" width="400"><br><sub>Zork III</sub></td>
 <td align="center"><img src="assets/planetfall.png" width="400"><br><sub>Planetfall</sub></td>
 </tr>
 <tr>
 <td align="center"><img src="assets/wishbringer.png" width="400"><br><sub>Wishbringer</sub></td>
-<td align="center"><img src="assets/sokoban.png" width="400"><br><sub>Sokoban — our own CGA game, with source</sub></td>
+<td align="center"><img src="assets/sokoban.png" width="400"><br><sub>Sokoban (our own CGA game)</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue — the roguelike that named the genre (needs the big SA-1 machine)</sub></td>
-<td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1 (<code>make boot DISK=disks/fs1.img</code>)</sub></td>
+<td align="center"><img src="assets/rogue.png" width="400"><br><sub>Rogue</sub></td>
+<td align="center"><img src="assets/fs1.png" width="400"><br><sub>Microsoft Flight Simulator 1</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/si.png" width="400"><br><sub>Norton SI — Computing Index 0.0 vs the IBM/XT</sub></td>
-<td align="center"><img src="assets/midi.png" width="400"><br><sub>MIDPLAY — the SNES as a MIDI synth</sub></td>
+<td align="center"><img src="assets/si.png" width="400"><br><sub>Norton SI</sub></td>
+<td align="center"><img src="assets/midi.png" width="400"><br><sub>MIDPLAY (our MIDI playback mechanism for the SNES)</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/gameboy.png" width="400"><br><sub>GB.COM — a Game Boy inside DOS inside a SNES: the boot logo, four machines deep</sub></td>
-<td align="center"><img src="assets/tetris.png" width="400"><br><sub>Tetris® (1989) title screen — a real cartridge running on GB.COM, on the SNES</sub></td>
+<td align="center"><img src="assets/gameboy.png" width="400"><br><sub>GB.COM (a Game Boy emulator inside DOS inside a SNES)</sub></td>
+<td align="center"><img src="assets/tetris.png" width="400"><br><sub>GB.COM running Tetris (1989) title screen</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="assets/elks.png" width="480"><br><sub>ELKS 0.9.1 — Linux on the SNES: boot, <code>login: root</code>, <code>uname</code>, <code>meminfo</code>. Kernel and apps execute in place from cartridge ROM (<code>make elks</code>)</sub></td>
-<td align="center"><img src="assets/freedos.png" width="480"><br><sub>FreeDOS 1.3 — kernel + FreeCOM booting to <code>A:\></code> on the 300 KB SA-1 machine, reading the C: tools (<code>make freedos</code>)</sub></td>
+<td align="center"><img src="assets/elks.png" width="400"><br><sub>ELKS 0.9.1</sub></td>
+<td align="center"><img src="assets/freedos.png" width="400"><br><sub>FreeDOS 1.3</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/windows.png" width="640"><br><sub>Microsoft Windows 1.01 — the MS-DOS Executive, the real 1985 GUI, in CGA mode 6 (640×200) on the 300 KB SA-1 machine. Menus, drive buttons, the file list, the dithered desktop; the mode-6 window shows 512 of the 640 pixels and L/R pans the rest. It boots, paints, and answers one controller both ways: with the on-screen keyboard open the d-pad types, straight into the INT 9 handler Windows installs for itself; with it closed the d-pad <em>is</em> the pointer, through an emulated Microsoft serial mouse on COM2, and A is the left button. Bring your own media: <code>snes/test/winsnes.sh</code></sub></td>
+<td align="center"><img src="assets/windows_mouse.png" width="400"><br><sub>Microsoft Windows 1.01 (bonus: with a mouse!)</sub>
+<td align="center"><img src="assets/windows_calc.png" width="400"><br><sub>Microsoft Windows 1.01 running a calculator</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/windows_mouse.png" width="640"><br><sub>…and the same controller as a <i>mouse</i>. With the on-screen keyboard closed the d-pad drives Windows' pointer through an emulated Microsoft serial mouse on COM2 (IRQ3, the 3-byte protocol, bytes clocked out at 1200 baud): here it has walked from the middle of the screen into the top-left corner and back down onto the <b>A:</b> drive button, and A — the left button — clicked it, so Windows read the floppy and listed it. No pixel of this was typed (<code>snes/test/winmouse.sh</code>)</sub></td>
+<td align="center"><img src="assets/ted.png" width="400"><br><sub>TED (our controller-first text editor)</sub>
+<td align="center"><img src="assets/java.png" width="400"><br><sub>JAVAC.EXE + JAVA.COM (our Java compiler and virtual machine)</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><img src="assets/windows_calc.png" width="640"><br><sub>…and a Windows <i>application</i>, opened and used with the pad. One d-pad Down walks the Executive's selection onto <code>CALC.EXE</code>, START is Enter, and Windows spends a few thousand frames behind an hourglass loading it; SELECT then raises the on-screen keyboard and A presses the keys, so <b>8086</b> is really typed into the Calculator through the INT 9 handler Windows installed for itself. The Executive is the icon bottom-left. Every one of those 16 000 CGA bytes matches what the C core renders from the same keystrokes (<code>snes/test/wincalc.sh</code>)</sub></td>
+<td align="center"><img src="assets/cc.png" width="400"><br><sub>CC (Small-C toolchain)</sub></td>
+<td align="center"><img src="assets/vi.png" width="400"><br><sub>VI</sub></td>
 </tr>
 <tr>
-<td align="center" colspan="2"><sub>🎬 …and <b><a href="assets/windows_demo.mp4">the whole thing as one take</a></b> (51 s): MS-DOS 2.0 boots, <code>CD \WINDOWS</code>, <code>WIN</code>, and then ~38 000 frames of crawl to the MS-DOS Executive as a timelapse; one d-pad Down onto <code>CALC.EXE</code>, START, the hourglass; <b>8086</b> going into the Calculator a key at a time; and L/R panning across the 128 pixels of the 640×200 picture the SNES window cannot show, which no still can. Every frame of it is a Mesen screenshot of the SA-1 ROM, sampled thin where the machine is slow and thick where it is not — nothing is re-enacted and the guest is never sped up (<code>snes/test/winvideo.sh</code>)</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="assets/ted.png" width="480"><br><sub>TED — our controller-first text editor, mid-edit on <code>B:NOTE.TXT</code>. The B: drive is battery-backed cartridge SRAM: quit, power off, and the file is still there, like a game save</sub>
-<td align="center"><img src="assets/java.png" width="480"><br><sub>JAVAC.EXE + JAVA.COM — the SNES compiles Java and runs it: JAVAC building <code>HELLO.JAV</code> into bytecode on the machine itself, then JAVA interpreting the result (<code>C:\JAVA</code>)</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="assets/cc.png" width="480"><br><sub>CC — the public-domain Small-C toolchain compiling and running <code>HELLO.C</code> on the battery-backed B: drive, ~14 minutes of authentic 1982 build time (measured on the machine) (<code>C:\CC</code>)</sub></td>
-<td align="center"><img src="assets/vi.png" width="480"><br><sub>VI — levee 4.0b, a real vi, mid-insert with the tilde column: BSD-licensed, cross-compiled for MS-DOS 2.0 with Open Watcom, on the PATH (<code>C:\VI</code>)</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="assets/view.png" width="480"><br><sub>VIEW.COM — our Turbo Pascal BMP/PCX viewer rendering the generated test card in CGA mode 4: 320×200 in palette 1 (cyan/magenta/white), decoded pixel-by-pixel on the emulated 8086 in hand-written machine code — the full paint takes ~12 minutes of watching it crawl up the screen, exactly as the eighties intended. <code>VIEW CARD.BMP</code> without the <code>4</code> renders the 640×200 mode-6 halftone instead (M10p6)</sub></td>
+<td align="center"><img src="assets/view.png" width="400"><br><sub>VIEW.COM (our Turbo Pascal BMP/PCX viewer)</sub></td>
 </tr>
 </table>
 
