@@ -93,7 +93,8 @@ aNP      dw                  ; CSI parameter count
 cGFX     dw                  ; 0 = text, 1 = CGA graphics (mode 4/5/6)
 s3D8     dw                  ; port 3D8 shadow (mode select)
 s3D9     dw                  ; port 3D9 shadow: bit5 pal, bit4 bright, low bg
-cPALD    dw                  ; palette dirty -> NMI rewrites CGRAM 0-3
+cPALD    dw                  ; CGA palette dirty -> the NMI reapplies it
+                             ; (graphics mode only)
 gROW     dw                  ; gfx scanner round-robin tile row (0-24)
 gSTG     dw                  ; staged tile row + 1 awaiting VRAM DMA (0=none)
 s60      dw                  ; INT9: port 60h scancode latch
@@ -3828,7 +3829,9 @@ _ke_4:
     stz kMOD
     rts
 
-kbd_color:                   ; A = key idx, X = palette bits ($0000/$0400)
+kbd_color:                   ; A = key idx, X = palette bits: $0000 for a
+                             ; normal key (pair 0), $1C00 for the selected
+                             ; one (pair 7, the fixed yellow highlight)
     stx kT0
     jsr kbd_rec_x
     lda.l kbd_keys,x
