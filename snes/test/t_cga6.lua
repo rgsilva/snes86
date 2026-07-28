@@ -51,8 +51,8 @@ emu.addEventCallback(function()
     local b3 = emu.readWord(0x5800, emu.memType.snesVideoRam)   -- row 24 @$2C00
     -- the solid white band (scanlines 96-111) fills tile row 12:
     local wb = emu.readWord(0xD000, emu.memType.snesVideoRam)   -- row 12 @$6800
-    local c0 = emu.readWord(0, emu.memType.snesCgRam)           -- black
-    local c1 = emu.readWord(2, emu.memType.snesCgRam)           -- white
+    local c0 = emu.readWord(0,  emu.memType.snesCgRam)          -- black (backdrop)
+    local c1 = emu.readWord(34, emu.memType.snesCgRam)          -- white (CGA group)
     -- glyph blitter: 'L' at row 1 col 0 -> fb byte (10>>1)*80 = 400;
     -- a control cell at col 40 keeps the AA stripes
     local go = emu.read(0x7E1000 + 400, emu.memType.snesMemory)

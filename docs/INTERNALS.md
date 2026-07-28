@@ -150,7 +150,9 @@ first time an attribute byte appears on screen, `sr_alloc` claims a free palette
 that attribute's two colours into CGRAM during vblank, and records it in a lookup table;
 the scanner then points each cell at whatever palette its attribute resolved to. A handful
 of pairs are available (1–3 and 5–6); once they're spent, further attributes fall back to
-green. The 16 CGA colours themselves become 15-bit SNES RGB through a build-time table
+green. Pair 4 is unusable for text — its 2bpp CGRAM entries *are* pair 1's 4bpp ones — which
+is exactly why the CGA graphics palette gets to live there (see below). The 16 CGA colours
+themselves become 15-bit SNES RGB through a build-time table
 (`snes/tools/mkcgalut.py`), and ANSI.SYS SGR colours map in through a small ANSI→CGA index table.
 
 40 and 80 columns. Modes 0/1 are 40 columns, modes 2/3 are 80. The physical console is 64
@@ -165,6 +167,17 @@ L/R hardware-scroll to the rest. The guest's bitmap in adapter RAM is blitted in
 tiles one tile row per frame (a full repaint every 25 frames), the four-colour CGA palette
 goes to CGRAM, and `INT 10h` teletype in a graphics mode blits font glyphs straight into
 the bitmap; scrolling shifts the whole bitmap up eight scanlines.
+
+The graphics palette gets its own CGRAM group. The bitmap layers are 2bpp, so a tilemap
+palette *p* maps pixel values 1–3 onto CGRAM 4*p*+1…4*p*+3 — and value 0 is transparent on
+any SNES background layer, so the CGA background colour is simply the backdrop (CGRAM 0).
+`pal_apply` puts values 1–3 in group 4 (CGRAM 17–19), the one 2bpp group with no text pair
+of its own. That keeps the CGA colours clear of pair 0 (CGRAM 1/2) — which is what the
+on-screen keyboard's normal keys are drawn in, and which the guest's palette would otherwise
+repaint out from under them: in mode 6 both entries became the mono foreground and every key
+label vanished into its own background, leaving only the pair-7 highlight visible. Group 4's
+2bpp entries are dynamic pair 1's 4bpp entries, so `gfx_exit` puts those two colours back on
+the way out (`t_kbdgfx` is the regression leg).
 
 Mode 6 — CGA's 640×200 hi-res mono — gets its own machine. The whole frame stays in SNES
 mode 5 (the same 512px hi-res the text console uses) with the bitmap on BG2 as 2bpp tiles,

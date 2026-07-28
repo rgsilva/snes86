@@ -135,6 +135,12 @@ zBTN     dw                  ; bit0 left (A), bit1 right (B)
 zBSN     dw                  ; button state the last packet carried
 zRMP     dw                  ; frames a direction has been held: the ramp
 zBDL     dw                  ; frames until the next byte is off the wire
+; NOTE: append new words HERE — the Mesen legs hardcode addresses in
+; this block (cGFX = $7E07AE, cMODE = $7E078E, ...), so an insert in the
+; middle silently retargets every one of them.
+nP1B     dw                  ; dynamic pair 1's colors, kept so gfx_exit
+nP1F     dw                  ; can put back the CGRAM the CGA palette
+                             ; borrows (17/18 = 4bpp pair 1 = 2bpp pal 4)
 .ENDE
 
 ; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
@@ -155,6 +161,16 @@ zBDL     dw                  ; frames until the next byte is off the wire
 .DEFINE CG6B1 $5000          ; rows 0-15: chars 0-1023 at base $5000
 .DEFINE CG6B2 $7000          ; rows 16-23: chars 0-511 at base $7000
 .DEFINE CG6B3 $2C00          ; row 24: chars 384-447 at base $2000
+
+; CGA graphics palette group. The bitmap layers are 2bpp, so a tilemap
+; palette p maps pixel values 1-3 onto CGRAM 4p+1..4p+3 (value 0 is
+; always transparent -> the backdrop, CGRAM 0). Group 4 is the one 2bpp
+; group with no dynamic text pair of its own (pair 4 is unusable for
+; text because its 2bpp slots ARE 4bpp pair 1's — see the CGRAM comment
+; in Reset), which leaves pair 0 (CGRAM 1/2) free for the on-screen
+; keyboard in graphics mode. gfx_exit restores CGRAM 17/18 for pair 1.
+.DEFINE CGPALB $1000         ; tilemap palette bits (group 4)
+.DEFINE CGPAL1 17            ; CGRAM index of pixel value 1
 
 .BANK 0 SLOT 0
 .ORG 0
@@ -458,6 +474,8 @@ _ar_l:
     bcc _ar_l
     stz.w $040E              ; attr $07 = the fixed green pair
     stz nNEXT
+    stz nP1B                 ; nothing allocated -> pair 1's CGRAM is black
+    stz nP1F
     lda #$0007
     sta cATTR
     rts
@@ -2215,8 +2233,10 @@ _vb_sgo:
 _vb_nstg:
     lda cPALD
     beq _vb_ngfx
-    jsr pal_apply
     stz cPALD
+    lda cGFX                 ; a text-mode guest poking 3D9 must not repaint
+    beq _vb_ngfx             ; CGRAM behind the console's back
+    jsr pal_apply
 _vb_ngfx:
     ldy #24                  ; drain budget (queue now kbd-only)
 _vb_drain:
@@ -3324,6 +3344,14 @@ _sa_go:
     tax
     lda.l cga_pal,x
     sta nBG
+    lda nP
+    cmp #1                   ; pair 1's 4bpp slots (CGRAM 17/18) are what
+    bne _sa_np1              ; the CGA palette borrows in graphics mode —
+    lda nBG                  ; remember them for gfx_exit to put back
+    sta nP1B
+    lda nFG
+    sta nP1F
+_sa_np1:
     lda nP
     asl a
     asl a
@@ -4820,8 +4848,12 @@ _hpg_msk:
     sta gAX
     rts
 
-pal_apply:                   ; CGRAM 0-3 from s3D9 (forced blank or vblank!
+pal_apply:                   ; CGA colors from s3D9 (forced blank or vblank!
     phy                      ; NMI-off in guest ctx). kT3 is scratch.
+                             ; Pixel value 0 is transparent on a 2bpp BG,
+                             ; so it comes out of the backdrop (CGRAM 0);
+                             ; values 1-3 live in group CGPAL1.. so that
+                             ; the keyboard's pair 0 (CGRAM 1/2) survives.
     sep #$20
     lda.b #$00
     sta.l $002121
@@ -4842,6 +4874,8 @@ _pa_bgw:
     sta.l $002122
     xba
     sta.l $002122
+    lda.b #CGPAL1            ; values 1-3 -> the CGA group, NOT CGRAM 1-3
+    sta.l $002121
     rep #$20
     ldy #1                   ; entries 1-3: idx = v*2 + pal + bright*8;
 _pa_c:                       ; mode 6 (3D8 bit4): fg = 3D9's low nibble
@@ -5047,6 +5081,7 @@ _ge_tile:                    ; cT1 = r, X = c: write one tilemap entry
 _get_z:
     lda #0
 _get_w:
+    ora #CGPALB              ; CGA colors live in their own CGRAM group
     sta.l $002118
     rts
 
@@ -5087,6 +5122,7 @@ _g6t_c:
 _g6t_z:
     lda #0
 _g6t_w:
+    ora #CGPALB              ; CGA colors live in their own CGRAM group
     sta.l $002118
     rts
 
@@ -5127,14 +5163,28 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     lda.b #$05
     sta.l $004361
     lda.b #$00               ; CGRAM 0-2: backdrop black, pair0 black/green
-    sta.l $002121
-    sta.l $002122
+    sta.l $002121            ; (pal_apply only moves the backdrop now, but
+    sta.l $002122            ; pair 0 is cheap to reassert)
     sta.l $002122
     sta.l $002122
     sta.l $002122
     lda.b #$E0
     sta.l $002122
     lda.b #$03
+    sta.l $002122
+    lda.b #CGPAL1            ; put dynamic pair 1's 4bpp colors back: the
+    sta.l $002121            ; CGA palette borrowed CGRAM 17/18/19 while
+    rep #$20                 ; the bitmap was up
+    lda nP1B
+    sep #$20
+    sta.l $002122
+    xba
+    sta.l $002122
+    rep #$20
+    lda nP1F
+    sep #$20
+    sta.l $002122
+    xba
     sta.l $002122
     rep #$20
     stz cGFX
