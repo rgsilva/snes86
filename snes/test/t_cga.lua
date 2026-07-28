@@ -44,10 +44,12 @@ emu.addEventCallback(function()
   if armed > 0 and frame == armed then
     local v0 = emu.readWord(0xA0A0, emu.memType.snesVideoRam)   -- tile 10 line 0
     local v1 = emu.readWord(0xA0A2, emu.memType.snesVideoRam)   -- tile 10 line 1
-    local c0 = emu.readWord(0, emu.memType.snesCgRam)           -- bg blue
-    local c1 = emu.readWord(2, emu.memType.snesCgRam)           -- cyan
-    local c2 = emu.readWord(4, emu.memType.snesCgRam)           -- magenta
-    local c3 = emu.readWord(6, emu.memType.snesCgRam)           -- light gray
+    -- CGA colors live in CGRAM group 4 (pixel value v -> CGRAM 16+v);
+    -- value 0 is transparent on a 2bpp BG, so it comes from the backdrop.
+    local c0 = emu.readWord(0,  emu.memType.snesCgRam)          -- bg blue
+    local c1 = emu.readWord(34, emu.memType.snesCgRam)          -- cyan
+    local c2 = emu.readWord(36, emu.memType.snesCgRam)          -- magenta
+    local c3 = emu.readWord(38, emu.memType.snesCgRam)          -- light gray
     -- glyph blitter: "OK" at row 22 col 1; fb even-line-2 of the 'O'
     -- cell = (22*4+1)*80 + 1*2 = 7122; a control cell keeps the AA fill
     local go = emu.read(0x7E1000 + 7122, emu.memType.snesMemory)
