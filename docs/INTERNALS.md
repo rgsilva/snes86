@@ -237,6 +237,64 @@ nothing. Both tools ship with Turbo Pascal source in `C:\MIDI`.
 
 See [COMPATIBILITY](COMPATIBILITY.md) for the MIDI feature from a user's view.
 
+### A real keyboard: the Pico adapter on port 2
+
+The plain cartridge (`msdos.sfc`, and the `make boot` ROMs) also takes keys from
+the Pico W adapter built for [SNOS](https://github.com/rgsilva/snos): a Pico W on
+controller port 2 with a USB-console or Bluetooth keyboard behind it. The firmware
+is SNOS's, unchanged (`pico/` and `docs/pico-adapter.md` in that repository cover
+the wiring and the protocol); snes86 speaks just enough of its link to be handed
+the keyboard channel. The SA-1 machines assemble without any of this. All of it is
+`pk_*` in `dosboot.asm`.
+
+The wire. Five conductors, the console is the master: each bit is a `$4016` write
+(LATCH carries the console's bit) followed by a `$4017` read (DATA1 returns the
+adapter's bit, inverted, and the read is the clock). A frame is 64 bytes each way,
+MSB first, and the adapter finds its start by the 300 µs of silence before it.
+`pk_xfer` is that exchange, with the bit cell SNOS runs on real hardware.
+
+The link. A frame is `[seq][ack][flags][checksum]` and then records
+`[channel][length][bytes]`. The console probes with bare frames; once an adapter
+answers it sends SYN until the adapter acknowledges it, and takes nothing before
+that, so keys left in the adapter by an earlier session are dropped rather than
+typed. After that it only acknowledges. Channel `$11` records are key bytes; every
+other channel is stepped over.
+
+The keys. The firmware has already translated its US layout, so a key arrives as
+ASCII, Ctrl-letter as 1–26, or `$1C`–`$1F` for an arrow. `tools/mkpickeys.py`
+generates the table that turns each byte back into the INT 16h word and the
+modifier a guest with its own INT 9 handler must see held around it, and the key
+goes through `kb_push`, the same door the on-screen keyboard uses. In between sits
+a 127-byte FIFO, drained only while the INT 16h ring and the INT 9 queue have
+room; while the FIFO could not hold another frame the console stops asking, and
+the adapter keeps the keys.
+
+What the firmware does not send, snes86 cannot type: there are no function keys,
+no Alt, no Home/End/PgUp/PgDn/Ins/Del and no key releases on the wire. The
+on-screen keyboard still has F1–F12.
+
+The cost. One exchange is ~107,000 master cycles, 79 scanlines, close to a third
+of a frame, so the NMI rations them. The adapter writes its next frame when an
+exchange ends and holds one more in front of it, so a key crosses on the third
+exchange after it is pressed. Periodic exchanges therefore come in pairs, a frame
+apart, and the frame after any exchange *peeks*: it clocks three bytes of the frame
+the adapter has staged (a burst the adapter drops by its length, as it drops the
+auto-joypad read) and runs another exchange only if the flags say there are
+records. Nothing starts past scanline 116 (CGA mode 4 keeps the NMI busy until
+line 86): the handler has to be out before the next vblank. The time between
+pairs depends on what the guest is doing:
+
+| the guest… | a pair every | costs |
+|---|---|---|
+| has no adapter answering | 240 frames | under 1% |
+| is blocked in INT 16h AH=0 | every frame | nothing it could use |
+| got a key in the last second | 4 frames | |
+| keeps asking INT 16h AH=1 for a key | 8 frames | |
+| is doing something else | 16 frames | about 6% (measured on `DIR`) |
+
+Measured against the adapter model in `test/t_pico.lua`: a key typed at an idle
+`C:\>` reaches the guest in 50–150 ms, and in 35–85 ms once typing is under way.
+
 ---
 
 ## Booting Linux: the ELKS machine
@@ -449,6 +507,7 @@ at any depth, and the ELKS boot is verified register-exact through step 450,000.
 | the CPU core + dispatch + lazy flags | `snes/cpu.asm` (header block is the best summary) |
 | memory access, segment bases, string/mul/div, the SA-1 seam | `snes/cpu2.asm` |
 | the HLE BIOS, the machine, the MIDI card, boot | `snes/dosboot.asm` |
+| the Pico keyboard on port 2 | `pk_*` in `snes/dosboot.asm`, `snes/tools/mkpickeys.py`, `snes/test/t_pico.lua` |
 | the ELKS variant: ROM windows, folds, seam bounce | `snes/elks.asm` + the `.IFDEF ELKS` blocks in `cpu.asm`/`cpu2.asm`/`dosboot.asm` |
 | the deep ELKS lockstep harness | `snes/test/elkstrace.sh` |
 | the SPC-700 synth | `snes/spc_midi.asm` |

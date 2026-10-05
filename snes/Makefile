@@ -25,7 +25,8 @@ endif
 DOSDEPS := dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin \
            build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin \
            build/font_bg1.bin build/spc_midi64.bin build/cgalut.bin \
-           build/aluflat.asm build/cgafont.bin build/trace_meta.asm
+           build/aluflat.asm build/cgafont.bin build/trace_meta.asm \
+           build/pickeys.asm
 
 # wlalink linkfiles are two generated lines — build/<stem>.link
 build/%.link:
@@ -234,6 +235,9 @@ build/bdisk.bin: tools/mkbdisk.py
 
 build/kbdlayout.asm: tools/mkkbd.py
 	python3 tools/mkkbd.py build
+
+build/pickeys.asm: tools/mkpickeys.py
+	python3 tools/mkpickeys.py build
 
 build/cgalut.bin: tools/mkcgalut.py
 	python3 tools/mkcgalut.py build/cgalut.bin

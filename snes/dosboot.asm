@@ -18,6 +18,14 @@
 .DEFINE DOSBIOS
 .INCLUDE "build/trace_meta.asm"
 
+; The Pico keyboard (pk_*, below) rides the plain cartridge only: the
+; SA-1 machines and the lockstep trace build assemble without it.
+.IFNDEF SA1
+.IFNDEF TRACE
+.DEFINE PICOKBD
+.ENDIF
+.ENDIF
+
 .INCLUDE "hdr_dos.asm"
 .INCLUDE "cpu.asm"
 .INCLUDE "cpu2.asm"
@@ -142,6 +150,33 @@ zBDL     dw                  ; frames until the next byte is off the wire
 nP1B     dw                  ; dynamic pair 1's colors, kept so gfx_exit
 nP1F     dw                  ; can put back the CGRAM the CGA palette
                              ; borrows (17/18 = 4bpp pair 1 = 2bpp pal 4)
+.ENDE
+
+; Pico keyboard (pk_*): the two link frames, the key FIFO and the link
+; state. Page 1-2 of low WRAM, zeroed at reset like the rest.
+.DEFINE PK_FRAME 64          ; bytes per exchange; the firmware's LINK_FRAME
+.ENUM $0100
+pkTX     ds PK_FRAME         ; the frame the next exchange sends
+pkRX     ds PK_FRAME         ; the frame the last exchange received
+pkFIFO   ds 128              ; key bytes accepted and not yet typed
+pkUP     dw                  ; the adapter answered: poll at the live rate
+pkAGE    dw                  ; frames since the last exchange
+pkMISS   dw                  ; bad exchanges in a row
+pkRXN    dw                  ; the peer sequence expected next (low byte)
+pkST     dw                  ; bit0 our SYN is going out, bit1 the peer's
+                             ; SYN seen, bit2 our SYN acknowledged
+pkFH     dw                  ; key FIFO head (the link) and tail (the
+pkFT     dw                  ; drain into kb_push)
+pkHOT    dw                  ; frames of fast polling left after a key
+pkBLK    dw                  ; the guest is blocked in INT 16h AH=0
+pkATT    dw                  ; rises as the guest asks INT 16h AH=1 for a
+                             ; key and finds none, falls by the frame
+pkPAIR   dw                  ; the next frame owes a pair's second exchange
+pkCH     dw                  ; record walk: channel, bytes left, and the
+pkLEN    dw                  ; FIFO head it would commit
+pkNH     dw
+pkMOD    dw                  ; kMOD kept across a key
+pkN      dw                  ; bytes the next pk_xfer moves
 .ENDE
 
 ; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
@@ -1482,6 +1517,10 @@ _h16_ours0:
 _h16_empty0:
     dey                      ; ring empty: rewind IP so INT 16h re-executes
     dey                      ; (emulator-level blocking; NMI will add keys)
+.IFDEF PICOKBD
+    lda #3                   ; a blocked guest has nothing better to do
+    sta.w pkBLK              ; with the cycles: poll the adapter every frame
+.ENDIF
     rts
 _h16_n0:
     cmp #$0001
@@ -1513,6 +1552,16 @@ _h16_zf1:
     lda fSTATIC
     ora #F_ZF
     sta fSTATIC
+.IFDEF PICOKBD
+    lda.w pkATT              ; a guest that keeps asking gets the adapter
+    clc                      ; polled more often
+    adc #3
+    cmp #13
+    bcc _h16_att
+    lda #12
+_h16_att:
+    sta.w pkATT
+.ENDIF
     rts
 _h16_n1:
     cmp #$0002
@@ -2279,6 +2328,11 @@ _vb_jw:
 _vb_txts:
     jsr scan_rows            ; LAST: if the repaint overruns vblank only
 _vb_done:
+.IFDEF PICOKBD
+    rep #$30
+    jsr pk_frame             ; after everything vblank owns: an exchange
+                             ; is ~79 scanlines of port clocks, no PPU
+.ENDIF
     rep #$30
     plb
     ply
@@ -2839,6 +2893,9 @@ _rst_mv:
     jsr attr_reset
     jsr apu_upload
     jsr con_clear
+.IFDEF PICOKBD
+    jsr pk_init
+.ENDIF
 
     ; -- NMI + autojoy on, screen on
     sep #$20
@@ -5485,6 +5542,424 @@ _g6s_done:
 _g6s_st:
     sta gROW
     rts
+
+;----------------------------------------------------------------------
+; Pico keyboard: the SNOS Pico W adapter on controller port 2, firmware
+; unchanged, keyboard records only. Five wires, the console is the
+; master: each bit is a $4016 write (LATCH carries our bit) and a $4017
+; read (DATA1 returns the adapter's, inverted, and clocks it). A frame
+; is PK_FRAME bytes each way, MSB first, found by the silence before it:
+;
+;   [0] seq  [1] ack  [2] flags (1 DATA, 2 SYN)  [3] sum of the others
+;   [4..] records [channel][length][bytes], padded with $FF
+;
+; Only channel $11 is read: key bytes, already ASCII (pk_keytab). The
+; adapter resends a frame until it is acknowledged, so a frame whose
+; keys do not fit the FIFO is left unacknowledged and comes again; while
+; the FIFO is that full the console does not ask at all.
+; Bare frames probe for the adapter. Once one answers, the console sends
+; SYN until the adapter acknowledges it and takes no keys before that:
+; the SYN drops whatever the adapter held.
+;
+; All of it runs at the tail of the NMI. An exchange is ~107,000 master
+; cycles, 79 scanlines, so it is rationed. The adapter writes a frame
+; when an exchange ends and may hold one more in front of it, so a key
+; crosses on the third exchange after it is pressed: periodic exchanges
+; come in pairs, a frame apart. The frame after any exchange peeks:
+; three bytes of the frame now staged, a burst the adapter drops by its
+; length as it drops the auto-joypad read's, and while the flags say
+; DATA another exchange follows at once. The period between pairs:
+;
+;   PK_PROBE  no adapter has answered
+;   1         the SYN is not acknowledged yet, or the guest is blocked
+;             in INT 16h AH=0 and has no use for the cycles
+;   PK_HOTP   a key arrived in the last PK_HOT frames
+;   PK_ATTP   the guest keeps asking INT 16h AH=1 for a key
+;   PK_IDLE   otherwise
+;----------------------------------------------------------------------
+.IFDEF PICOKBD
+.DEFINE PK_PROBE 240
+.DEFINE PK_IDLE  16
+.DEFINE PK_ATTP  8
+.DEFINE PK_HOTP  4
+.DEFINE PK_HOT   60
+.DEFINE PK_ATTN  6           ; pkATT at or past this: the guest is asking
+.DEFINE PK_MISS  30          ; bad exchanges in a row: the adapter is gone
+
+pk_init:                     ; the probe: a bare frame, all padding
+    php
+    rep #$30
+    ldx #PK_FRAME-2
+    lda #$FFFF
+_pi_pad:
+    sta.w pkTX,x
+    dex
+    dex
+    bpl _pi_pad
+    stz.w pkTX               ; seq 0, the ack is set per exchange
+    stz.w pkTX+2             ; no flags
+    lda #PK_PROBE-8          ; the first probe comes early
+    sta.w pkAGE
+    plp
+    rts
+
+.ACCU 16
+pk_frame:                    ; NMI tail, once a frame. A16/XY16, DBR=0
+    jsr pk_drain
+    lda.w pkHOT
+    beq _pf_h
+    dec a
+    sta.w pkHOT
+_pf_h:
+    lda.w pkBLK
+    beq _pf_b
+    dec a
+    sta.w pkBLK
+_pf_b:
+    lda.w pkATT
+    beq _pf_a
+    dec a
+    sta.w pkATT
+_pf_a:
+    lda.w pkFH               ; no exchange the FIFO might have to refuse:
+    sec                      ; a frame carries up to 58 keys
+    sbc.w pkFT
+    and #$007F
+    cmp #70
+    bcs _pf_far
+    sep #$20                 ; where the beam is: a peek and an exchange
+    lda $2137                ; are ~95 lines, and the handler must be out
+    lda $213D                ; before the next vblank raises NMI again.
+    xba                      ; Lines 256-261 read 0-5
+    lda $213D
+    rep #$20
+    xba
+    and #$00FF
+    cmp #117
+    bcc _pf_fits
+    cmp #225
+    bcs _pf_fits
+_pf_far:
+    rts
+_pf_fits:
+    inc.w pkAGE
+    lda.w pkPAIR             ; the second exchange of a pair
+    beq _pf_per
+    stz.w pkPAIR
+    bra _pf_go
+_pf_per:
+    lda #PK_PROBE
+    ldx.w pkUP
+    beq _pf_cmp
+    lda.w pkST
+    and #$0004
+    beq _pf_one
+    lda.w pkBLK
+    bne _pf_one
+    lda #PK_HOTP
+    ldx.w pkHOT
+    bne _pf_cmp
+    lda #PK_ATTP
+    ldx.w pkATT
+    cpx #PK_ATTN
+    bcs _pf_cmp
+    lda #PK_IDLE
+    bra _pf_cmp
+_pf_one:
+    lda #1
+_pf_cmp:
+    cmp.w pkAGE
+    beq _pf_due
+    bcc _pf_due
+    lda.w pkAGE              ; not due. The frame after an exchange, once
+    dec a                    ; the SYN is through, peek at what the
+    bne _pf_ret              ; adapter has staged
+    lda.w pkST
+    and #$0004
+    beq _pf_ret
+    lda #3
+    sta.w pkN
+    jsr pk_xfer
+    lda.w pkRX+2
+    and #$00FF
+    cmp #4                   ; a dead line reads $FF
+    bcs _pf_ret
+    lsr a
+    bcs _pf_go
+_pf_ret:
+    rts
+_pf_due:
+    lda #1
+    sta.w pkPAIR
+_pf_go:
+    stz.w pkAGE
+    jsr pk_build
+    lda #PK_FRAME
+    sta.w pkN
+    jsr pk_xfer
+    jsr pk_recv
+    jmp pk_drain             ; what just arrived is typed this frame
+
+.ACCU 16
+pk_build:                    ; ack and checksum into pkTX
+    sep #$20
+    lda.w pkRXN
+    dec a
+    sta.w pkTX+1
+    stz.w pkTX+3
+    lda.b #0
+    ldx #PK_FRAME-1
+_pb_sum:
+    clc
+    adc.w pkTX,x
+    dex
+    bpl _pb_sum
+    sta.w pkTX+3
+    rep #$20
+    rts
+
+pk_xfer:                     ; pkN bytes of pkTX out, as many into pkRX
+    sep #$20
+    ldx #$0200
+_px_busy:                    ; an auto-joypad read clocks the port too
+    lda $4212
+    lsr a
+    bcc _px_idle
+    dex
+    bne _px_busy
+_px_idle:
+    stz $4016                ; LATCH low and ~307 us without a clock (220
+    lda.b #220               ; turns of 30 master cycles): the adapter's
+_px_quiet:                   ; gap detector restarts it at bit 0
+    dec a
+    bne _px_quiet
+    ldx #$0000
+_px_byte:
+    lda.w pkTX,x
+    sta kT0
+.REPT 8
+    asl kT0                  ; C = our next bit
+    lda.b #0
+    rol a
+    sta $4016                ; onto LATCH
+    lda $4017                ; samples DATA1, then clocks the adapter
+    eor.b #1                 ; line high reads 0
+    lsr a
+    rol kT1
+.ENDR
+    lda kT1
+    sta.w pkRX,x
+    inx
+    cpx.w pkN
+    beq _px_done
+    jmp _px_byte
+_px_done:
+    stz $4016
+    rep #$20
+    rts
+
+pk_recv:                     ; judge pkRX and act on it
+    sep #$20
+    lda.b #0
+    ldx #PK_FRAME-1
+_pr_sum:
+    clc
+    adc.w pkRX,x
+    dex
+    bpl _pr_sum
+    sec
+    sbc.w pkRX+3
+    cmp.w pkRX+3
+    bne _pr_bad
+    lda.w pkRX+4             ; a dead line is 64 equal bytes, and 64 zeros
+    ora.w pkRX+5             ; checksum; a real frame has a record or
+    bne _pr_ok               ; padding here, never two zeros
+_pr_bad:
+    rep #$20
+    lda.w pkUP
+    beq _pr_ret
+    inc.w pkMISS
+    lda.w pkMISS
+    cmp #PK_MISS
+    bcc _pr_ret
+    stz.w pkUP
+    stz.w pkMISS
+_pr_ret:
+    rts
+_pr_ok:
+    lda.b #1
+    sta.w pkUP
+    stz.w pkMISS
+    lda.w pkST
+    bit.b #$04
+    bne _pr_syn
+    bit.b #$01
+    bne _pr_ack
+    ora.b #$01               ; an adapter is there: the SYN frame, with one
+    sta.w pkST               ; record that asks for stop-and-wait. Its
+    lda.w pkRX+1             ; sequence is one past whatever the adapter
+    inc a                    ; acknowledges now, so only an adapter that
+    sta.w pkTX               ; took this frame can acknowledge it
+    lda.b #$03               ; DATA | SYN
+    sta.w pkTX+2
+    sta.w pkTX+5             ; channel 0 (control), 3 bytes:
+    stz.w pkTX+4
+    lda.b #$0D               ; C2S_LINKWIN, 1 byte, 1
+    sta.w pkTX+6
+    lda.b #$01
+    sta.w pkTX+7
+    sta.w pkTX+8
+    bra _pr_done
+_pr_ack:
+    lda.w pkRX+1             ; until the SYN is acknowledged nothing is
+    cmp.w pkTX               ; taken: it empties what the adapter had
+    bne _pr_done             ; queued, and frames written before it are
+    lda.w pkST               ; still arriving
+    ora.b #$04
+    sta.w pkST
+    inc.w pkTX               ; bare acks from here on
+    stz.w pkTX+2
+    lda.b #$FF
+    sta.w pkTX+4
+    sta.w pkTX+5
+    sta.w pkTX+6
+    sta.w pkTX+7
+    sta.w pkTX+8
+    lda.w pkRX               ; and its stream starts again at this frame
+    sta.w pkRXN
+_pr_syn:
+    lda.w pkRX+2
+    bit.b #$02
+    beq _pr_nsyn
+    lda.w pkST               ; the adapter restarted: its sequence begins
+    bit.b #$02               ; again, adopted once per episode
+    bne _pr_data
+    ora.b #$02
+    sta.w pkST
+    lda.w pkRX
+    sta.w pkRXN
+    bra _pr_data
+_pr_nsyn:
+    lda.w pkST
+    and.b #$FD
+    sta.w pkST
+_pr_data:
+    lda.w pkRX+2
+    lsr a
+    bcc _pr_done
+    lda.w pkRX
+    cmp.w pkRXN
+    bne _pr_done             ; a repeat: the ack we send again answers it
+    jsr pk_take
+    bcc _pr_done             ; no room: unacknowledged, it comes again
+    inc.w pkRXN
+_pr_done:
+    rep #$20
+    rts
+
+pk_take:                     ; A8. Key records -> the FIFO, all or nothing.
+    ldx #4                   ; C = taken
+    lda.w pkFH
+    sta.w pkNH
+_pt_rec:
+    cpx #PK_FRAME-1
+    bcs _pt_end
+    lda.w pkRX,x
+    cmp.b #$FF
+    beq _pt_end
+    sta.w pkCH
+    lda.w pkRX+1,x
+    sta.w pkLEN
+    inx
+    inx
+    rep #$20
+    txa
+    clc
+    adc.w pkLEN
+    cmp #PK_FRAME+1
+    sep #$20
+    bcs _pt_end              ; a record that runs off the frame
+_pt_byte:
+    lda.w pkLEN
+    beq _pt_rec
+    dec.w pkLEN
+    lda.w pkCH
+    cmp.b #$11
+    bne _pt_next
+    ldy.w pkNH
+    lda.w pkRX,x
+    sta.w pkFIFO,y
+    tya
+    inc a
+    and.b #$7F
+    cmp.w pkFT
+    beq _pt_full
+    sta.w pkNH
+_pt_next:
+    inx
+    bra _pt_byte
+_pt_end:
+    lda.w pkNH
+    cmp.w pkFH
+    beq _pt_none
+    sta.w pkFH
+    lda.b #PK_HOT
+    sta.w pkHOT
+_pt_none:
+    sec
+    rts
+_pt_full:
+    clc
+    rts
+
+.ACCU 16
+pk_drain:                    ; A16. FIFO -> kb_push while both rings have room
+    lda.w pkFT
+    cmp.w pkFH
+    beq _pd_ret
+    lda cKbT                 ; INT 16h ring: one free entry
+    clc
+    adc #2
+    and #$003E
+    cmp cKbH
+    beq _pd_ret
+    lda s9H                  ; INT 9 queue: a key is up to six scancodes
+    sec
+    sbc s9T
+    and #$001E
+    cmp #20
+    bcs _pd_ret
+    ldx.w pkFT
+    lda.w pkFIFO,x
+    and #$007F
+    asl a
+    tay
+    txa
+    inc a
+    and #$007F
+    sta.w pkFT
+    tyx
+    lda.l pk_keytab,x
+    beq pk_drain             ; a byte with no key
+    pha
+    lda kMOD                 ; the on-screen keyboard's sticky modifier
+    sta.w pkMOD              ; steps aside for this key's own
+    txa
+    lsr a
+    tax
+    lda.l pk_modtab,x
+    and #$0003
+    sta kMOD
+    pla
+    jsr kb_push
+    lda.w pkMOD
+    sta kMOD
+    bra pk_drain
+_pd_ret:
+    rts
+
+.INCLUDE "build/pickeys.asm"
+.ENDIF
 
 .INCLUDE "build/kbdlayout.asm"
 
