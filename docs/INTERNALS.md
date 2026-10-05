@@ -161,6 +161,25 @@ window into the full-width buffer and lets you pan it: the L/R shoulder buttons 
 from 0 to 16, moving the window across the 80 columns. The buffer always holds the true
 80×25; you're just seeing 64 of them at a time.
 
+The 32-column view. Sixty-four columns of half-width pixels are sharp on RGB and a
+smear on composite video, so the console has a second view of the same text page:
+every character drawn double width from a second, "fat" copy of the font, 32 columns
+on screen. It is the scanner path 40-column text always took, now offered for
+80-column text too; nothing about the guest changes, the window is just narrower
+(32 of 80) and L/R pan it further. Pressing L and R together switches views at run
+time. In this view the pan also follows the cursor, once it has rested for eight
+frames: typing past the right edge brings the window along, while a `DIR` streaming
+past does not drag it back and forth. The default text colour changes with the view,
+green for 64 columns and white for 32 — a saturated colour puts all of its edges in
+the chroma signal, which composite carries worst. `make msdos COLS=32` builds
+`msdos_32.sfc`, which boots in this view with the BIOS in 40-column text, so DOS
+wraps its lines where the screen nearly ends.
+
+The fat font covers all 256 characters, but its upper half does not fit beside the
+rest: BG2's tile numbers 768–1023 are VRAM `$2800`–`$2FFF`, which is where the CGA
+graphics modes keep their tilemap. So that half is loaded at reset and again by
+`gfx_exit`, and `gfx_enter` rebuilds its tilemap over it as it always did.
+
 CGA graphics. The four-colour modes (4/5 — 320×200) switch the display to a third layer,
 BG3, with its own 2bpp tilemap and tiles in VRAM: 256 of the 320 pixels are on screen and
 L/R hardware-scroll to the rest. The guest's bitmap in adapter RAM is blitted into the

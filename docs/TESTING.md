@@ -46,7 +46,8 @@ speed):
 **Mesen legs** (the real 65816 core executing the real ROM): boot,
 console/`DIR`, keyboard scancodes, the Pico keyboard (`t_pico`: a model of
 the adapter on port 2 types at the prompt, through a full FIFO, lost and
-corrupt frames, an adapter restart and a console reset), the CGA mode-4 and mode-6 cards, the
+corrupt frames, an adapter restart and a console reset), the 32-column view
+(`t_zoom`), the CGA mode-4 and mode-6 cards, the
 MIDI driver, TED end-to-end on the SNES (types with the controller,
 saves to battery SRAM, `TYPE`s it back), and the ones that need their own
 ROM and their own timeout — ELKS boot-to-login, FreeDOS boot, and the two

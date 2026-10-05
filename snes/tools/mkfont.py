@@ -16,6 +16,9 @@ is fully transparent (used to blank BG1 in 40-column mode).
 Layout of font_bg2.bin (loaded to VRAM $1000, 12 KB):
   tiles   0-511: 256 CP437 chars as [glyph][blank]  (2bpp, 32 B/char)
   tiles 512-767: 128 chars stretched to the full 16px cell (40-col mode)
+font_fat2.bin (loaded to VRAM $2800, 4 KB, text modes only: CGA graphics
+borrows that VRAM for its tilemap, and gfx_exit loads the glyphs back):
+  tiles 768-1023: the stretched font's other 128 chars
 font_bg1.bin (loaded to VRAM $3000, 16 KB):
   tiles   0-511: 256 CP437 chars as [blank][glyph]  (4bpp, 64 B/char)
 
@@ -141,8 +144,14 @@ for c in range(128):                  # 40-col fat font: whole cell opaque
     l, r = stretch(glyphs.get(c, BLANK))
     bg2 += tile2bpp(l) + tile2bpp(r)
 
+fat2 = bytearray()
+for c in range(128, 256):
+    l, r = stretch(glyphs.get(c, BLANK))
+    fat2 += tile2bpp(l) + tile2bpp(r)
+
 os.makedirs(OUT, exist_ok=True)
 open(os.path.join(OUT, "font_bg2.bin"), "wb").write(bg2)
+open(os.path.join(OUT, "font_fat2.bin"), "wb").write(fat2)
 open(os.path.join(OUT, "font_bg1.bin"), "wb").write(bg1)
 
 # raw 1bpp font (256 x 8 rows, MSB = leftmost pixel) for the CGA

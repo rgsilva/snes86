@@ -52,6 +52,11 @@ image (flat, into the root) or a fixed-disk image of this repo's C:
 shape (root plus one level of subdirs) — so a whole prepared C: can be
 handed over as one file.
 
+**COLS=32** is a second optional flag on the same targets: `make msdos COLS=32`
+writes `snes/build/msdos_32.sfc`, a ROM that boots in the 32-column view (double-width
+white text) with the BIOS in 40-column text - the one to flash for a TV on composite
+video. Every ROM reaches the same view at run time with L+R.
+
 What each one actually is:
 
 - `make elks` — Linux on the SNES: boots [ELKS](https://github.com/ghaerr/elks)

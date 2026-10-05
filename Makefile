@@ -14,6 +14,9 @@
 #   make apps          rebuild every app from source + verify
 #   make clean
 #
+# COLS=32 on any DOS-booting target boots in the 32-column view (for a
+# TV on composite video) and writes snes/build/<target>_32.sfc.
+#
 # OVERLAYS="dir-or-img ..." on any DOS-booting target (msdos,
 # msdos_sa1, freedos, boot) merges extra content onto the free C: and
 # writes snes/build/<target>_overlay.sfc — the clean ROM is never

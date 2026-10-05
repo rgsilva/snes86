@@ -18,6 +18,21 @@
 .DEFINE DOSBIOS
 .INCLUDE "build/trace_meta.asm"
 
+; The console has two views of the guest's text page. The 64-column
+; one is the PPU's 512-pixel mode at full resolution; the 32-column one
+; draws every character double width, which is what survives composite
+; video. L+R switches between them at run time. CON_FG and CON_FG32 are
+; the colour attribute $07 is drawn in (BGR555) in each: saturated
+; green smears on composite, white does not. CON32 (make COLS=32) boots
+; in the 32-column view with the BIOS in 40-column text, so DOS wraps
+; where the screen nearly ends.
+.IFNDEF CON_FG
+.DEFINE CON_FG $03E0         ; green
+.ENDIF
+.IFNDEF CON_FG32
+.DEFINE CON_FG32 $7FFF       ; white
+.ENDIF
+
 ; The Pico keyboard (pk_*, below) rides the plain cartridge only: the
 ; SA-1 machines and the lockstep trace build assemble without it.
 .IFNDEF SA1
@@ -177,6 +192,11 @@ pkLEN    dw                  ; FIFO head it would commit
 pkNH     dw
 pkMOD    dw                  ; kMOD kept across a key
 pkN      dw                  ; bytes the next pk_xfer moves
+; the console's view (view_*)
+vZ       dw                  ; 1 = the 32-column view
+vFG      dw                  ; the default text colour in force (BGR555)
+vLC      dw                  ; cursor row<<8|col last seen, and the
+vLT      dw                  ; frames it has stayed there
 .ENDE
 
 ; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
@@ -2511,10 +2531,17 @@ _cg_clr:                     ; power-on and leaked into CGA/gfx colors
     stz $2122                ; backdrop black
     stz $2122
     stz $2122                ; pair 0 bg: black
-    lda.b #$E0
+.IFDEF CON32
+    lda.b #<CON_FG32
     sta $2122
-    lda.b #$03
-    sta $2122                ; pair 0 fg: green
+    lda.b #>CON_FG32
+    sta $2122                ; pair 0 fg: the default text colour
+.ELSE
+    lda.b #<CON_FG
+    sta $2122
+    lda.b #>CON_FG
+    sta $2122                ; pair 0 fg: the default text colour
+.ENDIF
     lda.b #29
     sta $2121
     lda.b #$FF
@@ -2567,6 +2594,8 @@ _cg_clr:                     ; power-on and leaked into CGA/gfx colors
     sep #$20
     lda.b #$01
     sta $420B
+    rep #$20
+    jsr fat_load
 
     ; clear tilemaps
     rep #$20
@@ -2880,10 +2909,21 @@ _rst_mv:
     stz cTickP
     stz kPAN
     stz scanROW
+.IFDEF CON32
+    lda #40
+    sta cWID
+    lda #1
+    sta cMODE
+    sta.w vZ
+    lda #CON_FG32
+.ELSE
     lda #80
     sta cWID
     lda #3
     sta cMODE
+    lda #CON_FG
+.ENDIF
+    sta.w vFG
     jsr bda_vmode            ; the BDA agrees from power-on
     stz aST
     stz sFLIP
@@ -3225,9 +3265,12 @@ _sr_sd:
     ldx kT0
     lda #32
     sta nCNT
+    lda.w vZ                 ; the 32-column view draws 80-column text
+    bne _sr_fat              ; the way 40-column text is always drawn
     lda cWID
     cmp #80
     beq _sr_b2
+_sr_fat:
     jmp _sr_w40
 _sr_b2:
     lda.l VBUF,x
@@ -3317,16 +3360,13 @@ _sr_b1w:
     dec nCNT
     bne _sr_b1
     bra _sr_next
-    ; 40-column mode: one char per 16px cell, double-width glyphs
-    ; (fat font at tiles 512+2c) on BG2; BG1 fully transparent.
+    ; 40-column mode and the 32-column view: one char per 16px cell,
+    ; double-width glyphs (fat font at tiles 512+2c) on BG2; BG1 fully
+    ; transparent.
 _sr_w40:
     lda.l VBUF,x
     tay
     and #$00FF
-    cmp #$0080
-    bcc _sr_w40k
-    lda #$0000
-_sr_w40k:
     asl a
     ora #$0200
     sta nTIL
@@ -3452,6 +3492,19 @@ kbd_frame:
     eor #$FFFF
     and cJoyN
     sta kT0
+    and #$0030               ; L+R together: the other view
+    beq _kf_nv
+    lda cJoyN
+    and #$0030
+    cmp #$0030
+    bne _kf_nv
+    jsr view_toggle
+    lda kT0
+    and #$FFCF
+    sta kT0
+_kf_nv:
+    jsr view_follow
+    lda kT0
     and #$0020               ; L: pan left
     beq _kf_pr
     lda kPAN
@@ -3465,12 +3518,7 @@ _kf_pr:
     lda kT0
     and #$0010               ; R: pan right
     beq _kf_pd
-    lda cWID
-    sec
-    sbc #64                  ; max pan: 16 (80-col), wraps to 8 via 40-32
-    bpl _kf_pmx
-    lda #8                   ; 40-col mode: 32 visible of 40
-_kf_pmx:
+    jsr view_maxpan
     sta kT1
     lda kPAN
     clc
@@ -3721,6 +3769,116 @@ _kf_domove:
     ldx #$1C00
     jsr kbd_color
 _kf_done:
+    rts
+
+view_maxpan:                 ; A = the furthest right kPAN goes
+    lda cGFX
+    bne _vm_64
+    lda.w vZ
+    beq _vm_64
+    lda cWID                 ; 32 columns on screen
+    sec
+    sbc #32
+    rts
+_vm_64:
+    lda cWID
+    sec
+    sbc #64                  ; max pan: 16 (80-col), wraps to 8 via 40-32
+    bpl _vm_r
+    lda #8                   ; 40-col mode: 32 visible of 40
+_vm_r:
+    rts
+
+view_toggle:                 ; NMI, in vblank: switch views
+    lda.w vZ
+    eor #$0001
+    sta.w vZ
+    beq _vt_64
+    lda #CON_FG32
+    bra _vt_fg
+_vt_64:
+    lda #CON_FG
+_vt_fg:
+    sta.w vFG
+    sep #$20
+    lda.b #2                 ; pair 0 fg
+    sta $2121
+    lda.w vFG
+    sta $2122
+    lda.w vFG+1
+    sta $2122
+    rep #$20
+    lda cGFX                 ; in graphics kPAN is the bitmap's
+    bne _vt_r
+    stz kPAN
+    lda #$FFFF               ; and find the cursor again
+    sta.w vLC
+_vt_r:
+    rts
+
+view_follow:                 ; 32-column view: once the cursor has rested
+    lda cGFX                 ; for 8 frames, pan so it is on screen. Output
+    bne _vf_r                ; streaming past does not drag the view along
+    lda.w vZ
+    beq _vf_r
+    lda cROW
+    xba
+    ora cCOL
+    cmp.w vLC
+    beq _vf_same
+    sta.w vLC
+    stz.w vLT
+    rts
+_vf_same:
+    lda.w vLT
+    cmp #8
+    bcs _vf_r
+    inc a
+    sta.w vLT
+    cmp #8
+    bne _vf_r
+    lda cCOL
+    cmp kPAN
+    bcs _vf_right
+    and #$00F8
+    sta kPAN
+    rts
+_vf_right:
+    sec
+    sbc kPAN
+    cmp #32
+    bcc _vf_r
+    lda cCOL                 ; the least pan, in steps of 8, that shows it
+    sec
+    sbc #24
+    and #$00F8
+    sta kPAN
+_vf_r:
+    rts
+
+fat_load:                    ; the fat font's upper half -> BG2 tiles 768+
+    php                      ; (forced blank, NMI off). CGA graphics keeps
+    sep #$20                 ; its tilemap in the same VRAM
+    lda.b #$80
+    sta.l $002115
+    lda.b #$01
+    sta.l $004300
+    lda.b #$18
+    sta.l $004301
+    lda.b #:font_fat2
+    sta.l $004304
+    rep #$20
+    lda #$2800
+    sta.l $002116
+    lda #font_fat2
+    sta.l $004302
+    lda #4096
+    sta.l $004305
+    sep #$20
+    lda.b #$01
+    sta.l $00420B
+    rep #$20                 ; (leave the assembler's ACCU tracking at 16)
+    plp
     rts
 
 kbd_rec_x:                   ; A = key idx -> X = kbd_keys offset (idx*6)
@@ -5228,9 +5386,9 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     sta.l $002122
     sta.l $002122
     sta.l $002122
-    lda.b #$E0
+    lda.w vFG
     sta.l $002122
-    lda.b #$03
+    lda.w vFG+1
     sta.l $002122
     lda.b #CGPAL1            ; put dynamic pair 1's 4bpp colors back: the
     sta.l $002121            ; CGA palette borrowed CGRAM 17/18/19 while
@@ -5250,6 +5408,7 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     stz cGFX
     stz gSTG
     stz cPALD
+    jsr fat_load             ; the graphics tilemap sat on these glyphs
     jsr kbd_tables
     sep #$20
     lda.b #$0F
@@ -6012,6 +6171,17 @@ cgafont:                     ; raw 1bpp CP437 font (mkfont.py), MSB=left
 zero_w:
     .dw 0
 
+.ENDS
+
+;----------------------------------------------------------------------
+; fat font, chars $80-$FF (bank 13: free past the A: floppy's last 8 KB
+; in every variant)
+;----------------------------------------------------------------------
+.BANK 13 SLOT 0
+.ORG $2000
+.SECTION "FatFont2" SEMIFREE
+font_fat2:
+    .INCBIN "build/font_fat2.bin"
 .ENDS
 
 ;----------------------------------------------------------------------

@@ -21,19 +21,28 @@ OVDEF :=
 HDC   := build/hd_free.img
 endif
 
+# --- COLS=32: a console for a TV on composite video. The ROM boots in
+# the 32-column view (double-width glyphs, white) with the BIOS in
+# 40-column text, and lands in build/<target>_32.sfc. Any ROM reaches
+# the same view at run time with L+R.
+ifeq ($(COLS),32)
+OVSUF := $(OVSUF)_32
+OVDEF += -D CON32
+endif
+
 # every DOS-boot variant assembles dosboot.asm via a stub + these
 DOSDEPS := dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin \
            build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin \
            build/font_bg1.bin build/spc_midi64.bin build/cgalut.bin \
            build/aluflat.asm build/cgafont.bin build/trace_meta.asm \
-           build/pickeys.asm
+           build/pickeys.asm build/font_fat2.bin
 
 # wlalink linkfiles are two generated lines — build/<stem>.link
 build/%.link:
 	@mkdir -p build
 	@printf '[objects]\nbuild/%s.o\n' '$*' > $@
 
-build/font_bg2.bin build/font_bg1.bin build/cgafont.bin: tools/mkfont.py tools/font8x8_basic.h
+build/font_bg2.bin build/font_bg1.bin build/font_fat2.bin build/cgafont.bin: tools/mkfont.py tools/font8x8_basic.h
 	python3 tools/mkfont.py build
 
 build/pf.bin: tools/mkpf.py
