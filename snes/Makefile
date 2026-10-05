@@ -30,6 +30,13 @@ OVSUF := $(OVSUF)_32
 OVDEF += -D CON32
 endif
 
+# --- FG=white: white text in the 64-column view too (it is green by
+# default, and already white at 32 columns), in build/<target>_white.sfc.
+ifeq ($(FG),white)
+OVSUF := $(OVSUF)_white
+OVDEF += -D CON_FG=32767
+endif
+
 # every DOS-boot variant assembles dosboot.asm via a stub + these
 DOSDEPS := dosboot.asm hdr_dos.asm cpu.asm cpu2.asm build/pf.bin \
            build/bdisk.bin build/kbdlayout.asm build/font_bg2.bin \

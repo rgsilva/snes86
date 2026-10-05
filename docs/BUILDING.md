@@ -55,7 +55,9 @@ handed over as one file.
 **COLS=32** is a second optional flag on the same targets: `make msdos COLS=32`
 writes `snes/build/msdos_32.sfc`, a ROM that boots in the 32-column view (double-width
 white text) with the BIOS in 40-column text - the one to flash for a TV on composite
-video. Every ROM reaches the same view at run time with L+R.
+video. Every ROM reaches the same view at run time with L+R. **FG=white** keeps the
+normal 64-column boot but draws its text white instead of green
+(`snes/build/msdos_white.sfc`).
 
 What each one actually is:
 

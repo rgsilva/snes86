@@ -38,7 +38,7 @@ Since this project generates a ROM file (.sfc) for you to use, there are a few b
 
 > Beware that the images `msdos_sa1`, `freedos` and `elks` require an SA-1 cartridge board. We use the chip purely as a RAM stick (RAM is expensive!). That means those three ROMs only run where SA-1 is actually implemented. Mesen (as well as possibly many other emulators) is fine, and so is the FXPak Pro and similar cartridges. However, some simpler flash carts may not work, and in those you can only get the `msdos.sfc` to work. Sorry about that.
 
-> On a TV over composite video the 64-column text is hard to read: press **L+R** for the 32-column view (double-width white text, the window follows the cursor and L/R pan it), or build a ROM that boots that way with `make msdos COLS=32`.
+> On a TV over composite video the 64-column text is hard to read: press **L+R** for the 32-column view (double-width white text, the window follows the cursor and L/R pan it), or build a ROM that boots that way with `make msdos COLS=32`. `make msdos FG=white` keeps 64 columns but in white.
 
 > A real keyboard works too, on `msdos.sfc` (and `make boot`): plug the [SNOS](https://github.com/rgsilva/snos) Pico W adapter into controller port 2 and type. It is found at run time, the pad and the on-screen keyboard keep working, and the firmware is SNOS's as it is - which also means no function keys or Alt yet. See [INTERNALS](docs/INTERNALS.md#a-real-keyboard-the-pico-adapter-on-port-2).
 
