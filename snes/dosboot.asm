@@ -18,6 +18,29 @@
 .DEFINE DOSBIOS
 .INCLUDE "build/trace_meta.asm"
 
+; The console has two views of the guest's text page. The 64-column
+; one is the PPU's 512-pixel mode at full resolution; the 32-column one
+; draws every character double width, which is what survives composite
+; video. L+R switches between them at run time. CON_FG and CON_FG32 are
+; the colour attribute $07 is drawn in (BGR555) in each: saturated
+; green smears on composite, white does not. CON32 (make COLS=32) boots
+; in the 32-column view with the BIOS in 40-column text, so DOS wraps
+; where the screen nearly ends.
+.IFNDEF CON_FG
+.DEFINE CON_FG $03E0         ; green
+.ENDIF
+.IFNDEF CON_FG32
+.DEFINE CON_FG32 $7FFF       ; white
+.ENDIF
+
+; The Pico keyboard (pk_*, below) rides the plain cartridge only: the
+; SA-1 machines and the lockstep trace build assemble without it.
+.IFNDEF SA1
+.IFNDEF TRACE
+.DEFINE PICOKBD
+.ENDIF
+.ENDIF
+
 .INCLUDE "hdr_dos.asm"
 .INCLUDE "cpu.asm"
 .INCLUDE "cpu2.asm"
@@ -142,6 +165,38 @@ zBDL     dw                  ; frames until the next byte is off the wire
 nP1B     dw                  ; dynamic pair 1's colors, kept so gfx_exit
 nP1F     dw                  ; can put back the CGRAM the CGA palette
                              ; borrows (17/18 = 4bpp pair 1 = 2bpp pal 4)
+.ENDE
+
+; Pico keyboard (pk_*): the two link frames, the key FIFO and the link
+; state. Page 1-2 of low WRAM, zeroed at reset like the rest.
+.DEFINE PK_FRAME 64          ; bytes per exchange; the firmware's LINK_FRAME
+.ENUM $0100
+pkTX     ds PK_FRAME         ; the frame the next exchange sends
+pkRX     ds PK_FRAME         ; the frame the last exchange received
+pkFIFO   ds 128              ; key bytes accepted and not yet typed
+pkUP     dw                  ; the adapter answered: poll at the live rate
+pkAGE    dw                  ; frames since the last exchange
+pkMISS   dw                  ; bad exchanges in a row
+pkRXN    dw                  ; the peer sequence expected next (low byte)
+pkST     dw                  ; bit0 our SYN is going out, bit1 the peer's
+                             ; SYN seen, bit2 our SYN acknowledged
+pkFH     dw                  ; key FIFO head (the link) and tail (the
+pkFT     dw                  ; drain into kb_push)
+pkHOT    dw                  ; frames of fast polling left after a key
+pkBLK    dw                  ; the guest is blocked in INT 16h AH=0
+pkATT    dw                  ; rises as the guest asks INT 16h AH=1 for a
+                             ; key and finds none, falls by the frame
+pkPAIR   dw                  ; the next frame owes a pair's second exchange
+pkCH     dw                  ; record walk: channel, bytes left, and the
+pkLEN    dw                  ; FIFO head it would commit
+pkNH     dw
+pkMOD    dw                  ; kMOD kept across a key
+pkN      dw                  ; bytes the next pk_xfer moves
+; the console's view (view_*)
+vZ       dw                  ; 1 = the 32-column view
+vFG      dw                  ; the default text colour in force (BGR555)
+vLC      dw                  ; cursor row<<8|col last seen, and the
+vLT      dw                  ; frames it has stayed there
 .ENDE
 
 ; MIDI WRAM: chprog[16] = per-channel GM program at $0520, vChan[8] at
@@ -1482,6 +1537,10 @@ _h16_ours0:
 _h16_empty0:
     dey                      ; ring empty: rewind IP so INT 16h re-executes
     dey                      ; (emulator-level blocking; NMI will add keys)
+.IFDEF PICOKBD
+    lda #3                   ; a blocked guest has nothing better to do
+    sta.w pkBLK              ; with the cycles: poll the adapter every frame
+.ENDIF
     rts
 _h16_n0:
     cmp #$0001
@@ -1513,6 +1572,16 @@ _h16_zf1:
     lda fSTATIC
     ora #F_ZF
     sta fSTATIC
+.IFDEF PICOKBD
+    lda.w pkATT              ; a guest that keeps asking gets the adapter
+    clc                      ; polled more often
+    adc #3
+    cmp #13
+    bcc _h16_att
+    lda #12
+_h16_att:
+    sta.w pkATT
+.ENDIF
     rts
 _h16_n1:
     cmp #$0002
@@ -2279,6 +2348,11 @@ _vb_jw:
 _vb_txts:
     jsr scan_rows            ; LAST: if the repaint overruns vblank only
 _vb_done:
+.IFDEF PICOKBD
+    rep #$30
+    jsr pk_frame             ; after everything vblank owns: an exchange
+                             ; is ~79 scanlines of port clocks, no PPU
+.ENDIF
     rep #$30
     plb
     ply
@@ -2457,10 +2531,17 @@ _cg_clr:                     ; power-on and leaked into CGA/gfx colors
     stz $2122                ; backdrop black
     stz $2122
     stz $2122                ; pair 0 bg: black
-    lda.b #$E0
+.IFDEF CON32
+    lda.b #<CON_FG32
     sta $2122
-    lda.b #$03
-    sta $2122                ; pair 0 fg: green
+    lda.b #>CON_FG32
+    sta $2122                ; pair 0 fg: the default text colour
+.ELSE
+    lda.b #<CON_FG
+    sta $2122
+    lda.b #>CON_FG
+    sta $2122                ; pair 0 fg: the default text colour
+.ENDIF
     lda.b #29
     sta $2121
     lda.b #$FF
@@ -2513,6 +2594,8 @@ _cg_clr:                     ; power-on and leaked into CGA/gfx colors
     sep #$20
     lda.b #$01
     sta $420B
+    rep #$20
+    jsr fat_load
 
     ; clear tilemaps
     rep #$20
@@ -2826,10 +2909,21 @@ _rst_mv:
     stz cTickP
     stz kPAN
     stz scanROW
+.IFDEF CON32
+    lda #40
+    sta cWID
+    lda #1
+    sta cMODE
+    sta.w vZ
+    lda #CON_FG32
+.ELSE
     lda #80
     sta cWID
     lda #3
     sta cMODE
+    lda #CON_FG
+.ENDIF
+    sta.w vFG
     jsr bda_vmode            ; the BDA agrees from power-on
     stz aST
     stz sFLIP
@@ -2839,6 +2933,9 @@ _rst_mv:
     jsr attr_reset
     jsr apu_upload
     jsr con_clear
+.IFDEF PICOKBD
+    jsr pk_init
+.ENDIF
 
     ; -- NMI + autojoy on, screen on
     sep #$20
@@ -3168,9 +3265,12 @@ _sr_sd:
     ldx kT0
     lda #32
     sta nCNT
+    lda.w vZ                 ; the 32-column view draws 80-column text
+    bne _sr_fat              ; the way 40-column text is always drawn
     lda cWID
     cmp #80
     beq _sr_b2
+_sr_fat:
     jmp _sr_w40
 _sr_b2:
     lda.l VBUF,x
@@ -3260,16 +3360,13 @@ _sr_b1w:
     dec nCNT
     bne _sr_b1
     bra _sr_next
-    ; 40-column mode: one char per 16px cell, double-width glyphs
-    ; (fat font at tiles 512+2c) on BG2; BG1 fully transparent.
+    ; 40-column mode and the 32-column view: one char per 16px cell,
+    ; double-width glyphs (fat font at tiles 512+2c) on BG2; BG1 fully
+    ; transparent.
 _sr_w40:
     lda.l VBUF,x
     tay
     and #$00FF
-    cmp #$0080
-    bcc _sr_w40k
-    lda #$0000
-_sr_w40k:
     asl a
     ora #$0200
     sta nTIL
@@ -3395,6 +3492,19 @@ kbd_frame:
     eor #$FFFF
     and cJoyN
     sta kT0
+    and #$0030               ; L+R together: the other view
+    beq _kf_nv
+    lda cJoyN
+    and #$0030
+    cmp #$0030
+    bne _kf_nv
+    jsr view_toggle
+    lda kT0
+    and #$FFCF
+    sta kT0
+_kf_nv:
+    jsr view_follow
+    lda kT0
     and #$0020               ; L: pan left
     beq _kf_pr
     lda kPAN
@@ -3408,12 +3518,7 @@ _kf_pr:
     lda kT0
     and #$0010               ; R: pan right
     beq _kf_pd
-    lda cWID
-    sec
-    sbc #64                  ; max pan: 16 (80-col), wraps to 8 via 40-32
-    bpl _kf_pmx
-    lda #8                   ; 40-col mode: 32 visible of 40
-_kf_pmx:
+    jsr view_maxpan
     sta kT1
     lda kPAN
     clc
@@ -3664,6 +3769,116 @@ _kf_domove:
     ldx #$1C00
     jsr kbd_color
 _kf_done:
+    rts
+
+view_maxpan:                 ; A = the furthest right kPAN goes
+    lda cGFX
+    bne _vm_64
+    lda.w vZ
+    beq _vm_64
+    lda cWID                 ; 32 columns on screen
+    sec
+    sbc #32
+    rts
+_vm_64:
+    lda cWID
+    sec
+    sbc #64                  ; max pan: 16 (80-col), wraps to 8 via 40-32
+    bpl _vm_r
+    lda #8                   ; 40-col mode: 32 visible of 40
+_vm_r:
+    rts
+
+view_toggle:                 ; NMI, in vblank: switch views
+    lda.w vZ
+    eor #$0001
+    sta.w vZ
+    beq _vt_64
+    lda #CON_FG32
+    bra _vt_fg
+_vt_64:
+    lda #CON_FG
+_vt_fg:
+    sta.w vFG
+    sep #$20
+    lda.b #2                 ; pair 0 fg
+    sta $2121
+    lda.w vFG
+    sta $2122
+    lda.w vFG+1
+    sta $2122
+    rep #$20
+    lda cGFX                 ; in graphics kPAN is the bitmap's
+    bne _vt_r
+    stz kPAN
+    lda #$FFFF               ; and find the cursor again
+    sta.w vLC
+_vt_r:
+    rts
+
+view_follow:                 ; 32-column view: once the cursor has rested
+    lda cGFX                 ; for 8 frames, pan so it is on screen. Output
+    bne _vf_r                ; streaming past does not drag the view along
+    lda.w vZ
+    beq _vf_r
+    lda cROW
+    xba
+    ora cCOL
+    cmp.w vLC
+    beq _vf_same
+    sta.w vLC
+    stz.w vLT
+    rts
+_vf_same:
+    lda.w vLT
+    cmp #8
+    bcs _vf_r
+    inc a
+    sta.w vLT
+    cmp #8
+    bne _vf_r
+    lda cCOL
+    cmp kPAN
+    bcs _vf_right
+    and #$00F8
+    sta kPAN
+    rts
+_vf_right:
+    sec
+    sbc kPAN
+    cmp #32
+    bcc _vf_r
+    lda cCOL                 ; the least pan, in steps of 8, that shows it
+    sec
+    sbc #24
+    and #$00F8
+    sta kPAN
+_vf_r:
+    rts
+
+fat_load:                    ; the fat font's upper half -> BG2 tiles 768+
+    php                      ; (forced blank, NMI off). CGA graphics keeps
+    sep #$20                 ; its tilemap in the same VRAM
+    lda.b #$80
+    sta.l $002115
+    lda.b #$01
+    sta.l $004300
+    lda.b #$18
+    sta.l $004301
+    lda.b #:font_fat2
+    sta.l $004304
+    rep #$20
+    lda #$2800
+    sta.l $002116
+    lda #font_fat2
+    sta.l $004302
+    lda #4096
+    sta.l $004305
+    sep #$20
+    lda.b #$01
+    sta.l $00420B
+    rep #$20                 ; (leave the assembler's ACCU tracking at 16)
+    plp
     rts
 
 kbd_rec_x:                   ; A = key idx -> X = kbd_keys offset (idx*6)
@@ -5171,9 +5386,9 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     sta.l $002122
     sta.l $002122
     sta.l $002122
-    lda.b #$E0
+    lda.w vFG
     sta.l $002122
-    lda.b #$03
+    lda.w vFG+1
     sta.l $002122
     lda.b #CGPAL1            ; put dynamic pair 1's 4bpp colors back: the
     sta.l $002121            ; CGA palette borrowed CGRAM 17/18/19 while
@@ -5193,6 +5408,7 @@ gfx_exit:                    ; guest ctx: back to the mode-5 text console
     stz cGFX
     stz gSTG
     stz cPALD
+    jsr fat_load             ; the graphics tilemap sat on these glyphs
     jsr kbd_tables
     sep #$20
     lda.b #$0F
@@ -5486,6 +5702,424 @@ _g6s_st:
     sta gROW
     rts
 
+;----------------------------------------------------------------------
+; Pico keyboard: the SNOS Pico W adapter on controller port 2, firmware
+; unchanged, keyboard records only. Five wires, the console is the
+; master: each bit is a $4016 write (LATCH carries our bit) and a $4017
+; read (DATA1 returns the adapter's, inverted, and clocks it). A frame
+; is PK_FRAME bytes each way, MSB first, found by the silence before it:
+;
+;   [0] seq  [1] ack  [2] flags (1 DATA, 2 SYN)  [3] sum of the others
+;   [4..] records [channel][length][bytes], padded with $FF
+;
+; Only channel $11 is read: key bytes, already ASCII (pk_keytab). The
+; adapter resends a frame until it is acknowledged, so a frame whose
+; keys do not fit the FIFO is left unacknowledged and comes again; while
+; the FIFO is that full the console does not ask at all.
+; Bare frames probe for the adapter. Once one answers, the console sends
+; SYN until the adapter acknowledges it and takes no keys before that:
+; the SYN drops whatever the adapter held.
+;
+; All of it runs at the tail of the NMI. An exchange is ~107,000 master
+; cycles, 79 scanlines, so it is rationed. The adapter writes a frame
+; when an exchange ends and may hold one more in front of it, so a key
+; crosses on the third exchange after it is pressed: periodic exchanges
+; come in pairs, a frame apart. The frame after any exchange peeks:
+; three bytes of the frame now staged, a burst the adapter drops by its
+; length as it drops the auto-joypad read's, and while the flags say
+; DATA another exchange follows at once. The period between pairs:
+;
+;   PK_PROBE  no adapter has answered
+;   1         the SYN is not acknowledged yet, or the guest is blocked
+;             in INT 16h AH=0 and has no use for the cycles
+;   PK_HOTP   a key arrived in the last PK_HOT frames
+;   PK_ATTP   the guest keeps asking INT 16h AH=1 for a key
+;   PK_IDLE   otherwise
+;----------------------------------------------------------------------
+.IFDEF PICOKBD
+.DEFINE PK_PROBE 240
+.DEFINE PK_IDLE  16
+.DEFINE PK_ATTP  8
+.DEFINE PK_HOTP  4
+.DEFINE PK_HOT   60
+.DEFINE PK_ATTN  6           ; pkATT at or past this: the guest is asking
+.DEFINE PK_MISS  30          ; bad exchanges in a row: the adapter is gone
+
+pk_init:                     ; the probe: a bare frame, all padding
+    php
+    rep #$30
+    ldx #PK_FRAME-2
+    lda #$FFFF
+_pi_pad:
+    sta.w pkTX,x
+    dex
+    dex
+    bpl _pi_pad
+    stz.w pkTX               ; seq 0, the ack is set per exchange
+    stz.w pkTX+2             ; no flags
+    lda #PK_PROBE-8          ; the first probe comes early
+    sta.w pkAGE
+    plp
+    rts
+
+.ACCU 16
+pk_frame:                    ; NMI tail, once a frame. A16/XY16, DBR=0
+    jsr pk_drain
+    lda.w pkHOT
+    beq _pf_h
+    dec a
+    sta.w pkHOT
+_pf_h:
+    lda.w pkBLK
+    beq _pf_b
+    dec a
+    sta.w pkBLK
+_pf_b:
+    lda.w pkATT
+    beq _pf_a
+    dec a
+    sta.w pkATT
+_pf_a:
+    lda.w pkFH               ; no exchange the FIFO might have to refuse:
+    sec                      ; a frame carries up to 58 keys
+    sbc.w pkFT
+    and #$007F
+    cmp #70
+    bcs _pf_far
+    sep #$20                 ; where the beam is: a peek and an exchange
+    lda $2137                ; are ~95 lines, and the handler must be out
+    lda $213D                ; before the next vblank raises NMI again.
+    xba                      ; Lines 256-261 read 0-5
+    lda $213D
+    rep #$20
+    xba
+    and #$00FF
+    cmp #117
+    bcc _pf_fits
+    cmp #225
+    bcs _pf_fits
+_pf_far:
+    rts
+_pf_fits:
+    inc.w pkAGE
+    lda.w pkPAIR             ; the second exchange of a pair
+    beq _pf_per
+    stz.w pkPAIR
+    bra _pf_go
+_pf_per:
+    lda #PK_PROBE
+    ldx.w pkUP
+    beq _pf_cmp
+    lda.w pkST
+    and #$0004
+    beq _pf_one
+    lda.w pkBLK
+    bne _pf_one
+    lda #PK_HOTP
+    ldx.w pkHOT
+    bne _pf_cmp
+    lda #PK_ATTP
+    ldx.w pkATT
+    cpx #PK_ATTN
+    bcs _pf_cmp
+    lda #PK_IDLE
+    bra _pf_cmp
+_pf_one:
+    lda #1
+_pf_cmp:
+    cmp.w pkAGE
+    beq _pf_due
+    bcc _pf_due
+    lda.w pkAGE              ; not due. The frame after an exchange, once
+    dec a                    ; the SYN is through, peek at what the
+    bne _pf_ret              ; adapter has staged
+    lda.w pkST
+    and #$0004
+    beq _pf_ret
+    lda #3
+    sta.w pkN
+    jsr pk_xfer
+    lda.w pkRX+2
+    and #$00FF
+    cmp #4                   ; a dead line reads $FF
+    bcs _pf_ret
+    lsr a
+    bcs _pf_go
+_pf_ret:
+    rts
+_pf_due:
+    lda #1
+    sta.w pkPAIR
+_pf_go:
+    stz.w pkAGE
+    jsr pk_build
+    lda #PK_FRAME
+    sta.w pkN
+    jsr pk_xfer
+    jsr pk_recv
+    jmp pk_drain             ; what just arrived is typed this frame
+
+.ACCU 16
+pk_build:                    ; ack and checksum into pkTX
+    sep #$20
+    lda.w pkRXN
+    dec a
+    sta.w pkTX+1
+    stz.w pkTX+3
+    lda.b #0
+    ldx #PK_FRAME-1
+_pb_sum:
+    clc
+    adc.w pkTX,x
+    dex
+    bpl _pb_sum
+    sta.w pkTX+3
+    rep #$20
+    rts
+
+pk_xfer:                     ; pkN bytes of pkTX out, as many into pkRX
+    sep #$20
+    ldx #$0200
+_px_busy:                    ; an auto-joypad read clocks the port too
+    lda $4212
+    lsr a
+    bcc _px_idle
+    dex
+    bne _px_busy
+_px_idle:
+    stz $4016                ; LATCH low and ~307 us without a clock (220
+    lda.b #220               ; turns of 30 master cycles): the adapter's
+_px_quiet:                   ; gap detector restarts it at bit 0
+    dec a
+    bne _px_quiet
+    ldx #$0000
+_px_byte:
+    lda.w pkTX,x
+    sta kT0
+.REPT 8
+    asl kT0                  ; C = our next bit
+    lda.b #0
+    rol a
+    sta $4016                ; onto LATCH
+    lda $4017                ; samples DATA1, then clocks the adapter
+    eor.b #1                 ; line high reads 0
+    lsr a
+    rol kT1
+.ENDR
+    lda kT1
+    sta.w pkRX,x
+    inx
+    cpx.w pkN
+    beq _px_done
+    jmp _px_byte
+_px_done:
+    stz $4016
+    rep #$20
+    rts
+
+pk_recv:                     ; judge pkRX and act on it
+    sep #$20
+    lda.b #0
+    ldx #PK_FRAME-1
+_pr_sum:
+    clc
+    adc.w pkRX,x
+    dex
+    bpl _pr_sum
+    sec
+    sbc.w pkRX+3
+    cmp.w pkRX+3
+    bne _pr_bad
+    lda.w pkRX+4             ; a dead line is 64 equal bytes, and 64 zeros
+    ora.w pkRX+5             ; checksum; a real frame has a record or
+    bne _pr_ok               ; padding here, never two zeros
+_pr_bad:
+    rep #$20
+    lda.w pkUP
+    beq _pr_ret
+    inc.w pkMISS
+    lda.w pkMISS
+    cmp #PK_MISS
+    bcc _pr_ret
+    stz.w pkUP
+    stz.w pkMISS
+_pr_ret:
+    rts
+_pr_ok:
+    lda.b #1
+    sta.w pkUP
+    stz.w pkMISS
+    lda.w pkST
+    bit.b #$04
+    bne _pr_syn
+    bit.b #$01
+    bne _pr_ack
+    ora.b #$01               ; an adapter is there: the SYN frame, with one
+    sta.w pkST               ; record that asks for stop-and-wait. Its
+    lda.w pkRX+1             ; sequence is one past whatever the adapter
+    inc a                    ; acknowledges now, so only an adapter that
+    sta.w pkTX               ; took this frame can acknowledge it
+    lda.b #$03               ; DATA | SYN
+    sta.w pkTX+2
+    sta.w pkTX+5             ; channel 0 (control), 3 bytes:
+    stz.w pkTX+4
+    lda.b #$0D               ; C2S_LINKWIN, 1 byte, 1
+    sta.w pkTX+6
+    lda.b #$01
+    sta.w pkTX+7
+    sta.w pkTX+8
+    bra _pr_done
+_pr_ack:
+    lda.w pkRX+1             ; until the SYN is acknowledged nothing is
+    cmp.w pkTX               ; taken: it empties what the adapter had
+    bne _pr_done             ; queued, and frames written before it are
+    lda.w pkST               ; still arriving
+    ora.b #$04
+    sta.w pkST
+    inc.w pkTX               ; bare acks from here on
+    stz.w pkTX+2
+    lda.b #$FF
+    sta.w pkTX+4
+    sta.w pkTX+5
+    sta.w pkTX+6
+    sta.w pkTX+7
+    sta.w pkTX+8
+    lda.w pkRX               ; and its stream starts again at this frame
+    sta.w pkRXN
+_pr_syn:
+    lda.w pkRX+2
+    bit.b #$02
+    beq _pr_nsyn
+    lda.w pkST               ; the adapter restarted: its sequence begins
+    bit.b #$02               ; again, adopted once per episode
+    bne _pr_data
+    ora.b #$02
+    sta.w pkST
+    lda.w pkRX
+    sta.w pkRXN
+    bra _pr_data
+_pr_nsyn:
+    lda.w pkST
+    and.b #$FD
+    sta.w pkST
+_pr_data:
+    lda.w pkRX+2
+    lsr a
+    bcc _pr_done
+    lda.w pkRX
+    cmp.w pkRXN
+    bne _pr_done             ; a repeat: the ack we send again answers it
+    jsr pk_take
+    bcc _pr_done             ; no room: unacknowledged, it comes again
+    inc.w pkRXN
+_pr_done:
+    rep #$20
+    rts
+
+pk_take:                     ; A8. Key records -> the FIFO, all or nothing.
+    ldx #4                   ; C = taken
+    lda.w pkFH
+    sta.w pkNH
+_pt_rec:
+    cpx #PK_FRAME-1
+    bcs _pt_end
+    lda.w pkRX,x
+    cmp.b #$FF
+    beq _pt_end
+    sta.w pkCH
+    lda.w pkRX+1,x
+    sta.w pkLEN
+    inx
+    inx
+    rep #$20
+    txa
+    clc
+    adc.w pkLEN
+    cmp #PK_FRAME+1
+    sep #$20
+    bcs _pt_end              ; a record that runs off the frame
+_pt_byte:
+    lda.w pkLEN
+    beq _pt_rec
+    dec.w pkLEN
+    lda.w pkCH
+    cmp.b #$11
+    bne _pt_next
+    ldy.w pkNH
+    lda.w pkRX,x
+    sta.w pkFIFO,y
+    tya
+    inc a
+    and.b #$7F
+    cmp.w pkFT
+    beq _pt_full
+    sta.w pkNH
+_pt_next:
+    inx
+    bra _pt_byte
+_pt_end:
+    lda.w pkNH
+    cmp.w pkFH
+    beq _pt_none
+    sta.w pkFH
+    lda.b #PK_HOT
+    sta.w pkHOT
+_pt_none:
+    sec
+    rts
+_pt_full:
+    clc
+    rts
+
+.ACCU 16
+pk_drain:                    ; A16. FIFO -> kb_push while both rings have room
+    lda.w pkFT
+    cmp.w pkFH
+    beq _pd_ret
+    lda cKbT                 ; INT 16h ring: one free entry
+    clc
+    adc #2
+    and #$003E
+    cmp cKbH
+    beq _pd_ret
+    lda s9H                  ; INT 9 queue: a key is up to six scancodes
+    sec
+    sbc s9T
+    and #$001E
+    cmp #20
+    bcs _pd_ret
+    ldx.w pkFT
+    lda.w pkFIFO,x
+    and #$007F
+    asl a
+    tay
+    txa
+    inc a
+    and #$007F
+    sta.w pkFT
+    tyx
+    lda.l pk_keytab,x
+    beq pk_drain             ; a byte with no key
+    pha
+    lda kMOD                 ; the on-screen keyboard's sticky modifier
+    sta.w pkMOD              ; steps aside for this key's own
+    txa
+    lsr a
+    tax
+    lda.l pk_modtab,x
+    and #$0003
+    sta kMOD
+    pla
+    jsr kb_push
+    lda.w pkMOD
+    sta kMOD
+    bra pk_drain
+_pd_ret:
+    rts
+
+.INCLUDE "build/pickeys.asm"
+.ENDIF
+
 .INCLUDE "build/kbdlayout.asm"
 
 boot_banner:
@@ -5537,6 +6171,17 @@ cgafont:                     ; raw 1bpp CP437 font (mkfont.py), MSB=left
 zero_w:
     .dw 0
 
+.ENDS
+
+;----------------------------------------------------------------------
+; fat font, chars $80-$FF (bank 13: free past the A: floppy's last 8 KB
+; in every variant)
+;----------------------------------------------------------------------
+.BANK 13 SLOT 0
+.ORG $2000
+.SECTION "FatFont2" SEMIFREE
+font_fat2:
+    .INCBIN "build/font_fat2.bin"
 .ENDS
 
 ;----------------------------------------------------------------------

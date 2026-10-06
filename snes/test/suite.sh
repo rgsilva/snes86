@@ -341,7 +341,7 @@ fi
 if [ -z "$HAVE_MESEN" ]; then
   echo "SKIP Mesen legs + parity (no Mesen at $MESEN) — the 65816 core was NOT exercised"
 else
-  TESTS="t_boot t_dirb t_kbd t_kbdfn t_kbdgfx t_cga t_cga6 t_midi t_ted t_tedfk t_vi"
+  TESTS="t_boot t_dirb t_kbd t_kbdfn t_kbdgfx t_pico t_zoom t_cga t_cga6 t_midi t_ted t_tedfk t_vi"
   [ -n "$QUICK" ] && TESTS="t_boot t_cga"
 
   for t in $TESTS; do
